@@ -21,6 +21,91 @@ app.get('/db-test', async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true, sessions: data });
 });
+// 创建新会话
+app.post('/sessions', async (req, res) => {
+  const { data, error } = await supabase
+    .from('sessions')
+    .insert({ name: req.body.name || '新对话' })
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+// 获取所有会话
+app.get('/sessions', async (req, res) => {
+  const { data, error } = await supabase
+    .from('sessions')
+    .select('*')
+    .order('updated_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+// 获取某个会话的消息
+app.get('/sessions/:id/messages', async (req, res) => {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('session_id', req.params.id)
+    .eq('visible', true)
+    .order('created_at', { ascending: true });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+// 发送消息并获取回复
+app.post('/sessions/:id/chat', async (req, res) => {
+  const sessionId = req.params.id;
+  const userMessage = req.body.message;
+
+  // 存用户消息
+  await supabase.from('messages').insert({
+    session_id: sessionId,
+    role: 'user',
+    content: userMessage
+  });
+
+  // 拉取历史消息
+  const { data: history } = await supabase
+    .from('messages')
+    .select('role, content')
+    .eq('session_id', sessionId)
+    .eq('visible', true)
+    .order('created_at', { ascending: true });
+
+  // 调用Claude API
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1000,
+      system: process.env.SYSTEM_PROMPT || '你是沈晏。',
+      messages: history
+    })
+  });
+
+  const aiData = await response.json();
+  const aiReply = aiData.content[0].text;
+
+  // 存AI回复
+  await supabase.from('messages').insert({
+    session_id: sessionId,
+    role: 'assistant',
+    content: aiReply
+  });
+
+  // 更新会话时间
+  await supabase.from('sessions')
+    .update({ updated_at: new Date() })
+    .eq('id', sessionId);
+
+  res.json({ reply: aiReply });
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
