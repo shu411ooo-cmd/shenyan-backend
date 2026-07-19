@@ -74,20 +74,24 @@ app.post('/sessions/:id/chat', async (req, res) => {
     .order('created_at', { ascending: true });
 
   // 调用Claude API
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1000,
-      system: process.env.SYSTEM_PROMPT || '你是沈晏。',
-      messages: history
-    })
-  });
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`
+  },
+  body: JSON.stringify({
+    model: 'anthropic/claude-sonnet-4-6',
+    max_tokens: 1000,
+    messages: [
+      {
+        role: 'system',
+        content: process.env.SYSTEM_PROMPT || '你是沈晏。'
+      },
+      ...history
+    ]
+  })
+});
 
   const aiData = await response.json();
   const aiReply = aiData.content[0].text;
