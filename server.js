@@ -94,7 +94,7 @@ app.post('/sessions/:id/chat', async (req, res) => {
 });
 
   const aiData = await response.json();
-  const aiReply = aiData.content[0].text;
+  const aiReply = aiData.choices[0].message.content;
 
   // 存AI回复
   await supabase.from('messages').insert({
