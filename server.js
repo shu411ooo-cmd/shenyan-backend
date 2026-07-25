@@ -254,6 +254,16 @@ async function callOmbreTool(toolName, args = {}) {
   }
 }
 // ===== Ombre Brain MCP 客户端结束 =====
+
+// 测试 Ombre Brain 连接状态
+app.get('/api/test-ombre', async (req, res) => {
+  try {
+    const result = await callOmbreTool('breath', { query: 'test' });
+    res.json({ connected: true, result });
+  } catch (err) {
+    res.status(500).json({ connected: false, error: err.message });
+  }
+});
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`服务器运行在端口 ${PORT}`);
