@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios');
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 
@@ -170,7 +169,7 @@ if (count > THRESHOLD) {
   res.json({ reply: aiReply });
 });
 
-// ===== Ombre Brain MCP 客户端 =====
+// ===== Ombre Brain MCP 客户端（使用 fetch，无需 axios） =====
 function parseSSEResponse(text) {
   const lines = text.split('\n');
   for (const line of lines) {
@@ -186,21 +185,23 @@ let ombreCallId = 0;
 
 async function initOmbreSession() {
   try {
-    const response = await axios.post(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
-      jsonrpc: "2.0",
-      method: "initialize",
-      params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "shenyan-backend", version: "1.0" } },
-      id: ++ombreCallId
-    }, {
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' }
-    });
-    ombreSessionId = response.data.result?.sessionId || null;
-    if (ombreSessionId) {
-      await axios.post(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
+    const response = await fetch(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' },
+      body: JSON.stringify({
         jsonrpc: "2.0",
-        method: "notifications/initialized"
-      }, {
-        headers: { 'Content-Type': 'application/json', 'Mcp-Session-Id': ombreSessionId }
+        method: "initialize",
+        params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "shenyan-backend", version: "1.0" } },
+        id: ++ombreCallId
+      })
+    });
+    const data = await response.json();
+    ombreSessionId = data.result?.sessionId || null;
+    if (ombreSessionId) {
+      await fetch(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Mcp-Session-Id': ombreSessionId },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })
       });
     }
     return !!ombreSessionId;
@@ -217,16 +218,22 @@ async function callOmbreTool(toolName, args = {}) {
       const ok = await initOmbreSession();
       if (!ok) return null;
     }
-    const response = await axios.post(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
-      jsonrpc: "2.0",
-      method: "tools/call",
-      params: { name: toolName, arguments: args },
-      id: ++ombreCallId
-    }, {
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream', 'Mcp-Session-Id': ombreSessionId },
-      transformResponse: [(data) => data]
+    const response = await fetch(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream',
+        'Mcp-Session-Id': ombreSessionId
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: { name: toolName, arguments: args },
+        id: ++ombreCallId
+      })
     });
-    const parsed = parseSSEResponse(response.data);
+    const rawText = await response.text();
+    const parsed = parseSSEResponse(rawText);
     if (parsed?.result?.content) {
       return parsed.result.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
     }
