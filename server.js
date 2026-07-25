@@ -131,6 +131,13 @@ if (count > THRESHOLD) {
     .eq('visible', true)
     .order('created_at', { ascending: true });
 
+  // 检索相关记忆
+const memoryResult = await callOmbreTool('breath', { query: userMessage });
+if (memoryResult) {
+  console.log('🧠 检索到记忆:', memoryResult);
+  // 可以把 memoryResult 拼进系统提示词
+}
+  
   // 调用Claude API
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
   method: 'POST',
