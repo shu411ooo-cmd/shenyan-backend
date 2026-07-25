@@ -132,7 +132,10 @@ if (count > THRESHOLD) {
     .order('created_at', { ascending: true });
 
   // 检索相关记忆
+console.log('🔍 准备调用 Ombre Brain 检索记忆...');
 const memoryResult = await callOmbreTool('breath', { query: userMessage });
+console.log('🔍 检索结果:', memoryResult);
+  
 if (memoryResult) {
   console.log('🧠 检索到记忆:', memoryResult);
   // 可以把 memoryResult 拼进系统提示词
