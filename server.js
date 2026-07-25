@@ -64,6 +64,56 @@ app.post('/sessions/:id/chat', async (req, res) => {
     role: 'user',
     content: userMessage
   });
+  // 压缩检查
+const { count } = await supabase
+  .from('messages')
+  .select('*', { count: 'exact', head: true })
+  .eq('session_id', sessionId)
+  .eq('visible', true);
+
+const THRESHOLD = 20;
+
+if (count > THRESHOLD) {
+  const { data: oldMessages } = await supabase
+    .from('messages')
+    .select('id, content, role')
+    .eq('session_id', sessionId)
+    .eq('visible', true)
+    .order('created_at', { ascending: true })
+    .limit(10);
+
+  const textToCompress = oldMessages.map(m => {
+    const label = m.role === 'user' ? '用户' : '沈晏';
+    return `${label}: ${m.content}`;
+  }).join('\n');
+
+  const summaryRes = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'system', content: '请用1-2句话总结以下对话的核心内容。' },
+        { role: 'user', content: textToCompress }
+      ],
+      max_tokens: 100
+    })
+  });
+
+  const summaryData = await summaryRes.json();
+  const summary = summaryData.choices[0].message.content;
+
+  await supabase.from('memories').insert({ summary });
+
+  const ids = oldMessages.map(m => m.id);
+  await supabase
+    .from('messages')
+    .update({ visible: false })
+    .in('id', ids);
+}
 
   // 拉取历史消息
   const { data: history } = await supabase
