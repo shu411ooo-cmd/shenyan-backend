@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const axios = require('axios');
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 
@@ -169,6 +170,73 @@ if (count > THRESHOLD) {
   res.json({ reply: aiReply });
 });
 
+// ===== Ombre Brain MCP 客户端 =====
+function parseSSEResponse(text) {
+  const lines = text.split('\n');
+  for (const line of lines) {
+    if (line.startsWith('data: ')) {
+      try { return JSON.parse(line.substring(6)); } catch (e) {}
+    }
+  }
+  try { return JSON.parse(text); } catch (e) { return null; }
+}
+
+let ombreSessionId = null;
+let ombreCallId = 0;
+
+async function initOmbreSession() {
+  try {
+    const response = await axios.post(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
+      jsonrpc: "2.0",
+      method: "initialize",
+      params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "shenyan-backend", version: "1.0" } },
+      id: ++ombreCallId
+    }, {
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' }
+    });
+    ombreSessionId = response.data.result?.sessionId || null;
+    if (ombreSessionId) {
+      await axios.post(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
+        jsonrpc: "2.0",
+        method: "notifications/initialized"
+      }, {
+        headers: { 'Content-Type': 'application/json', 'Mcp-Session-Id': ombreSessionId }
+      });
+    }
+    return !!ombreSessionId;
+  } catch (err) {
+    console.error('MCP 会话初始化失败:', err.message);
+    return false;
+  }
+}
+
+async function callOmbreTool(toolName, args = {}) {
+  if (!process.env.OMBRE_BRAIN_URL) { console.warn('OMBRE_BRAIN_URL 未配置'); return null; }
+  try {
+    if (!ombreSessionId) {
+      const ok = await initOmbreSession();
+      if (!ok) return null;
+    }
+    const response = await axios.post(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: { name: toolName, arguments: args },
+      id: ++ombreCallId
+    }, {
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream', 'Mcp-Session-Id': ombreSessionId },
+      transformResponse: [(data) => data]
+    });
+    const parsed = parseSSEResponse(response.data);
+    if (parsed?.result?.content) {
+      return parsed.result.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
+    }
+    return parsed ? JSON.stringify(parsed) : null;
+  } catch (err) {
+    console.error(`MCP 工具 ${toolName} 调用失败:`, err.message);
+    return null;
+  }
+}
+// ===== Ombre Brain MCP 客户端结束 =====
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`服务器运行在端口 ${PORT}`);
