@@ -94,7 +94,7 @@ if (count > THRESHOLD) {
       'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
     },
     body: JSON.stringify({
-      model: 'deepseek-chat',
+      model: 'deepseek-v4-flash',
       messages: [
         { role: 'system', content: '请用1-2句话总结以下对话的核心内容。' },
         { role: 'user', content: textToCompress }
@@ -111,7 +111,6 @@ if (!summaryData.choices || summaryData.choices.length === 0) {
 } else {
   const summary = summaryData.choices[0].message.content;
   // 后续存摘要的代码
-}
   await supabase.from('memories').insert({ summary });
 
   const ids = oldMessages.map(m => m.id);
