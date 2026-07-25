@@ -64,7 +64,7 @@ app.post('/sessions/:id/chat', async (req, res) => {
     role: 'user',
     content: userMessage
   });
-  // 压缩检查
+ // ===== 压缩检查 =====
 const { count } = await supabase
   .from('messages')
   .select('*', { count: 'exact', head: true })
@@ -103,22 +103,25 @@ if (count > THRESHOLD) {
     })
   });
 
-  const summaryData = await summaryRes.json();
-  
-if (!summaryData.choices || summaryData.choices.length === 0) {
-  console.error('DeepSeek返回异常:', summaryData);
-  // 跳过压缩，继续正常对话
-} else {
-  const summary = summaryData.choices[0].message.content;
-  // 后续存摘要的代码
-  await supabase.from('memories').insert({ summary });
-
-  const ids = oldMessages.map(m => m.id);
-  await supabase
-    .from('messages')
-    .update({ visible: false })
-    .in('id', ids);
+  if (!summaryRes.ok) {
+    console.error('DeepSeek API 请求失败:', summaryRes.status, await summaryRes.text());
+  } else {
+    const summaryData = await summaryRes.json();
+    if (summaryData.choices && summaryData.choices.length > 0) {
+      const summary = summaryData.choices[0].message.content;
+      await supabase.from('memories').insert({ summary });
+      const ids = oldMessages.map(m => m.id);
+      await supabase
+        .from('messages')
+        .update({ visible: false })
+        .in('id', ids);
+      console.log('✅ 压缩成功，已存储摘要');
+    } else {
+      console.error('DeepSeek 返回空结果:', summaryData);
+    }
+  }
 }
+// ===== 压缩检查结束 =====
 
   // 拉取历史消息
   const { data: history } = await supabase
