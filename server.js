@@ -104,7 +104,7 @@ if (count > THRESHOLD) {
   });
 
   const summaryData = await summaryRes.json();
-  const summary = summaryData.choices[0].message.content;
+  
 if (!summaryData.choices || summaryData.choices.length === 0) {
   console.error('DeepSeek返回异常:', summaryData);
   // 跳过压缩，继续正常对话
