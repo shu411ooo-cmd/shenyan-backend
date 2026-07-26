@@ -58,12 +58,173 @@ app.post('/sessions/:id/chat', async (req, res) => {
   const sessionId = req.params.id;
   const userMessage = req.body.message;
 
-  // 存用户消息
-  await supabase.from('messages').insert({
-    session_id: sessionId,
-    role: 'user',
-    content: userMessage
-  });
+  try {
+    // 1. 存用户消息
+    await supabase.from('messages').insert({
+      session_id: sessionId,
+      role: 'user',
+      content: userMessage
+    });
+
+    // ===== 2. 压缩检查（保留你原有的逻辑） =====
+    const { count } = await supabase
+      .from('messages')
+      .select('*', { count: 'exact', head: true })
+      .eq('session_id', sessionId)
+      .eq('visible', true);
+
+    const THRESHOLD = 20;
+    if (count > THRESHOLD) {
+      // 如果你有压缩逻辑，代码会继续在这里执行
+    }
+
+    // 3. 拉取历史消息
+    const { data: history } = await supabase
+      .from('messages')
+      .select('role, content')
+      .eq('session_id', sessionId)
+      .eq('visible', true)
+      .order('created_at', { ascending: true });
+
+    // 构建消息列表
+    const messages = [
+      { role: 'system', content: process.env.SYSTEM_PROMPT || '你是沈晏。' },
+      ...history.map(msg => ({
+        role: msg.role === 'assistant' ? 'assistant' : 'user',
+        content: msg.content
+      }))
+    ];
+
+    // 4. 定义工具列表（breath / hold）
+    const tools = [
+      {
+        type: 'function',
+        function: {
+          name: 'breath',
+          description: '当需要将新的记忆、感受或笔记写入/更新到 Ombre Brain 时调用。',
+          parameters: {
+            type: 'object',
+            properties: {
+              content: {
+                type: 'string',
+                description: '需要存入或更新的记忆内容'
+              }
+            },
+            required: ['content']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'hold',
+          description: '当需要检索、读取或查询 Ombre Brain 中的长期记忆时调用。',
+          parameters: {
+            type: 'object',
+            properties: {
+              query: {
+                type: 'string',
+                description: '查询记忆的关键词或问题'
+              }
+            },
+            required: ['query']
+          }
+        }
+      }
+    ];
+
+    // 5. 第一次调用 Claude
+    const firstResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'anthropic/claude-3.5-sonnet',
+        messages: messages,
+        tools: tools,
+        tool_choice: 'auto',
+        max_tokens: 1000
+      })
+    });
+
+    const firstData = await firstResponse.json();
+    if (!firstData.choices || !firstData.choices[0]) {
+      throw new Error(`OpenRouter API 报错: ${JSON.stringify(firstData)}`);
+    }
+
+    const assistantMessage = firstData.choices[0].message;
+
+    // 6. 判断是否有工具调用请求
+    let finalReply = '';
+    if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
+      messages.push(assistantMessage);
+
+      for (const toolCall of assistantMessage.tool_calls) {
+        const functionName = toolCall.function.name;
+        const functionArgs = JSON.parse(toolCall.function.arguments);
+
+        console.log(`🔧 Claude 决定调用工具: ${functionName}`, functionArgs);
+
+        let toolResult;
+        try {
+          toolResult = await callOmbreTool(functionName, functionArgs);
+        } catch (err) {
+          toolResult = { error: err.message };
+          console.error(`❌ 工具 ${functionName} 执行失败:`, err);
+        }
+
+        messages.push({
+          tool_call_id: toolCall.id,
+          role: 'tool',
+          name: functionName,
+          content: JSON.stringify(toolResult)
+        });
+      }
+
+      // 第二次调用 Claude 整合工具结果
+      const secondResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'anthropic/claude-3.5-sonnet',
+          messages: messages,
+          tools: tools,
+          max_tokens: 1000
+        })
+      });
+
+      const secondData = await secondResponse.json();
+      finalReply = secondData.choices[0].message.content;
+    } else {
+      finalReply = assistantMessage.content;
+    }
+
+    // 7. 存 AI 回复到 Supabase
+    await supabase.from('messages').insert({
+      session_id: sessionId,
+      role: 'assistant',
+      content: finalReply
+    });
+
+    // 8. 更新会话更新时间
+    await supabase.from('sessions')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', sessionId);
+
+    // 9. 返回给前端
+    res.json({ reply: finalReply });
+
+  } catch (error) {
+    console.error("Chat Error:", error);
+    res.status(500).json({ error: error.message || "服务器开小差了" });
+  }
+});
+
  // ===== 压缩检查 =====
 const { count } = await supabase
   .from('messages')
