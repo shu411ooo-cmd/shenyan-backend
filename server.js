@@ -55,16 +55,25 @@ async function initOmbreSession() {
 }
 
 async function callOmbreTool(toolName, args = {}) {
-  console.log(`🔥 callOmbreTool 被调用了，工具名: ${toolName}`);
-  if (!process.env.OMBRE_BRAIN_URL) {
-    console.warn('OMBRE_BRAIN_URL 未配置');
-    return null;
+  console.log(`[调试] OMBRE_BRAIN_URL 当前值:`, process.env.OMBRE_BRAIN_URL);
+  
+  if (!process.env.OMBRE_BRAIN_URL) { 
+    console.error('❌ [错误] OMBRE_BRAIN_URL 未配置！请检查 Railway 环境变量！'); 
+    return null; 
   }
+
   try {
     if (!ombreSessionId) {
+      console.log('🔄 [调试] 正在尝试建立 Ombre Session...');
       const ok = await initOmbreSession();
-      if (!ok) return null;
+      if (!ok) {
+        console.error('❌ [错误] initOmbreSession 初始化 Session 失败！');
+        return null;
+      }
+      console.log('✅ [调试] Session 建立成功，ID 为:', ombreSessionId);
     }
+
+    console.log(`🚀 [调试] 正在向 ${process.env.OMBRE_BRAIN_URL}/mcp 发送 POST 请求...`);
     const response = await fetch(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
       method: 'POST',
       headers: {
@@ -79,29 +88,26 @@ async function callOmbreTool(toolName, args = {}) {
         id: ++ombreCallId
       })
     });
+
     const rawText = await response.text();
+    console.log(`📡 [调试] Ombre Brain 返回原始文本:`, rawText);
+
     const parsed = parseSSEResponse(rawText);
-
-    console.log(`📦 MCP 工具 ${toolName} 原始响应:`, rawText);
-    console.log(`📦 MCP 工具 ${toolName} 解析结果:`, JSON.stringify(parsed, null, 2));
-
     if (parsed?.result?.content) {
-      const result = parsed.result.content
-        .filter(c => c.type === 'text')
-        .map(c => c.text)
-        .join('\n');
-      console.log(`✅ 工具 ${toolName} 执行成功:`, result);
-      return result;
+      const resultText = parsed.result.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
+      console.log(`🎉 [调试] 解析成功，最终返回给 AI 的内容:`, resultText);
+      return resultText;
     }
-
-    console.warn(`⚠️ 工具 ${toolName} 返回空结果:`, parsed);
+    
+    console.warn('⚠️ [警告] 无法从 SSEResponse 解析出 content，原始解析结构为:', JSON.stringify(parsed));
     return parsed ? JSON.stringify(parsed) : null;
 
   } catch (err) {
-    console.error(`❌ MCP 工具 ${toolName} 调用失败:`, err.message);
+    console.error(`💥 [崩溃] MCP 工具 ${toolName} 调用彻底报错:`, err);
     return null;
   }
 }
+
 
 // ===== 健康检查与路由 =====
 app.get('/health', (req, res) => {
