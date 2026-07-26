@@ -80,7 +80,7 @@ async function callOmbreTool(toolName, args = {}) {
         'Content-Type': 'application/json',
         'Accept': 'application/json, text/event-stream',
         'Mcp-Session-Id': ombreSessionId
-        Authorization: `Bearer ${process.env.OMBRE_STATIC_TOKEN}`
+        Authorization: `Bearer ${process.env.OMBRE_STATIC_TOKEN}`,
       },
       body: JSON.stringify({
         jsonrpc: "2.0",
