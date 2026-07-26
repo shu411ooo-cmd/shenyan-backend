@@ -66,7 +66,7 @@ app.post('/sessions/:id/chat', async (req, res) => {
       content: userMessage
     });
 
-    // ===== 2. 压缩检查（保留你原有的逻辑） =====
+    // 2. 压缩检查
     const { count } = await supabase
       .from('messages')
       .select('*', { count: 'exact', head: true })
@@ -75,7 +75,7 @@ app.post('/sessions/:id/chat', async (req, res) => {
 
     const THRESHOLD = 20;
     if (count > THRESHOLD) {
-      // 如果你有压缩逻辑，代码会继续在这里执行
+      // 这里的压缩逻辑保持原样或留空
     }
 
     // 3. 拉取历史消息
@@ -89,13 +89,13 @@ app.post('/sessions/:id/chat', async (req, res) => {
     // 构建消息列表
     const messages = [
       { role: 'system', content: process.env.SYSTEM_PROMPT || '你是沈晏。' },
-      ...history.map(msg => ({
+      ...(history || []).map(msg => ({
         role: msg.role === 'assistant' ? 'assistant' : 'user',
         content: msg.content
       }))
     ];
 
-    // 4. 定义工具列表（breath / hold）
+    // 4. 定义工具列表
     const tools = [
       {
         type: 'function',
@@ -133,7 +133,7 @@ app.post('/sessions/:id/chat', async (req, res) => {
       }
     ];
 
-    // 5. 第一次调用 Claude
+    // 5. 第一次调用大模型
     const firstResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -151,12 +151,12 @@ app.post('/sessions/:id/chat', async (req, res) => {
 
     const firstData = await firstResponse.json();
     if (!firstData.choices || !firstData.choices[0]) {
-      throw new Error(`OpenRouter API 报错: ${JSON.stringify(firstData)}`);
+      throw new Error(`OpenRouter 返回异常: ${JSON.stringify(firstData)}`);
     }
 
     const assistantMessage = firstData.choices[0].message;
 
-    // 6. 判断是否有工具调用请求
+    // 6. 判断是否有工具调用
     let finalReply = '';
     if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
       messages.push(assistantMessage);
@@ -165,7 +165,7 @@ app.post('/sessions/:id/chat', async (req, res) => {
         const functionName = toolCall.function.name;
         const functionArgs = JSON.parse(toolCall.function.arguments);
 
-        console.log(`🔧 Claude 决定调用工具: ${functionName}`, functionArgs);
+        console.log(`🔧 AI 决定调用工具: ${functionName}`, functionArgs);
 
         let toolResult;
         try {
@@ -183,7 +183,7 @@ app.post('/sessions/:id/chat', async (req, res) => {
         });
       }
 
-      // 第二次调用 Claude 整合工具结果
+      // 第二次调用
       const secondResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -204,27 +204,26 @@ app.post('/sessions/:id/chat', async (req, res) => {
       finalReply = assistantMessage.content;
     }
 
-    // 7. 存 AI 回复到 Supabase
+    // 7. 保存 AI 回复到数据库
     await supabase.from('messages').insert({
       session_id: sessionId,
       role: 'assistant',
       content: finalReply
     });
 
-    // 8. 更新会话更新时间
+    // 8. 更新会话时间
     await supabase.from('sessions')
       .update({ updated_at: new Date().toISOString() })
       .eq('id', sessionId);
 
-    // 9. 返回给前端
+    // 9. 返回前端
     res.json({ reply: finalReply });
 
   } catch (error) {
     console.error("Chat Error:", error);
-    res.status(500).json({ error: error.message || "服务器开小差了" });
+    res.status(500).json({ error: error.message || "服务器出错了" });
   }
 });
-
  // ===== 压缩检查 =====
 const { count } = await supabase
   .from('messages')
