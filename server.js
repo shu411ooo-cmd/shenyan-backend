@@ -77,6 +77,24 @@ async function callOmbreTool(toolName, args = {}) {
     });
     const rawText = await response.text();
     const parsed = parseSSEResponse(rawText);
+    // 👇 在这里加日志
+    console.log(`📦 MCP 工具 ${toolName} 原始响应:`, rawText);
+    console.log(`📦 MCP 工具 ${toolName} 解析结果:`, JSON.stringify(parsed, null, 2));
+
+    if (parsed?.result?.content) {
+      const result = parsed.result.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
+      console.log(`✅ 工具 ${toolName} 执行成功:`, result);
+      return result;
+    }
+
+    console.warn(`⚠️ 工具 ${toolName} 返回空结果:`, parsed);
+    return parsed ? JSON.stringify(parsed) : null;
+
+  } catch (err) {
+    console.error(`❌ MCP 工具 ${toolName} 调用失败:`, err.message);
+    return null;
+  }
+}
     if (parsed?.result?.content) {
       return parsed.result.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
     }
@@ -295,7 +313,8 @@ app.post('/sessions/:id/chat', async (req, res) => {
         } catch (err) {
           toolResult = { error: err.message };
           console.error(`❌ 工具 ${functionName} 执行失败:`, err);
-        }
+        } 
+console.log(`📦 工具 ${functionName} 返回给 Claude 的结果:`, JSON.stringify(toolResult, null, 2));
 
         messages.push({
           tool_call_id: toolCall.id,
