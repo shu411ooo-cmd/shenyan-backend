@@ -12,7 +12,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ===== Ombre Brain MCP 客户端工具配置 =====
+// ===== Ombre Brain MCP 客户端 =====
 function parseSSEResponse(text) {
   const lines = text.split('\n');
   for (const line of lines) {
@@ -55,7 +55,10 @@ async function initOmbreSession() {
 }
 
 async function callOmbreTool(toolName, args = {}) {
-  if (!process.env.OMBRE_BRAIN_URL) { console.warn('OMBRE_BRAIN_URL 未配置'); return null; }
+  if (!process.env.OMBRE_BRAIN_URL) {
+    console.warn('OMBRE_BRAIN_URL 未配置');
+    return null;
+  }
   try {
     if (!ombreSessionId) {
       const ok = await initOmbreSession();
@@ -77,12 +80,15 @@ async function callOmbreTool(toolName, args = {}) {
     });
     const rawText = await response.text();
     const parsed = parseSSEResponse(rawText);
-    // 👇 在这里加日志
+
     console.log(`📦 MCP 工具 ${toolName} 原始响应:`, rawText);
     console.log(`📦 MCP 工具 ${toolName} 解析结果:`, JSON.stringify(parsed, null, 2));
 
     if (parsed?.result?.content) {
-      const result = parsed.result.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
+      const result = parsed.result.content
+        .filter(c => c.type === 'text')
+        .map(c => c.text)
+        .join('\n');
       console.log(`✅ 工具 ${toolName} 执行成功:`, result);
       return result;
     }
@@ -95,17 +101,8 @@ async function callOmbreTool(toolName, args = {}) {
     return null;
   }
 }
-    if (parsed?.result?.content) {
-      return parsed.result.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
-    }
-    return parsed ? JSON.stringify(parsed) : null;
-  } catch (err) {
-    console.error(`MCP 工具 ${toolName} 调用失败:`, err.message);
-    return null;
-  }
-}
 
-// ===== 基础健康检查与 API 路由 =====
+// ===== 健康检查与路由 =====
 app.get('/health', (req, res) => {
   res.json({ status: '服务正常，沈晏在线' });
 });
@@ -116,7 +113,6 @@ app.get('/db-test', async (req, res) => {
   res.json({ ok: true, sessions: data });
 });
 
-// 创建新会话
 app.post('/sessions', async (req, res) => {
   const { data, error } = await supabase
     .from('sessions')
@@ -127,7 +123,6 @@ app.post('/sessions', async (req, res) => {
   res.json(data);
 });
 
-// 获取所有会话
 app.get('/sessions', async (req, res) => {
   const { data, error } = await supabase
     .from('sessions')
@@ -137,7 +132,6 @@ app.get('/sessions', async (req, res) => {
   res.json(data);
 });
 
-// 获取某个会话的消息
 app.get('/sessions/:id/messages', async (req, res) => {
   const { data, error } = await supabase
     .from('messages')
@@ -149,20 +143,20 @@ app.get('/sessions/:id/messages', async (req, res) => {
   res.json(data);
 });
 
-// ===== 发送消息并获取回复 (核心整合接口) =====
+// ===== 核心对话接口（含工具调用） =====
 app.post('/sessions/:id/chat', async (req, res) => {
   const sessionId = req.params.id;
   const userMessage = req.body.message;
 
   try {
-    // 1. 存用户消息到 Supabase
+    // 1. 存用户消息
     await supabase.from('messages').insert({
       session_id: sessionId,
       role: 'user',
       content: userMessage
     });
 
-    // 2. 压缩检查（超过 20 条旧消息使用 DeepSeek 进行压缩）
+    // 2. 压缩检查（超过 20 条触发）
     const { count } = await supabase
       .from('messages')
       .select('*', { count: 'exact', head: true })
@@ -218,7 +212,7 @@ app.post('/sessions/:id/chat', async (req, res) => {
       }
     }
 
-    // 3. 拉取最新的历史对话
+    // 3. 拉取历史消息
     const { data: history } = await supabase
       .from('messages')
       .select('role, content')
@@ -226,7 +220,6 @@ app.post('/sessions/:id/chat', async (req, res) => {
       .eq('visible', true)
       .order('created_at', { ascending: true });
 
-    // 构建消息历史
     const messages = [
       { role: 'system', content: process.env.SYSTEM_PROMPT || '你是沈晏。' },
       ...(history || []).map(msg => ({
@@ -235,45 +228,45 @@ app.post('/sessions/:id/chat', async (req, res) => {
       }))
     ];
 
-    // 4. 定义可调用的工具列表（Ombre Brain: breath & hold）
+    // 4. 工具定义（breath = 检索，hold = 存储）
     const tools = [
-  {
-    type: 'function',
-    function: {
-      name: 'breath',
-      description: '当需要检索、读取或查询 Ombre Brain 中的长期记忆时调用。',  // ← 改这里
-      parameters: {
-        type: 'object',
-        properties: {
-          query: {   // ← 注意参数是 query
-            type: 'string',
-            description: '查询记忆的关键词或问题'
+      {
+        type: 'function',
+        function: {
+          name: 'breath',
+          description: '当需要检索、读取或查询 Ombre Brain 中的长期记忆时调用。',
+          parameters: {
+            type: 'object',
+            properties: {
+              query: {
+                type: 'string',
+                description: '查询记忆的关键词或问题'
+              }
+            },
+            required: ['query']
           }
-        },
-        required: ['query']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'hold',
-      description: '当需要将新的记忆、感受或笔记写入/更新到 Ombre Brain 时调用。',  // ← 改这里
-      parameters: {
-        type: 'object',
-        properties: {
-          content: {   // ← 参数是 content
-            type: 'string',
-            description: '需要存入或更新的记忆内容'
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'hold',
+          description: '当需要将新的记忆、感受或笔记写入/更新到 Ombre Brain 时调用。',
+          parameters: {
+            type: 'object',
+            properties: {
+              content: {
+                type: 'string',
+                description: '需要存入或更新的记忆内容'
+              }
+            },
+            required: ['content']
           }
-        },
-        required: ['content']
+        }
       }
-    }
-  }
-];
+    ];
 
-    // 5. 第一次调用 Claude (包含工具选项)
+    // 5. 第一次调用 Claude（带工具）
     const firstResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -295,9 +288,9 @@ app.post('/sessions/:id/chat', async (req, res) => {
     }
 
     const assistantMessage = firstData.choices[0].message;
-
-    // 6. 判断 Claude 是否要自主调用工具
     let finalReply = '';
+
+    // 6. 如果 Claude 想调用工具
     if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
       messages.push(assistantMessage);
 
@@ -313,8 +306,9 @@ app.post('/sessions/:id/chat', async (req, res) => {
         } catch (err) {
           toolResult = { error: err.message };
           console.error(`❌ 工具 ${functionName} 执行失败:`, err);
-        } 
-console.log(`📦 工具 ${functionName} 返回给 Claude 的结果:`, JSON.stringify(toolResult, null, 2));
+        }
+
+        console.log(`📦 工具 ${functionName} 返回给 Claude 的结果:`, JSON.stringify(toolResult, null, 2));
 
         messages.push({
           tool_call_id: toolCall.id,
@@ -324,7 +318,7 @@ console.log(`📦 工具 ${functionName} 返回给 Claude 的结果:`, JSON.stri
         });
       }
 
-      // 第二次请求，拿到处理工具数据后的最终回答
+      // 第二次调用 Claude（拿到工具结果后）
       const secondResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -334,7 +328,6 @@ console.log(`📦 工具 ${functionName} 返回给 Claude 的结果:`, JSON.stri
         body: JSON.stringify({
           model: 'anthropic/claude-sonnet-4-6',
           messages: messages,
-          tools: tools,
           max_tokens: 1000
         })
       });
@@ -345,19 +338,19 @@ console.log(`📦 工具 ${functionName} 返回给 Claude 的结果:`, JSON.stri
       finalReply = assistantMessage.content;
     }
 
-    // 7. 存 AI 回复到 Supabase
+    // 7. 存 AI 回复
     await supabase.from('messages').insert({
       session_id: sessionId,
       role: 'assistant',
       content: finalReply
     });
 
-    // 8. 更新会话更新时间
+    // 8. 更新会话时间
     await supabase.from('sessions')
       .update({ updated_at: new Date().toISOString() })
       .eq('id', sessionId);
 
-    // 9. 返回给前端展示
+    // 9. 返回前端
     res.json({ reply: finalReply });
 
   } catch (error) {
@@ -366,7 +359,7 @@ console.log(`📦 工具 ${functionName} 返回给 Claude 的结果:`, JSON.stri
   }
 });
 
-// 测试 Ombre Brain 连接状态
+// 测试 Ombre Brain 连接
 app.get('/api/test-ombre', async (req, res) => {
   try {
     const result = await callOmbreTool('breath', { query: 'test' });
