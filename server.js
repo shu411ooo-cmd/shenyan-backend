@@ -175,7 +175,7 @@ app.post('/sessions/:id/chat', async (req, res) => {
               'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
             },
             body: JSON.stringify({
-              model: 'deepseek-chat',
+              model: 'deepseek-v4-flash',
               messages: [
                 { role: 'system', content: '请用1-2句话总结以下对话的核心内容。' },
                 { role: 'user', content: textToCompress }
@@ -219,41 +219,41 @@ app.post('/sessions/:id/chat', async (req, res) => {
 
     // 4. 定义可调用的工具列表（Ombre Brain: breath & hold）
     const tools = [
-      {
-        type: 'function',
-        function: {
-          name: 'breath',
-          description: '当需要将新的记忆、感受或笔记写入/更新到 Ombre Brain 时调用。',
-          parameters: {
-            type: 'object',
-            properties: {
-              content: {
-                type: 'string',
-                description: '需要存入或更新的记忆内容'
-              }
-            },
-            required: ['content']
+  {
+    type: 'function',
+    function: {
+      name: 'breath',
+      description: '当需要检索、读取或查询 Ombre Brain 中的长期记忆时调用。',  // ← 改这里
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {   // ← 注意参数是 query
+            type: 'string',
+            description: '查询记忆的关键词或问题'
           }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'hold',
-          description: '当需要检索、读取或查询 Ombre Brain 中的长期记忆时调用。',
-          parameters: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: '查询记忆的关键词或问题'
-              }
-            },
-            required: ['query']
-          }
-        }
+        },
+        required: ['query']
       }
-    ];
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'hold',
+      description: '当需要将新的记忆、感受或笔记写入/更新到 Ombre Brain 时调用。',  // ← 改这里
+      parameters: {
+        type: 'object',
+        properties: {
+          content: {   // ← 参数是 content
+            type: 'string',
+            description: '需要存入或更新的记忆内容'
+          }
+        },
+        required: ['content']
+      }
+    }
+  }
+];
 
     // 5. 第一次调用 Claude (包含工具选项)
     const firstResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -263,7 +263,7 @@ app.post('/sessions/:id/chat', async (req, res) => {
         'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`
       },
       body: JSON.stringify({
-        model: 'anthropic/claude-3.5-sonnet',
+        model: 'anthropic/claude-sonnet-4-6',
         messages: messages,
         tools: tools,
         tool_choice: 'auto',
@@ -313,7 +313,7 @@ app.post('/sessions/:id/chat', async (req, res) => {
           'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`
         },
         body: JSON.stringify({
-          model: 'anthropic/claude-3.5-sonnet',
+          model: 'anthropic/claude-sonnet-4-6',
           messages: messages,
           tools: tools,
           max_tokens: 1000
