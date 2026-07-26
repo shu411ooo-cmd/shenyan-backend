@@ -55,6 +55,7 @@ async function initOmbreSession() {
 }
 
 async function callOmbreTool(toolName, args = {}) {
+  console.log(`🔥 callOmbreTool 被调用了，工具名: ${toolName}`);
   if (!process.env.OMBRE_BRAIN_URL) {
     console.warn('OMBRE_BRAIN_URL 未配置');
     return null;
