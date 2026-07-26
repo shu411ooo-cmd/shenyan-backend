@@ -38,7 +38,12 @@ async function initOmbreSession() {
         id: ++ombreCallId
       })
     });
-    const data = await response.json();
+    
+   console.log("📡 initOmbreSession 响应状态:", response.status);
+console.log("📡 initOmbreSession 响应头:", Object.fromEntries(response.headers.entries()));
+const data = await response.json();
+console.log("📡 initOmbreSession 响应体:", data);
+    
     ombreSessionId = data.result?.sessionId || null;
     if (ombreSessionId) {
       await fetch(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
