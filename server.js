@@ -320,6 +320,7 @@ const currentTime = now.toLocaleString('zh-CN', {
   day: 'numeric', 
   hour: '2-digit', 
   minute: '2-digit' 
+  timeZone: 'Asia/Shanghai'
 });
 
 // 构建系统提示词（包含时间）
