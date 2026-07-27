@@ -13,84 +13,129 @@ app.use(cors());
 app.use(express.json());
 
 // ===== Ombre Brain MCP 客户端 =====
+
 function parseSSEResponse(text) {
+  if (!text) return null;
+
   const lines = text.split('\n');
   for (const line of lines) {
     if (line.startsWith('data: ')) {
-      try { return JSON.parse(line.substring(6)); } catch (e) {}
+      try {
+        return JSON.parse(line.substring(6));
+      } catch (e) {
+        // ignore
+      }
     }
   }
-  try { return JSON.parse(text); } catch (e) { return null; }
+
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    return null;
+  }
 }
 
 let ombreSessionId = null;
 let ombreCallId = 0;
 
 function buildOmbreHeaders(extraHeaders = {}) {
+  const token = process.env.OMBRE_STATIC_TOKEN || '';
+
   return {
     'Content-Type': 'application/json',
     'Accept': 'application/json, text/event-stream',
-    Authorization: `Bearer ${process.env.OMBRE_STATIC_TOKEN}`,
+    // 兼容两种常见鉴权头，尽量把问题从“头名不对”里排掉
+    Authorization: `Bearer ${token}`,
+    'Ombre-MCP-Token': token,
     ...extraHeaders,
   };
+}
+
+async function readResponseBody(response) {
+  const rawText = await response.text();
+  console.log('📡 [调试] 响应原文:', rawText);
+  return rawText;
 }
 
 async function initOmbreSession() {
   try {
     const headers = buildOmbreHeaders();
 
-    console.log("========== OMBRE INIT REQUEST ==========");
-    console.log("Token length:", process.env.OMBRE_STATIC_TOKEN?.length);
-    console.log("Authorization:", headers.Authorization);
+    console.log('========== OMBRE INIT REQUEST ==========');
+    console.log('OMBRE_BRAIN_URL:', process.env.OMBRE_BRAIN_URL);
+    console.log('Token length:', process.env.OMBRE_STATIC_TOKEN?.length || 0);
+    console.log('Authorization:', headers.Authorization);
+    console.log('Ombre-MCP-Token set:', !!headers['Ombre-MCP-Token']);
 
     const response = await fetch(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: "initialize",
+        jsonrpc: '2.0',
+        method: 'initialize',
         params: {
-          protocolVersion: "2024-11-05",
+          protocolVersion: '2024-11-05',
           capabilities: {},
-          clientInfo: { name: "shenyan-backend", version: "1.0" }
+          clientInfo: {
+            name: 'shenyan-backend',
+            version: '1.0',
+          },
         },
-        id: ++ombreCallId
-      })
+        id: ++ombreCallId,
+      }),
     });
 
-    console.log("📡 initOmbreSession 响应状态:", response.status);
-    console.log("📡 initOmbreSession 响应头:", Object.fromEntries(response.headers.entries()));
+    console.log('📡 initOmbreSession 响应状态:', response.status);
+    console.log(
+      '📡 initOmbreSession 响应头:',
+      Object.fromEntries(response.headers.entries())
+    );
 
-    const rawText = await response.text();
-    console.log("📡 initOmbreSession 响应体原文:", rawText);
-
+    const rawText = await readResponseBody(response);
     const data = parseSSEResponse(rawText);
-    console.log("📡 initOmbreSession 解析结果:", data);
 
-    ombreSessionId = data?.result?.sessionId || null;
+    console.log('📡 initOmbreSession 解析结果:', data);
 
-    if (ombreSessionId) {
-      await fetch(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
-        method: 'POST',
-        headers: buildOmbreHeaders({
-          'Mcp-Session-Id': ombreSessionId
-        }),
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          method: "notifications/initialized"
-        })
-      });
+    const headerSessionId =
+      response.headers.get('mcp-session-id') ||
+      response.headers.get('Mcp-Session-Id');
+
+    ombreSessionId = headerSessionId || data?.result?.sessionId || null;
+
+    console.log('📡 initOmbreSession sessionId:', ombreSessionId);
+
+    if (!response.ok) {
+      ombreSessionId = null;
+      return false;
     }
 
-    return !!ombreSessionId;
+    if (!ombreSessionId) {
+      console.warn('⚠️ [警告] initialize 成功但没有拿到 sessionId');
+      return false;
+    }
+
+    // 教程里的第二步：发送 initialized 通知
+    await fetch(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
+      method: 'POST',
+      headers: buildOmbreHeaders({
+        'Mcp-Session-Id': ombreSessionId,
+      }),
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/initialized',
+      }),
+    });
+
+    return true;
   } catch (err) {
     console.error('MCP 会话初始化失败:', err);
+    ombreSessionId = null;
     return false;
   }
 }
 
 async function callOmbreTool(toolName, args = {}) {
-  console.log(`[调试] OMBRE_BRAIN_URL 当前值:`, process.env.OMBRE_BRAIN_URL);
+  console.log('[调试] OMBRE_BRAIN_URL 当前值:', process.env.OMBRE_BRAIN_URL);
 
   if (!process.env.OMBRE_BRAIN_URL) {
     console.error('❌ [错误] OMBRE_BRAIN_URL 未配置！请检查 Railway 环境变量！');
@@ -116,34 +161,53 @@ async function callOmbreTool(toolName, args = {}) {
         'Mcp-Session-Id': ombreSessionId,
       }),
       body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: "tools/call",
-        params: { name: toolName, arguments: args },
-        id: ++ombreCallId
-      })
+        jsonrpc: '2.0',
+        method: 'tools/call',
+        params: {
+          name: toolName,
+          arguments: args,
+        },
+        id: ++ombreCallId,
+      }),
     });
 
-    const rawText = await response.text();
-    console.log(`📡 [调试] Ombre Brain 返回原始文本:`, rawText);
+    console.log('📡 [调试] tools/call 响应状态:', response.status);
+    console.log(
+      '📡 [调试] tools/call 响应头:',
+      Object.fromEntries(response.headers.entries())
+    );
 
+    const rawText = await readResponseBody(response);
     const parsed = parseSSEResponse(rawText);
+
+    if (!response.ok) {
+      console.warn('⚠️ [警告] tools/call 未成功返回正常内容');
+      ombreSessionId = null;
+      return null;
+    }
+
     if (parsed?.result?.content) {
       const resultText = parsed.result.content
         .filter(c => c.type === 'text')
         .map(c => c.text)
         .join('\n');
-      console.log(`🎉 [调试] 解析成功，最终返回给 AI 的内容:`, resultText);
+
+      console.log('🎉 [调试] 解析成功，最终返回给 AI 的内容:', resultText);
       return resultText;
     }
 
-    console.warn('⚠️ [警告] 无法从 SSEResponse 解析出 content，原始解析结构为:', JSON.stringify(parsed));
+    console.warn(
+      '⚠️ [警告] 无法从 SSEResponse 解析出 content，原始解析结构为:',
+      JSON.stringify(parsed)
+    );
     return parsed ? JSON.stringify(parsed) : null;
-
   } catch (err) {
     console.error(`💥 [崩溃] MCP 工具 ${toolName} 调用彻底报错:`, err);
+    ombreSessionId = null;
     return null;
   }
 }
+    
 
 // ===== 健康检查与路由 =====
 app.get('/health', (req, res) => {
