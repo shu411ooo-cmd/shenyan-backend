@@ -144,46 +144,36 @@ async function callOmbreTool(toolName, args = {}) {
   }
 
   try {
-    if (!ombreSessionId) {
-      console.log('🔄 [调试] 正在尝试建立 Ombre Session...');
-      const ok = await initOmbreSession();
-      if (!ok) {
-        console.error('❌ [错误] initOmbreSession 初始化 Session 失败！');
-        return null;
-      }
-      console.log('✅ [调试] Session 建立成功，ID 为:', ombreSessionId);
-    }
-
-    console.log(`🚀 [调试] 正在向 ${process.env.OMBRE_BRAIN_URL}/mcp 发送 POST 请求...`);
+    const token = process.env.OMBRE_STATIC_TOKEN || '';
+    console.log(`🚀 [调试] 正在调用工具 ${toolName}，参数:`, args);
 
     const response = await fetch(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
       method: 'POST',
-      headers: buildOmbreHeaders({
-        'Mcp-Session-Id': ombreSessionId,
-      }),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream',
+        Authorization: `Bearer ${token}`
+      },
       body: JSON.stringify({
         jsonrpc: '2.0',
         method: 'tools/call',
         params: {
           name: toolName,
-          arguments: args,
+          arguments: args
         },
-        id: ++ombreCallId,
-      }),
+        id: ++ombreCallId
+      })
     });
 
-    console.log('📡 [调试] tools/call 响应状态:', response.status);
-    console.log(
-      '📡 [调试] tools/call 响应头:',
-      Object.fromEntries(response.headers.entries())
-    );
+    console.log('📡 tools/call 响应状态:', response.status);
 
-    const rawText = await readResponseBody(response);
+    const rawText = await response.text();
+    console.log('📡 [调试] 响应原文:', rawText);
+
     const parsed = parseSSEResponse(rawText);
 
     if (!response.ok) {
-      console.warn('⚠️ [警告] tools/call 未成功返回正常内容');
-      ombreSessionId = null;
+      console.warn('⚠️ tools/call 返回非 200:', response.status);
       return null;
     }
 
@@ -192,19 +182,14 @@ async function callOmbreTool(toolName, args = {}) {
         .filter(c => c.type === 'text')
         .map(c => c.text)
         .join('\n');
-
-      console.log('🎉 [调试] 解析成功，最终返回给 AI 的内容:', resultText);
+      console.log('🎉 工具调用成功，返回:', resultText);
       return resultText;
     }
 
-    console.warn(
-      '⚠️ [警告] 无法从 SSEResponse 解析出 content，原始解析结构为:',
-      JSON.stringify(parsed)
-    );
+    console.warn('⚠️ 无法解析 tools/call 响应:', parsed);
     return parsed ? JSON.stringify(parsed) : null;
   } catch (err) {
-    console.error(`💥 [崩溃] MCP 工具 ${toolName} 调用彻底报错:`, err);
-    ombreSessionId = null;
+    console.error(`💥 工具 ${toolName} 调用失败:`, err);
     return null;
   }
 }
