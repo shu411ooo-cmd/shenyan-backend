@@ -295,7 +295,6 @@ app.post('/sessions/:id/chat', async (req, res) => {
               const summary = summaryData.choices[0].message.content;
               await supabase.from('memories').insert({ summary });
               const ids = oldMessages.map(m => m.id);
-              await supabase.from('messages').update({ visible: false }).in('id', ids);
               console.log('✅ 历史消息压缩成功');
             }
           }
