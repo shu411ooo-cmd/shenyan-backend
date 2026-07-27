@@ -26,45 +26,75 @@ function parseSSEResponse(text) {
 let ombreSessionId = null;
 let ombreCallId = 0;
 
+function buildOmbreHeaders(extraHeaders = {}) {
+  return {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json, text/event-stream',
+    Authorization: `Bearer ${process.env.OMBRE_STATIC_TOKEN}`,
+    ...extraHeaders,
+  };
+}
+
 async function initOmbreSession() {
   try {
+    const headers = buildOmbreHeaders();
+
+    console.log("========== OMBRE INIT REQUEST ==========");
+    console.log("Token length:", process.env.OMBRE_STATIC_TOKEN?.length);
+    console.log("Authorization:", headers.Authorization);
+
     const response = await fetch(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' },
+      headers,
       body: JSON.stringify({
         jsonrpc: "2.0",
         method: "initialize",
-        params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "shenyan-backend", version: "1.0" } },
+        params: {
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          clientInfo: { name: "shenyan-backend", version: "1.0" }
+        },
         id: ++ombreCallId
       })
     });
-    
-   console.log("📡 initOmbreSession 响应状态:", response.status);
-console.log("📡 initOmbreSession 响应头:", Object.fromEntries(response.headers.entries()));
-const data = await response.json();
-console.log("📡 initOmbreSession 响应体:", data);
-    
-    ombreSessionId = data.result?.sessionId || null;
+
+    console.log("📡 initOmbreSession 响应状态:", response.status);
+    console.log("📡 initOmbreSession 响应头:", Object.fromEntries(response.headers.entries()));
+
+    const rawText = await response.text();
+    console.log("📡 initOmbreSession 响应体原文:", rawText);
+
+    const data = parseSSEResponse(rawText);
+    console.log("📡 initOmbreSession 解析结果:", data);
+
+    ombreSessionId = data?.result?.sessionId || null;
+
     if (ombreSessionId) {
       await fetch(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Mcp-Session-Id': ombreSessionId },
-        body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })
+        headers: buildOmbreHeaders({
+          'Mcp-Session-Id': ombreSessionId
+        }),
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "notifications/initialized"
+        })
       });
     }
+
     return !!ombreSessionId;
   } catch (err) {
-    console.error('MCP 会话初始化失败:', err.message);
+    console.error('MCP 会话初始化失败:', err);
     return false;
   }
 }
 
 async function callOmbreTool(toolName, args = {}) {
   console.log(`[调试] OMBRE_BRAIN_URL 当前值:`, process.env.OMBRE_BRAIN_URL);
-  
-  if (!process.env.OMBRE_BRAIN_URL) { 
-    console.error('❌ [错误] OMBRE_BRAIN_URL 未配置！请检查 Railway 环境变量！'); 
-    return null; 
+
+  if (!process.env.OMBRE_BRAIN_URL) {
+    console.error('❌ [错误] OMBRE_BRAIN_URL 未配置！请检查 Railway 环境变量！');
+    return null;
   }
 
   try {
@@ -79,14 +109,12 @@ async function callOmbreTool(toolName, args = {}) {
     }
 
     console.log(`🚀 [调试] 正在向 ${process.env.OMBRE_BRAIN_URL}/mcp 发送 POST 请求...`);
+
     const response = await fetch(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
       method: 'POST',
-      headers: {
-  'Content-Type': 'application/json',
-  'Accept': 'application/json, text/event-stream',
-  'Mcp-Session-Id': ombreSessionId,
-  Authorization: `Bearer ${process.env.OMBRE_STATIC_TOKEN}`,
-},
+      headers: buildOmbreHeaders({
+        'Mcp-Session-Id': ombreSessionId,
+      }),
       body: JSON.stringify({
         jsonrpc: "2.0",
         method: "tools/call",
@@ -100,11 +128,14 @@ async function callOmbreTool(toolName, args = {}) {
 
     const parsed = parseSSEResponse(rawText);
     if (parsed?.result?.content) {
-      const resultText = parsed.result.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
+      const resultText = parsed.result.content
+        .filter(c => c.type === 'text')
+        .map(c => c.text)
+        .join('\n');
       console.log(`🎉 [调试] 解析成功，最终返回给 AI 的内容:`, resultText);
       return resultText;
     }
-    
+
     console.warn('⚠️ [警告] 无法从 SSEResponse 解析出 content，原始解析结构为:', JSON.stringify(parsed));
     return parsed ? JSON.stringify(parsed) : null;
 
@@ -113,7 +144,6 @@ async function callOmbreTool(toolName, args = {}) {
     return null;
   }
 }
-
 
 // ===== 健康检查与路由 =====
 app.get('/health', (req, res) => {
