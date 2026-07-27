@@ -305,20 +305,37 @@ app.post('/sessions/:id/chat', async (req, res) => {
     }
 
     // 3. 拉取历史消息
-    const { data: history } = await supabase
-      .from('messages')
-      .select('role, content')
-      .eq('session_id', sessionId)
-      .eq('visible', true)
-      .order('created_at', { ascending: true });
+const { data: history } = await supabase
+  .from('messages')
+  .select('role, content')
+  .eq('session_id', sessionId)
+  .eq('visible', true)
+  .order('created_at', { ascending: true });
 
-    const messages = [
-      { role: 'system', content: process.env.SYSTEM_PROMPT || '你是沈晏。' },
-      ...(history || []).map(msg => ({
-        role: msg.role === 'assistant' ? 'assistant' : 'user',
-        content: msg.content
-      }))
-    ];
+// 获取当前时间
+const now = new Date();
+const currentTime = now.toLocaleString('zh-CN', { 
+  year: 'numeric', 
+  month: 'long', 
+  day: 'numeric', 
+  hour: '2-digit', 
+  minute: '2-digit' 
+});
+
+// 构建系统提示词（包含时间）
+const systemPrompt = `
+${process.env.SYSTEM_PROMPT || '你是沈晏。'}
+
+现在是 ${currentTime}。
+`;
+
+const messages = [
+  { role: 'system', content: systemPrompt },
+  ...(history || []).map(msg => ({
+    role: msg.role === 'assistant' ? 'assistant' : 'user',
+    content: msg.content
+  }))
+];
 
     // 4. 工具定义（breath = 检索，hold = 存储）
     const tools = [
