@@ -314,12 +314,12 @@ const { data: history } = await supabase
 
 // 获取当前时间
 const now = new Date();
-const currentTime = now.toLocaleString('zh-CN', { 
-  year: 'numeric', 
-  month: 'long', 
-  day: 'numeric', 
-  hour: '2-digit', 
-  minute: '2-digit' 
+const currentTime = now.toLocaleString('zh-CN', {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
   timeZone: 'Asia/Shanghai'
 });
 
