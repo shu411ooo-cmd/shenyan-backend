@@ -90,6 +90,7 @@ async function initOmbreSession() {
       '📡 initOmbreSession 响应头:',
       Object.fromEntries(response.headers.entries())
     );
+    console.log('📡 所有响应头键名:', [...response.headers.keys()]);
 
     const rawText = await readResponseBody(response);
     const data = parseSSEResponse(rawText);
