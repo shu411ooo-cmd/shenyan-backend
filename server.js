@@ -333,6 +333,10 @@ async function buildMessages(sessionId) {
 
 function sendSSE(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  // 显式冲刷缓冲，确保流式数据即时到达客户端
+  if (typeof res.flush === 'function') {
+    res.flush();
+  }
 }
 
 // ===== OpenRouter 流式 / 非流式调用 =====
@@ -570,6 +574,8 @@ app.post('/sessions/:id/chat', async (req, res) => {
       res.setHeader('Connection', 'keep-alive');
       res.setHeader('X-Accel-Buffering', 'no');
       res.flushHeaders();
+      // 禁用 Nagle，确保小数据块立即发出
+      if (res.socket) res.socket.setNoDelay(true);
 
       // 工具调用非流式处理 + 最终回复流式输出
       const finalReply = await handleStreamChat(messages, res);
