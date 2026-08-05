@@ -310,15 +310,32 @@ async function compressHistory(sessionId) {
   }
 }
 
-async function buildMessages(sessionId) {
+async function buildMessages(sessionId, opts = {}) {
+  const systemPrompt = buildSystemPrompt();
+
+  // Memory Off：只发当前这一条，不带历史
+  if (opts.memory === false) {
+    const { data: last } = await supabase
+      .from('messages')
+      .select('role, content')
+      .eq('session_id', sessionId)
+      .eq('role', 'user')
+      .eq('visible', true)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const userMsgs = (last || []).reverse().map((msg) => ({
+      role: 'user',
+      content: msg.content
+    }));
+    return [{ role: 'system', content: systemPrompt }, ...userMsgs];
+  }
+
   const { data: history } = await supabase
     .from('messages')
     .select('role, content')
     .eq('session_id', sessionId)
     .eq('visible', true)
     .order('created_at', { ascending: true });
-
-  const systemPrompt = buildSystemPrompt();
 
   return [
     { role: 'system', content: systemPrompt },
@@ -341,87 +358,97 @@ function sendSSE(res, event, data) {
 
 // ===== OpenRouter 流式 / 非流式调用 =====
 
-// 流式对话：先非流式处理工具调用，再流式输出最终回复
-async function handleStreamChat(messages, res) {
-  const tools = getTools();
+// 前端模型 ID → OpenRouter 完整模型 ID
+function toOpenRouterModel(model) {
+  const map = {
+    'claude-sonnet-4-6': 'anthropic/claude-sonnet-4-6',
+    'claude-opus-4-6': 'anthropic/claude-opus-4-6',
+  };
+  return map[model] || model || 'anthropic/claude-sonnet-4-6';
+}
 
-  // Step 1: 非流式调用，检查是否需要工具
-  const firstResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: 'anthropic/claude-sonnet-4-6',
+// 思考档位 → reasoning effort
+function thinkingEffort(thinking) {
+  return thinking === 'deep' ? 'high' : 'medium';
+}
+
+// 流式对话：纯流式 + 工具循环，思考链实时转发
+async function handleStreamChat(messages, res, opts = {}) {
+  const model = toOpenRouterModel(opts.model);
+  const thinkingMode = opts.thinking || 'standard';
+  const hasReasoning = thinkingMode !== 'off';
+  const effort = thinkingEffort(thinkingMode);
+  const withTools = opts.tools !== 'off';
+
+  let loop = 0;
+  let finalContent = '';
+
+  while (loop < 3) {
+    loop++;
+    const body = {
+      model,
       messages,
-      tools,
-      tool_choice: 'auto',
-      max_tokens: 1000
-    })
-  });
+      max_tokens: 2000,
+      stream: true
+    };
+    if (hasReasoning) body.reasoning = { effort };
+    if (withTools && loop === 1) {
+      body.tools = getTools();
+      body.tool_choice = 'auto';
+    }
 
-  const firstData = await firstResponse.json();
-  if (!firstData.choices || !firstData.choices[0]) {
-    throw new Error(`OpenRouter 响应异常: ${JSON.stringify(firstData)}`);
-  }
+    const { content, toolCalls } = await streamOpenRouter(body, res);
 
-  const assistantMessage = firstData.choices[0].message;
+    // 无工具调用 → 这就是最终回复
+    if (!toolCalls || toolCalls.length === 0) {
+      return content || finalContent;
+    }
 
-  // Step 2: 执行工具调用（如果有）
-  if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
-    messages.push(assistantMessage);
-
-    for (const tc of assistantMessage.tool_calls) {
-      const fnName = tc.function.name;
-      const fnArgs = JSON.parse(tc.function.arguments);
-
-      console.log(`🔧 执行工具: ${fnName}`, fnArgs);
-
-      // 通知前端工具调用
-      sendSSE(res, 'tool_call', {
+    // 有工具调用 → 记录过渡语，执行工具
+    finalContent = content || finalContent;
+    messages.push({
+      role: 'assistant',
+      content: content || null,
+      tool_calls: toolCalls.map((tc) => ({
         id: tc.id,
-        name: fnName,
-        arguments: fnArgs
-      });
+        type: 'function',
+        function: { name: tc.name, arguments: JSON.stringify(tc.arguments) }
+      }))
+    });
+
+    for (const tc of toolCalls) {
+      console.log(`🔧 执行工具: ${tc.name}`, tc.arguments);
+      sendSSE(res, 'tool_call', { id: tc.id, name: tc.name, arguments: tc.arguments });
 
       let toolResult;
       let success = true;
       try {
-        toolResult = await callOmbreTool(fnName, fnArgs);
+        toolResult = await callOmbreTool(tc.name, tc.arguments);
       } catch (err) {
         toolResult = { error: err.message };
         success = false;
-        console.error(`❌ 工具 ${fnName} 执行失败:`, err);
+        console.error(`❌ 工具 ${tc.name} 执行失败:`, err);
       }
 
-      // 通知前端工具结果
-      sendSSE(res, 'tool_result', {
-        id: tc.id,
-        name: fnName,
-        success,
-        result: toolResult
-      });
-
+      sendSSE(res, 'tool_result', { id: tc.id, name: tc.name, success, result: toolResult });
       messages.push({
-        tool_call_id: tc.id,
         role: 'tool',
-        name: fnName,
+        tool_call_id: tc.id,
+        name: tc.name,
         content: JSON.stringify(toolResult)
       });
     }
-  } else {
-    // 没有工具调用 — 同样走流式通道，保证逐字输出
-    return await streamFinalReply(messages, res);
+    // 下一轮不带 tools（避免二次工具调用）
   }
 
-  // Step 3: 流式调用（拿到工具结果后，不再传 tools）
-  return await streamFinalReply(messages, res);
+  return finalContent;
 }
 
-// 纯流式文本调用（不带 tools，避免二次工具调用）
-async function streamFinalReply(messages, res) {
+// 流式读取一次 OpenRouter 响应：实时转发 thinking / text，累积 tool_calls
+async function streamOpenRouter(body, res) {
   let content = '';
+  let thinkingText = '';
+  const toolAccum = {};
 
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
@@ -429,12 +456,7 @@ async function streamFinalReply(messages, res) {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`
     },
-    body: JSON.stringify({
-      model: 'anthropic/claude-sonnet-4-6',
-      messages,
-      max_tokens: 1000,
-      stream: true
-    })
+    body: JSON.stringify(body)
   });
 
   if (!response.ok) {
@@ -459,29 +481,58 @@ async function streamFinalReply(messages, res) {
       if (!trimmed || !trimmed.startsWith('data: ')) continue;
       if (trimmed === 'data: [DONE]') continue;
 
-      try {
-        const parsed = JSON.parse(trimmed.substring(6));
-        const deltaContent = parsed.choices?.[0]?.delta?.content;
-        if (deltaContent) {
-          content += deltaContent;
-          sendSSE(res, 'text', { text: deltaContent });
+      let parsed;
+      try { parsed = JSON.parse(trimmed.substring(6)); } catch (e) { continue; }
+      const delta = parsed.choices?.[0]?.delta || {};
+
+      // 思考链 token
+      const think = delta.reasoning || delta.thinking;
+      if (think) {
+        thinkingText += think;
+        sendSSE(res, 'thinking', { thought: think });
+      }
+
+      // 正文 token
+      const txt = delta.content;
+      if (txt) {
+        content += txt;
+        sendSSE(res, 'text', { text: txt });
+      }
+
+      // 工具调用 delta（增量累积 arguments）
+      const dcs = delta.tool_calls;
+      if (dcs && dcs.length) {
+        for (const dc of dcs) {
+          const idx = dc.index;
+          if (idx === undefined) continue;
+          if (!toolAccum[idx]) toolAccum[idx] = { id: '', name: '', args: '' };
+          if (dc.id) toolAccum[idx].id = dc.id;
+          if (dc.function?.name) toolAccum[idx].name = dc.function.name;
+          if (dc.function?.arguments) toolAccum[idx].args += dc.function.arguments;
         }
-      } catch (e) {
-        // ignore individual line parse errors
       }
     }
   }
 
-  return content;
+  const toolCalls = Object.values(toolAccum).map((tc) => {
+    let args = {};
+    try { args = JSON.parse(tc.args || '{}'); } catch (e) { /* keep {} */ }
+    return { id: tc.id, name: tc.name, arguments: args };
+  });
+
+  return { content, thinkingText, toolCalls };
 }
 
 // 非流式调用（旧端点用）
-async function callOpenRouterNonStream(messages, tools) {
+async function callOpenRouterNonStream(messages, tools, opts = {}) {
   const body = {
-    model: 'anthropic/claude-sonnet-4-6',
+    model: toOpenRouterModel(opts.model),
     messages,
-    max_tokens: 1000
+    max_tokens: 2000
   };
+  if ((opts.thinking || 'standard') !== 'off') {
+    body.reasoning = { effort: thinkingEffort(opts.thinking) };
+  }
   if (tools) {
     body.tools = tools;
     body.tool_choice = 'auto';
@@ -500,7 +551,11 @@ async function callOpenRouterNonStream(messages, tools) {
   if (!data.choices || !data.choices[0]) {
     throw new Error(`OpenRouter 响应异常: ${JSON.stringify(data)}`);
   }
-  return data.choices[0].message;
+  const msg = data.choices[0].message;
+  // 存回历史前剥离思考字段，避免二次发送报错
+  if (msg.reasoning) delete msg.reasoning;
+  if (msg.thinking) delete msg.thinking;
+  return msg;
 }
 
 // ===== 健康检查与路由 =====
@@ -547,11 +602,18 @@ app.get('/sessions/:id/messages', async (req, res) => {
 // ===== 核心对话接口（旧路由，内部转发到 handleChat） =====
 app.post('/sessions/:id/chat', async (req, res) => {
   try {
+    const opts = {
+      model: req.body.model,
+      thinking: req.body.thinking,
+      memory: req.body.memory,
+      tools: req.body.tools,
+    };
     await handleChat(
       req.params.id,
       req.body.message,
       req.body.stream === true,
-      res
+      res,
+      opts
     );
   } catch (error) {
     console.error("Chat Error:", error);
@@ -566,10 +628,10 @@ app.post('/sessions/:id/chat', async (req, res) => {
 
 // ===== /api/ 命名空间（新版路由，前端统一走这里） =====
 
-// POST /api/chat → { message, sessionId, model }
+// POST /api/chat → { message, sessionId, model, thinking, memory, tools }
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message, sessionId, model } = req.body;
+    const { message, sessionId } = req.body;
     // 如果没有传 sessionId，自动创建新会话
     let sid = sessionId;
     if (!sid) {
@@ -582,10 +644,13 @@ app.post('/api/chat', async (req, res) => {
       sid = data.id;
     }
     // 转发到现有 chat 逻辑（内部调用）
-    req.params = { id: sid };
-    req.body.stream = req.body.stream === true;
-    // 重定向到已有路由处理器 — 最简单的方式是直接调用逻辑
-    return handleChat(sid, message, req.body.stream, res);
+    const opts = {
+      model: req.body.model,
+      thinking: req.body.thinking,
+      memory: req.body.memory,
+      tools: req.body.tools,
+    };
+    return handleChat(sid, message, req.body.stream === true, res, opts);
   } catch (err) {
     console.error('/api/chat Error:', err);
     res.status(500).json({ error: err.message || '服务器开小差了' });
@@ -640,7 +705,7 @@ app.post('/api/sessions', async (req, res) => {
 });
 
 // 抽为独立函数，/sessions/:id/chat 和 /api/chat 共用
-async function handleChat(sessionId, userMessage, useStream, res) {
+async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
   // 1. 存用户消息
   await supabase.from('messages').insert({
     session_id: sessionId,
@@ -652,7 +717,7 @@ async function handleChat(sessionId, userMessage, useStream, res) {
   await compressHistory(sessionId);
 
   // 3. 构建消息数组
-  const messages = await buildMessages(sessionId);
+  const messages = await buildMessages(sessionId, opts);
 
   if (useStream) {
     res.setHeader('Content-Type', 'text/event-stream');
@@ -662,7 +727,7 @@ async function handleChat(sessionId, userMessage, useStream, res) {
     res.flushHeaders();
     if (res.socket) res.socket.setNoDelay(true);
 
-    const finalReply = await handleStreamChat(messages, res);
+    const finalReply = await handleStreamChat(messages, res, opts);
 
     await supabase.from('messages').insert({
       session_id: sessionId,
@@ -677,8 +742,8 @@ async function handleChat(sessionId, userMessage, useStream, res) {
     sendSSE(res, 'done', { reply: finalReply });
     res.end();
   } else {
-    const tools = getTools();
-    const assistantMessage = await callOpenRouterNonStream(messages, tools);
+    const tools = opts.tools === 'off' ? null : getTools();
+    const assistantMessage = await callOpenRouterNonStream(messages, tools, opts);
     let finalReply = '';
     const toolCalls = [];
 
@@ -713,7 +778,7 @@ async function handleChat(sessionId, userMessage, useStream, res) {
         });
       }
 
-      const secondMessage = await callOpenRouterNonStream(messages, null);
+      const secondMessage = await callOpenRouterNonStream(messages, null, opts);
       finalReply = secondMessage.content;
     } else {
       finalReply = assistantMessage.content;
