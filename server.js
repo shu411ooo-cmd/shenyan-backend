@@ -411,11 +411,8 @@ async function handleStreamChat(messages, res) {
       });
     }
   } else {
-    // 没有工具调用 — 把已拿到的回复当最终内容发出
-    if (assistantMessage.content) {
-      sendSSE(res, 'text', { text: assistantMessage.content });
-    }
-    return assistantMessage.content || '';
+    // 没有工具调用 — 同样走流式通道，保证逐字输出
+    return await streamFinalReply(messages, res);
   }
 
   // Step 3: 流式调用（拿到工具结果后，不再传 tools）
