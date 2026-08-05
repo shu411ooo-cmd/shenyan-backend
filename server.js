@@ -547,122 +547,18 @@ app.get('/sessions/:id/messages', async (req, res) => {
   res.json(data);
 });
 
-// ===== 核心对话接口 =====
+// ===== 核心对话接口（旧路由，内部转发到 handleChat） =====
 app.post('/sessions/:id/chat', async (req, res) => {
-  const sessionId = req.params.id;
-  const userMessage = req.body.message;
-  const useStream = req.body.stream === true;
-
   try {
-    // 1. 存用户消息
-    await supabase.from('messages').insert({
-      session_id: sessionId,
-      role: 'user',
-      content: userMessage
-    });
-
-    // 2. 压缩检查
-    await compressHistory(sessionId);
-
-    // 3. 构建消息数组
-    const messages = await buildMessages(sessionId);
-
-    if (useStream) {
-      // ===== 流式分支 =====
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      res.setHeader('X-Accel-Buffering', 'no');
-      res.flushHeaders();
-      // 禁用 Nagle，确保小数据块立即发出
-      if (res.socket) res.socket.setNoDelay(true);
-
-      // 工具调用非流式处理 + 最终回复流式输出
-      const finalReply = await handleStreamChat(messages, res);
-
-      // 4. 存 AI 回复
-      await supabase.from('messages').insert({
-        session_id: sessionId,
-        role: 'assistant',
-        content: finalReply
-      });
-
-      // 5. 更新会话时间
-      await supabase.from('sessions')
-        .update({ updated_at: new Date().toISOString() })
-        .eq('id', sessionId);
-
-      sendSSE(res, 'done', { reply: finalReply });
-      res.end();
-
-    } else {
-      // ===== 非流式分支（JSON） =====
-      const tools = getTools();
-      const assistantMessage = await callOpenRouterNonStream(messages, tools);
-      let finalReply = '';
-      const toolCalls = [];
-
-      if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
-        messages.push(assistantMessage);
-
-        for (const tc of assistantMessage.tool_calls) {
-          const fnName = tc.function.name;
-          const fnArgs = JSON.parse(tc.function.arguments);
-
-          console.log(`🔧 AI 决定调用工具: ${fnName}`, fnArgs);
-
-          let toolResult;
-          try {
-            toolResult = await callOmbreTool(fnName, fnArgs);
-          } catch (err) {
-            toolResult = { error: err.message };
-            console.error(`❌ 工具 ${fnName} 执行失败:`, err);
-          }
-
-          toolCalls.push({
-            id: tc.id,
-            name: fnName,
-            arguments: fnArgs,
-            result: toolResult
-          });
-
-          messages.push({
-            tool_call_id: tc.id,
-            role: 'tool',
-            name: fnName,
-            content: JSON.stringify(toolResult)
-          });
-        }
-
-        const secondMessage = await callOpenRouterNonStream(messages, null);
-        finalReply = secondMessage.content;
-      } else {
-        finalReply = assistantMessage.content;
-      }
-
-      // 4. 存 AI 回复
-      await supabase.from('messages').insert({
-        session_id: sessionId,
-        role: 'assistant',
-        content: finalReply
-      });
-
-      // 5. 更新会话时间
-      await supabase.from('sessions')
-        .update({ updated_at: new Date().toISOString() })
-        .eq('id', sessionId);
-
-      // 6. 返回 JSON
-      const responseData = { reply: finalReply };
-      if (toolCalls.length > 0) {
-        responseData.tool_calls = toolCalls;
-      }
-      res.json(responseData);
-    }
-
+    await handleChat(
+      req.params.id,
+      req.body.message,
+      req.body.stream === true,
+      res
+    );
   } catch (error) {
     console.error("Chat Error:", error);
-    if (useStream && res.headersSent) {
+    if (req.body.stream && res.headersSent) {
       sendSSE(res, 'error', { message: error.message || '服务器开小差了' });
       res.end();
     } else {
@@ -670,6 +566,179 @@ app.post('/sessions/:id/chat', async (req, res) => {
     }
   }
 });
+
+// ===== /api/ 命名空间（新版路由，前端统一走这里） =====
+
+// POST /api/chat → { message, sessionId, model }
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { message, sessionId, model } = req.body;
+    // 如果没有传 sessionId，自动创建新会话
+    let sid = sessionId;
+    if (!sid) {
+      const { data, error } = await supabase
+        .from('sessions')
+        .insert({ name: message?.slice(0, 30) || '新对话' })
+        .select()
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+      sid = data.id;
+    }
+    // 转发到现有 chat 逻辑（内部调用）
+    req.params = { id: sid };
+    req.body.stream = req.body.stream === true;
+    // 重定向到已有路由处理器 — 最简单的方式是直接调用逻辑
+    return handleChat(sid, message, req.body.stream, res);
+  } catch (err) {
+    console.error('/api/chat Error:', err);
+    res.status(500).json({ error: err.message || '服务器开小差了' });
+  }
+});
+
+// GET /api/messages?sessionId=xxx
+app.get('/api/messages', async (req, res) => {
+  try {
+    const { sessionId } = req.query;
+    if (!sessionId) return res.status(400).json({ error: '缺少 sessionId' });
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('session_id', sessionId)
+      .eq('visible', true)
+      .order('created_at', { ascending: true });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/sessions
+app.get('/api/sessions', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('sessions')
+      .select('*')
+      .order('updated_at', { ascending: false });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/sessions
+app.post('/api/sessions', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('sessions')
+      .insert({ name: req.body.name || '新对话' })
+      .select()
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 抽为独立函数，/sessions/:id/chat 和 /api/chat 共用
+async function handleChat(sessionId, userMessage, useStream, res) {
+  // 1. 存用户消息
+  await supabase.from('messages').insert({
+    session_id: sessionId,
+    role: 'user',
+    content: userMessage
+  });
+
+  // 2. 压缩检查
+  await compressHistory(sessionId);
+
+  // 3. 构建消息数组
+  const messages = await buildMessages(sessionId);
+
+  if (useStream) {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+    if (res.socket) res.socket.setNoDelay(true);
+
+    const finalReply = await handleStreamChat(messages, res);
+
+    await supabase.from('messages').insert({
+      session_id: sessionId,
+      role: 'assistant',
+      content: finalReply
+    });
+
+    await supabase.from('sessions')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', sessionId);
+
+    sendSSE(res, 'done', { reply: finalReply });
+    res.end();
+  } else {
+    const tools = getTools();
+    const assistantMessage = await callOpenRouterNonStream(messages, tools);
+    let finalReply = '';
+    const toolCalls = [];
+
+    if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
+      messages.push(assistantMessage);
+
+      for (const tc of assistantMessage.tool_calls) {
+        const fnName = tc.function.name;
+        const fnArgs = JSON.parse(tc.function.arguments);
+        console.log(`🔧 AI 决定调用工具: ${fnName}`, fnArgs);
+
+        let toolResult;
+        try {
+          toolResult = await callOmbreTool(fnName, fnArgs);
+        } catch (err) {
+          toolResult = { error: err.message };
+          console.error(`❌ 工具 ${fnName} 执行失败:`, err);
+        }
+
+        toolCalls.push({
+          id: tc.id,
+          name: fnName,
+          arguments: fnArgs,
+          result: toolResult
+        });
+
+        messages.push({
+          tool_call_id: tc.id,
+          role: 'tool',
+          name: fnName,
+          content: JSON.stringify(toolResult)
+        });
+      }
+
+      const secondMessage = await callOpenRouterNonStream(messages, null);
+      finalReply = secondMessage.content;
+    } else {
+      finalReply = assistantMessage.content;
+    }
+
+    await supabase.from('messages').insert({
+      session_id: sessionId,
+      role: 'assistant',
+      content: finalReply
+    });
+
+    await supabase.from('sessions')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', sessionId);
+
+    const responseData = { reply: finalReply, sessionId };
+    if (toolCalls.length > 0) {
+      responseData.tool_calls = toolCalls;
+    }
+    res.json(responseData);
+  }
+}
 
 // 测试 Ombre Brain 连接
 app.get('/api/test-ombre', async (req, res) => {
