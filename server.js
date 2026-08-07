@@ -607,6 +607,7 @@ app.post('/sessions/:id/chat', async (req, res) => {
       thinking: req.body.thinking,
       memory: req.body.memory,
       tools: req.body.tools,
+      image: req.body.image,
     };
     await handleChat(
       req.params.id,
@@ -649,6 +650,7 @@ app.post('/api/chat', async (req, res) => {
       thinking: req.body.thinking,
       memory: req.body.memory,
       tools: req.body.tools,
+      image: req.body.image,
     };
     return handleChat(sid, message, req.body.stream === true, res, opts);
   } catch (err) {
@@ -704,9 +706,25 @@ app.post('/api/sessions', async (req, res) => {
   }
 });
 
+// 把当前用户消息附上图片，变成多模态 content 数组（OpenRouter / OpenAI 兼容格式）
+function attachImage(messages, image) {
+  if (!image) return messages;
+  const out = messages.map((m) => ({ ...m }));
+  for (let i = out.length - 1; i >= 0; i--) {
+    if (out[i].role === 'user') {
+      out[i].content = [
+        { type: 'text', text: typeof out[i].content === 'string' ? out[i].content : '看看这张图片' },
+        { type: 'image_url', image_url: { url: image } }
+      ];
+      break;
+    }
+  }
+  return out;
+}
+
 // 抽为独立函数，/sessions/:id/chat 和 /api/chat 共用
 async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
-  // 1. 存用户消息
+  // 1. 存用户消息（图片不入库，先不管存储）
   await supabase.from('messages').insert({
     session_id: sessionId,
     role: 'user',
@@ -716,8 +734,9 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
   // 2. 压缩检查
   await compressHistory(sessionId);
 
-  // 3. 构建消息数组
-  const messages = await buildMessages(sessionId, opts);
+  // 3. 构建消息数组 + 附图片
+  let messages = await buildMessages(sessionId, opts);
+  messages = attachImage(messages, opts.image);
 
   if (useStream) {
     res.setHeader('Content-Type', 'text/event-stream');
