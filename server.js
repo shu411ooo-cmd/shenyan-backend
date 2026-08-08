@@ -602,6 +602,7 @@ async function recordRequestStat({ sessionId, client, model, stream, usageList =
       completion_tokens: sum(u => u.completion_tokens),
       total_tokens: sum(u => u.total_tokens),
       cached_tokens: sum(u => u.prompt_tokens_details?.cached_tokens),
+      cache_write_tokens: sum(u => u.prompt_tokens_details?.cache_write_tokens),
       cache_read_input_tokens: sum(u => u.cache_read_input_tokens),
       cache_creation_input_tokens: sum(u => u.cache_creation_input_tokens),
       reasoning_tokens: sum(u => u.completion_tokens_details?.reasoning_tokens),
@@ -969,6 +970,11 @@ async function handleStreamChat(messages, res, opts = {}) {
       body.tools = getTools();
       body.tool_choice = 'auto';
     }
+    if (model.startsWith('anthropic/')) {
+      // OpenRouter 顶层 cache_control —— 自动缓存到最后一个可缓存块、随对话推进断点。
+      // 仅逐块 cache_control 在 OpenAI 兼容通道「accepted but not write」→ 必须加顶层提示。
+      body.cache_control = { type: 'ephemeral' };
+    }
 
     const { content, toolCalls, usage } = await streamOpenRouter(body, res);
     if (usage) usageList.push(usage);
@@ -1112,6 +1118,10 @@ async function callOpenRouterNonStream(messages, tools, opts = {}) {
   if (tools) {
     body.tools = tools;
     body.tool_choice = 'auto';
+  }
+  if (body.model.startsWith('anthropic/')) {
+    // OpenRouter 顶层 cache_control（自动缓存），见 handleStreamChat 处注释
+    body.cache_control = { type: 'ephemeral' };
   }
 
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {

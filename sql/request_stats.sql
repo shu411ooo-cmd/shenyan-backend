@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS request_stats (
   prompt_tokens INTEGER,
   completion_tokens INTEGER,
   total_tokens INTEGER,
-  cached_tokens INTEGER,               -- OpenAI 风格 prompt_tokens_details.cached_tokens（是 prompt_tokens 的子集）
+  cached_tokens INTEGER,               -- OpenAI 风格 prompt_tokens_details.cached_tokens（命中读取，是 prompt_tokens 的子集）
+  cache_write_tokens INTEGER,          -- OpenAI 风格 prompt_tokens_details.cache_write_tokens（写入缓存，等价 Anthropic cache_creation，是 prompt_tokens 的子集）
   cache_read_input_tokens INTEGER,     -- Anthropic 风格顶层字段
   cache_creation_input_tokens INTEGER, -- Anthropic 风格顶层字段
   reasoning_tokens INTEGER,            -- completion_tokens_details.reasoning_tokens
@@ -52,3 +53,6 @@ CREATE INDEX IF NOT EXISTS idx_request_stats_client ON request_stats (client);
 -- 其他表（sessions/messages 等）都是关 RLS 的，这里保持一致。
 -- 若想保留 RLS，改为：CREATE POLICY "request_stats_all" ON request_stats FOR ALL USING (true) WITH CHECK (true);
 ALTER TABLE request_stats DISABLE ROW LEVEL SECURITY;
+
+-- 已按旧版建表（无 cache_write_tokens 列）的迁移：
+-- ALTER TABLE request_stats ADD COLUMN IF NOT EXISTS cache_write_tokens INTEGER;
