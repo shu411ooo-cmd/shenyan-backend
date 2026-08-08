@@ -664,9 +664,17 @@ async function buildModelContext(sessionId, opts = {}) {
     liveTurns = turns; // 短历史：全部发
   }
 
-  // —— 摘要覆盖检查：summary 必须盖满中间段才可信，否则中间段原文保留（不静默丢） ——
-  const summaryFull = !!state.summary_text && Number.isInteger(state.summary_from_turn) &&
-    Number.isInteger(state.summary_to_turn) && state.summary_to_turn >= liveStart - 1;
+  // —— 摘要可用性：存在且覆盖中间段起点即可用。
+  // 后台摘要刷新总在响应之后，热路径看到的 summary_to 恒差 1 轮（永远到不了「盖满整个中间段」），
+  // 用「盖满」当门槛会让摘要永远失效、中间段原文永远照发 → 预算被撑爆 → live 被裁 → 失忆。
+  // 改为：摘要压缩到 summaryCoversTo，只把没覆盖的最近几轮原文补进来。
+  const hasSummaryText = !!state.summary_text && Number.isInteger(state.summary_from_turn) &&
+    Number.isInteger(state.summary_to_turn) && state.summary_to_turn >= frozenUntil + 1;
+  const summaryCoversTo = hasSummaryText ? state.summary_to_turn : frozenUntil;
+  // 摘要没覆盖的最近几轮（原文保留）；没有摘要时等于整个中间段
+  let uncoveredMiddle = hasSummaryText
+    ? middleTurns.slice(summaryCoversTo - frozenUntil)
+    : middleTurns;
 
   // —— token 预算 ——
   const msgTokens = (m) => Array.isArray(m.content)
@@ -681,7 +689,8 @@ async function buildModelContext(sessionId, opts = {}) {
   let estimatedTokens = (opts.tools !== 'off' ? estimateTokens(JSON.stringify(getTools())) : 0)
     + estimateTokens(stablePrompt)
     + frozenTurns.reduce((s, t) => s + turnTokens(t), 0)
-    + (summaryFull ? estimateTokens(state.summary_text) : middleTurns.reduce((s, t) => s + turnTokens(t), 0))
+    + (hasSummaryText ? estimateTokens(state.summary_text) : 0)
+    + uncoveredMiddle.reduce((s, t) => s + turnTokens(t), 0)
     + liveTurns.reduce((s, t) => s + turnTokens(t), 0)
     + estimateTokens(timeNotice);
 
@@ -692,10 +701,12 @@ async function buildModelContext(sessionId, opts = {}) {
     liveTurns.shift();
     trimmedTurns++;
   }
-  // 摘要缺失时中间段也可裁（只在还有冗余时）
-  while (estimatedTokens > config.max_context_tokens && !summaryFull && middleTurns.length > 0) {
-    estimatedTokens -= turnTokens(middleTurns[middleTurns.length - 1]);
-    middleTurns.pop();
+  // 中间段原文可裁（摘要可用时只剩少量未覆盖尾段，裁最旧；摘要缺失时裁最旧中间轮）。
+  // 从「最旧」开始裁——frozen 已经锚定最老历史，最近的中间轮必须保留，
+  // 否则会丢掉「刚刚聊过」的上下文（失忆）。
+  while (estimatedTokens > config.max_context_tokens && uncoveredMiddle.length > 0) {
+    estimatedTokens -= turnTokens(uncoveredMiddle[0]);
+    uncoveredMiddle.shift();
     trimmedTurns++;
   }
 
@@ -716,20 +727,16 @@ async function buildModelContext(sessionId, opts = {}) {
     frozenSection[frozenSection.length - 1] = withCacheControl(frozenSection[frozenSection.length - 1]);
   }
 
-  if (hasSplit && (middleTurns.length > 0 || summaryFull)) {
-    if (summaryFull) {
+  if (hasSplit && (middleTurns.length > 0 || hasSummaryText)) {
+    if (hasSummaryText) {
       summarySection.push(withCacheControl({
         role: 'user',
         content: `【历史摘要 · 第 ${state.summary_from_turn}~${state.summary_to_turn} 轮】\n${state.summary_text}`
       }));
-    } else {
-      if (state.summary_text) {
-        summarySection.push({ role: 'user', content: `【历史摘要 · 第 ${state.summary_from_turn}~${state.summary_to_turn} 轮】\n${state.summary_text}` });
-      }
-      for (const t of middleTurns) {
-        summarySection.push({ role: 'user', content: t.user.content });
-        for (const r of t.replies) summarySection.push({ role: 'assistant', content: r.content });
-      }
+    }
+    for (const t of uncoveredMiddle) {
+      summarySection.push({ role: 'user', content: t.user.content });
+      for (const r of t.replies) summarySection.push({ role: 'assistant', content: r.content });
     }
   }
 
@@ -758,11 +765,11 @@ async function buildModelContext(sessionId, opts = {}) {
   const diagnostics = {
     history_turns: totalTurns,
     frozen_turns: frozenTurns.length,
-    summary_present: summaryFull,
-    summary_range: summaryFull ? [state.summary_from_turn, state.summary_to_turn] : null,
-    summary_from: summaryFull ? state.summary_from_turn : null,
-    summary_to: summaryFull ? state.summary_to_turn : null,
-    middle_raw_turns: (!summaryFull && hasSplit) ? middleTurns.length : 0,
+    summary_present: hasSummaryText,
+    summary_range: hasSummaryText ? [state.summary_from_turn, state.summary_to_turn] : null,
+    summary_from: hasSummaryText ? state.summary_from_turn : null,
+    summary_to: hasSummaryText ? state.summary_to_turn : null,
+    middle_raw_turns: uncoveredMiddle.length,
     live_turns: liveTurns.length,
     messages_sent: messages.length,
     estimated_tokens: estimatedTokens,
@@ -857,14 +864,18 @@ async function summarizeViaDeepSeek(text) {
           { role: 'user', content: text }
         ],
         max_tokens: 500
-      })
+      }),
+      // 超时兜底：fetch 挂死会让 scheduleSummary 的锁永久不释放，摘要从此永不刷新
+      signal: AbortSignal.timeout(30000)
     });
     if (!res.ok) {
       console.warn('⚠️ 摘要请求失败:', res.status);
       return null;
     }
     const data = await res.json();
-    return data.choices?.[0]?.message?.content || null;
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) console.warn('⚠️ 摘要返回空内容（status', res.status, '）');
+    return content || null;
   } catch (err) {
     console.error('💥 摘要生成异常:', err.message);
     return null;
