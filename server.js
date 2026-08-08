@@ -199,19 +199,13 @@ async function callOmbreTool(toolName, args = {}) {
 // ===== 共享工具函数 =====
 
 function getTools() {
-  // 14 个能力全部定义在这里（对应 Ombre Brain 的 /mcp 连接器）。
-  // 使用约束不写在工具里——那部分由系统提示词（CLAUDE_PROMPT）承载。
+  // 13 个能力定义在这里（对应 Ombre Brain 的 /mcp 连接器）。
+  // breath 不在其中：它由服务器在对话第一条消息时直接调用，结果作为背景注入历史之前
+  // （见 handleChat）。不再让模型每轮自己调 breath，避免记忆潮淹没当前上下文。
+  // 需要主动检索用 breath_search / breath_advanced。
   return [
     // ===== 高频 7 个 =====
 
-    {
-      type: 'function',
-      function: {
-        name: 'breath',
-        description: '睁眼。对话开始时第一个调用（没有例外），让权重最高的未解决事自然浮上来。故意做成 0 参数。',
-        parameters: { type: 'object', properties: {} }
-      }
-    },
     {
       type: 'function',
       function: {
@@ -1354,6 +1348,15 @@ function attachImage(messages, image) {
 
 // 抽为独立函数，/sessions/:id/chat 和 /api/chat 共用
 async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
+  // 判断是否对话第一条消息：决定是否注入 breath 背景记忆（只在第一条，后续不调）
+  const { count: priorUserCount } = await supabase
+    .from('messages')
+    .select('*', { count: 'exact', head: true })
+    .eq('session_id', sessionId)
+    .eq('role', 'user')
+    .eq('visible', true);
+  const isFirstMessage = (priorUserCount || 0) === 0;
+
   // 1. 存用户消息（图片不入库，先不管存储）
   await supabase.from('messages').insert({
     session_id: sessionId,
@@ -1364,6 +1367,22 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
   // 2. 构建消息数组 + 附图片（Context Assembly 已替代旧的 compressHistory 热路径压缩）
   const { messages: builtMessages, diagnostics } = await buildMessages(sessionId, opts);
   let messages = builtMessages;
+
+  // 3. 对话第一条消息：服务器直接调 breath，结果作为背景放在历史之前（不是替代历史）。
+  //    用 user 角色（OpenRouter 会把 system 角色提升合并，污染缓存前缀）。
+  //    user 角色 + 【背景记忆】标记，模型能明确识别它是不带时间流的背景。
+  if (isFirstMessage && opts.tools !== 'off' && opts.memory !== false) {
+    try {
+      const bg = await callOmbreTool('breath');
+      if (bg && bg.length > 0) {
+        messages.splice(1, 0, { role: 'user', content: `【背景记忆 · 对话开始前提取】\n${bg}` });
+        console.log(`🌿 第一条消息注入 breath 背景（${bg.length} 字符）`);
+      }
+    } catch (e) {
+      console.warn('⚠️ breath 背景注入失败:', e.message);
+    }
+  }
+
   messages = attachImage(messages, opts.image);
 
   if (useStream) {
