@@ -633,7 +633,7 @@ async function buildModelContext(sessionId, opts = {}) {
 
   const { data: history } = await supabase
     .from('messages')
-    .select('role, content')
+    .select('role, content, created_at')
     .eq('session_id', sessionId)
     .eq('visible', true)
     .order('created_at', { ascending: true });
@@ -684,15 +684,25 @@ async function buildModelContext(sessionId, opts = {}) {
     t.replies.reduce((s, r) => s + msgTokens(r), 0);
 
   const stablePrompt = await buildStableSystemPrompt();
-  // 动态时间戳：放在所有缓存断点之后（见组装），不进 stable system prompt
+  // 动态时间戳：只在「恢复对话」或「时间相关问题」时注入——
+  // 持续聊天每轮都告诉模型现在几点很机械（模型自己也会觉得奇怪）。
+  // 恢复判定：距上一条消息超过 30 分钟，或这是本会话第一条消息。
+  // 插入点保持在所有缓存断点之后、当前用户消息之前（cache 与 role 约束不变）。
   const timeNotice = `现在是 ${currentTimeText()}。`;
+  const nowMs = Date.now();
+  const prevTs = history.length >= 2 ? new Date(history[history.length - 2].created_at).getTime() : NaN;
+  const isFirstTurn = history.length <= 1;
+  const resumeGap = !isFirstTurn && nowMs - prevTs > 30 * 60 * 1000;
+  const curText = String(history[history.length - 1]?.content || '');
+  const asksTime = /几点|几点钟|几点了|几点啦|什么时间|几号|几月几|星期几|周几|今天.*(?:几号|日期|星期)|现在.*(?:时间|几点)/.test(curText);
+  const injectTime = isFirstTurn || resumeGap || asksTime;
   let estimatedTokens = (opts.tools !== 'off' ? estimateTokens(JSON.stringify(getTools())) : 0)
     + estimateTokens(stablePrompt)
     + frozenTurns.reduce((s, t) => s + turnTokens(t), 0)
     + (hasSummaryText ? estimateTokens(state.summary_text) : 0)
     + uncoveredMiddle.reduce((s, t) => s + turnTokens(t), 0)
     + liveTurns.reduce((s, t) => s + turnTokens(t), 0)
-    + estimateTokens(timeNotice);
+    + (injectTime ? estimateTokens(timeNotice) : 0);
 
   let trimmedTurns = 0;
   // 超上限时裁最老的 Live 轮，Frozen/Summary 不动（缓存锚点）
@@ -745,14 +755,16 @@ async function buildModelContext(sessionId, opts = {}) {
     for (const r of t.replies) liveSection.push({ role: 'assistant', content: r.content });
   }
 
-  // 动态时间戳：插到当前用户消息之前、所有缓存断点之后。
+  // 动态时间戳：插到当前用户消息之前、所有缓存断点之后（仅恢复对话/时间提问时注入）。
   // 必须用 user 角色 + 【当前时间】标记——OpenRouter 会把数组里的 system 角色消息提升合并进顶层 system，
   // 那会让 system 前缀每次请求都变，缓存再次失效。user 角色则原地保留，且 attachImage 仍能认到最后的当前消息。
-  const timeMsg = { role: 'user', content: `【当前时间】${timeNotice}` };
-  if (liveSection.length > 0) {
-    liveSection.splice(liveSection.length - 1, 0, timeMsg);
-  } else {
-    liveSection.push(timeMsg);
+  if (injectTime) {
+    const timeMsg = { role: 'user', content: `【当前时间】${timeNotice}` };
+    if (liveSection.length > 0) {
+      liveSection.splice(liveSection.length - 1, 0, timeMsg);
+    } else {
+      liveSection.push(timeMsg);
+    }
   }
 
   messages.push(...frozenSection, ...summarySection, ...liveSection);
