@@ -588,6 +588,49 @@ function withCacheControl(msg) {
   return { ...msg, content: [{ type: 'text', text: msg.content, cache_control: { type: 'ephemeral' } }] };
 }
 
+// —— 记录一次 chat 请求的真实 usage 到 request_stats（失败只告警，不阻断） ——
+// usage 语义（OpenRouter）：OpenAI 风格 cached_tokens 是 prompt_tokens 的子集；
+// Anthropic 风格 cache_read/creation 是独立的桶。两者可能并存，语义可能随 provider 变化——
+// 所以 usage_raw 原样存 JSONB，命中率等派生指标一律从原始数据后算，不固化。
+async function recordRequestStat({ sessionId, client, model, stream, usageList = [], diagnostics = null }) {
+  try {
+    const raw = usageList.filter(Boolean);
+    const sum = (f) => raw.reduce((s, u) => s + (f(u) || 0), 0) || null;
+    const d = diagnostics || {};
+    const { error } = await supabase.from('request_stats').insert({
+      session_id: sessionId,
+      client: client || 'legacy',
+      model,
+      stream: !!stream,
+      tool_rounds: raw.length || 1,
+      usage_raw: raw.length ? raw : null,
+      prompt_tokens: sum(u => u.prompt_tokens),
+      completion_tokens: sum(u => u.completion_tokens),
+      total_tokens: sum(u => u.total_tokens),
+      cached_tokens: sum(u => u.prompt_tokens_details?.cached_tokens),
+      cache_read_input_tokens: sum(u => u.cache_read_input_tokens),
+      cache_creation_input_tokens: sum(u => u.cache_creation_input_tokens),
+      reasoning_tokens: sum(u => u.completion_tokens_details?.reasoning_tokens),
+      history_turns: d.history_turns ?? null,
+      frozen_turns: d.frozen_turns ?? null,
+      summary_present: d.summary_present ?? null,
+      summary_from: d.summary_from ?? null,
+      summary_to: d.summary_to ?? null,
+      middle_raw_turns: d.middle_raw_turns ?? null,
+      live_turns: d.live_turns ?? null,
+      messages_sent: d.messages_sent ?? null,
+      estimated_tokens: d.estimated_tokens ?? null,
+      trimmed_turns: d.trimmed_turns ?? null,
+      frozen_prefix_hash: d.frozen_prefix_hash ?? null,
+      summary_hash: d.summary_hash ?? null,
+      live_hash: d.live_hash ?? null,
+    });
+    if (error) console.warn('⚠️ 写入 request_stats 失败:', error.message);
+  } catch (err) {
+    console.warn('⚠️ 写入 request_stats 异常:', err.message);
+  }
+}
+
 // —— 核心组装：System → Frozen → Summary → Live → 当前消息 ——
 async function buildModelContext(sessionId, opts = {}) {
   const config = await getContextConfig();
@@ -712,17 +755,18 @@ async function buildModelContext(sessionId, opts = {}) {
 
   messages.push(...frozenSection, ...summarySection, ...liveSection);
 
-  // —— 观测日志：段哈希 + 计数 + 估算（哈希只用于观察，不进库） ——
+  // —— 观测：段哈希 + 计数 + 估算。同时作为 request_stats 的诊断数据返回 ——
   const frozenHash = sha256(frozenSection.map(m => JSON.stringify(m)).join('|'));
   const summaryHash = summarySection.length ? sha256(JSON.stringify(summarySection)) : '';
   const liveHash = sha256(liveSection.map(m => JSON.stringify(m)).join('|'));
 
-  console.log(`[ContextAssembly] ${JSON.stringify({
-    session: sessionId,
+  const diagnostics = {
     history_turns: totalTurns,
     frozen_turns: frozenTurns.length,
     summary_present: summaryFull,
     summary_range: summaryFull ? [state.summary_from_turn, state.summary_to_turn] : null,
+    summary_from: summaryFull ? state.summary_from_turn : null,
+    summary_to: summaryFull ? state.summary_to_turn : null,
     middle_raw_turns: (!summaryFull && hasSplit) ? middleTurns.length : 0,
     live_turns: liveTurns.length,
     messages_sent: messages.length,
@@ -731,9 +775,11 @@ async function buildModelContext(sessionId, opts = {}) {
     frozen_prefix_hash: frozenHash,
     summary_hash: summaryHash || null,
     live_hash: liveHash,
-  }) }`);
+  };
 
-  return messages;
+  console.log(`[ContextAssembly] ${JSON.stringify({ session: sessionId, ...diagnostics })}`);
+
+  return { messages, diagnostics };
 }
 
 // ===== 后台摘要生成（响应结束后触发，不在热路径） =====
@@ -848,7 +894,7 @@ async function buildMessages(sessionId, opts = {}) {
       role: 'user',
       content: msg.content
     }));
-    return [{ role: 'system', content: systemPrompt }, ...userMsgs];
+    return { messages: [{ role: 'system', content: systemPrompt }, ...userMsgs], diagnostics: null };
   }
 
   // 前端二：Context Assembly（Frozen/Summary/Live 四段组装，含缓存断点）
@@ -866,13 +912,16 @@ async function buildMessages(sessionId, opts = {}) {
     .eq('visible', true)
     .order('created_at', { ascending: true });
 
-  return [
-    { role: 'system', content: systemPrompt },
-    ...(history || []).map(msg => ({
-      role: msg.role === 'assistant' ? 'assistant' : 'user',
-      content: msg.content
-    }))
-  ];
+  return {
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...(history || []).map(msg => ({
+        role: msg.role === 'assistant' ? 'assistant' : 'user',
+        content: msg.content
+      }))
+    ],
+    diagnostics: null,
+  };
 }
 
 // ===== SSE 辅助函数 =====
@@ -911,6 +960,7 @@ async function handleStreamChat(messages, res, opts = {}) {
 
   let loop = 0;
   let finalContent = '';
+  const usageList = []; // 每轮 OpenRouter 请求的原始 usage（多轮工具调用时 >1）
 
   while (loop < 3) {
     loop++;
@@ -926,11 +976,12 @@ async function handleStreamChat(messages, res, opts = {}) {
       body.tool_choice = 'auto';
     }
 
-    const { content, toolCalls } = await streamOpenRouter(body, res);
+    const { content, toolCalls, usage } = await streamOpenRouter(body, res);
+    if (usage) usageList.push(usage);
 
     // 无工具调用 → 这就是最终回复
     if (!toolCalls || toolCalls.length === 0) {
-      return content || finalContent;
+      return { content: content || finalContent, usageList };
     }
 
     // 有工具调用 → 记录过渡语，执行工具
@@ -970,13 +1021,14 @@ async function handleStreamChat(messages, res, opts = {}) {
     // 下一轮不带 tools（避免二次工具调用）
   }
 
-  return finalContent;
+  return { content: finalContent, usageList };
 }
 
 // 流式读取一次 OpenRouter 响应：实时转发 thinking / text，累积 tool_calls
 async function streamOpenRouter(body, res) {
   let content = '';
   let thinkingText = '';
+  let usage = null; // 流式 usage 在末尾 chunk 携带
   const toolAccum = {};
 
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -1013,6 +1065,7 @@ async function streamOpenRouter(body, res) {
       let parsed;
       try { parsed = JSON.parse(trimmed.substring(6)); } catch (e) { continue; }
       const delta = parsed.choices?.[0]?.delta || {};
+      if (parsed.usage) usage = parsed.usage; // OpenRouter 在末尾 chunk 给出 usage
 
       // 思考链 token
       const think = delta.reasoning || delta.thinking;
@@ -1049,7 +1102,7 @@ async function streamOpenRouter(body, res) {
     return { id: tc.id, name: tc.name, arguments: args };
   });
 
-  return { content, thinkingText, toolCalls };
+  return { content, thinkingText, toolCalls, usage };
 }
 
 // 非流式调用（旧端点用）
@@ -1084,7 +1137,8 @@ async function callOpenRouterNonStream(messages, tools, opts = {}) {
   // 存回历史前剥离思考字段，避免二次发送报错
   if (msg.reasoning) delete msg.reasoning;
   if (msg.thinking) delete msg.thinking;
-  return msg;
+  // 返回原始 usage（可能为 null），供 request_stats 记录
+  return { msg, usage: data.usage || null };
 }
 
 // ===== 健康检查与路由 =====
@@ -1226,6 +1280,23 @@ app.get('/api/sessions', async (req, res) => {
   }
 });
 
+// GET /api/stats?days=N — request_stats 明细（原始 usage + Context Assembly 诊断）
+app.get('/api/stats', async (req, res) => {
+  try {
+    const days = Math.min(parseInt(req.query.days, 10) || 30, 90);
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+    const { data, error } = await supabase
+      .from('request_stats')
+      .select('*')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/sessions
 app.post('/api/sessions', async (req, res) => {
   try {
@@ -1291,7 +1362,8 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
   });
 
   // 2. 构建消息数组 + 附图片（Context Assembly 已替代旧的 compressHistory 热路径压缩）
-  let messages = await buildMessages(sessionId, opts);
+  const { messages: builtMessages, diagnostics } = await buildMessages(sessionId, opts);
+  let messages = builtMessages;
   messages = attachImage(messages, opts.image);
 
   if (useStream) {
@@ -1302,7 +1374,7 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
     res.flushHeaders();
     if (res.socket) res.socket.setNoDelay(true);
 
-    const finalReply = await handleStreamChat(messages, res, opts);
+    const { content: finalReply, usageList = [] } = await handleStreamChat(messages, res, opts);
 
     await supabase.from('messages').insert({
       session_id: sessionId,
@@ -1319,9 +1391,15 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
 
     // 后台摘要生成（不进热路径、不阻塞响应；仅前端二）
     if (opts.client === 'angel') scheduleSummary(sessionId);
+    recordRequestStat({
+      sessionId, client: opts.client, model: toOpenRouterModel(opts.model),
+      stream: true, usageList, diagnostics,
+    });
   } else {
     const tools = opts.tools === 'off' ? null : getTools();
-    const assistantMessage = await callOpenRouterNonStream(messages, tools, opts);
+    const usageList = [];
+    const { msg: assistantMessage, usage: usage1 } = await callOpenRouterNonStream(messages, tools, opts);
+    if (usage1) usageList.push(usage1);
     let finalReply = '';
     const toolCalls = [];
 
@@ -1356,7 +1434,8 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
         });
       }
 
-      const secondMessage = await callOpenRouterNonStream(messages, null, opts);
+      const { msg: secondMessage, usage: usage2 } = await callOpenRouterNonStream(messages, null, opts);
+      if (usage2) usageList.push(usage2);
       finalReply = secondMessage.content;
     } else {
       finalReply = assistantMessage.content;
@@ -1380,6 +1459,10 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
 
     // 后台摘要生成（不进热路径、不阻塞响应；仅前端二）
     if (opts.client === 'angel') scheduleSummary(sessionId);
+    recordRequestStat({
+      sessionId, client: opts.client, model: toOpenRouterModel(opts.model),
+      stream: false, usageList, diagnostics,
+    });
   }
 }
 
