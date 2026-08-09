@@ -194,6 +194,175 @@ async function callOmbreTool(toolName, args = {}) {
     return null;
   }
 }
+
+// ===== recall：精确回溯原始聊天记录（本地 handler，不依赖 Ombre） =====
+// 信任契约：只返回「确实逐字提到」的命中。宁可漏，不可错——
+// 擦边的弱命中直接不返回，否则 found=false 会失去意义（说"没聊过"时模型不敢信），
+// 整条诚实链就塌了。语义措辞差异（搬家 vs 搬去上海）是 breath_search 的事，recall 不管。
+const RECALL_STOPWORDS = new Set([
+  '的', '了', '吗', '呢', '吧', '啊', '呀', '哦', '嗯', '噢',
+  '我们', '你们', '他们', '她们', '咱们', '我', '你', '他', '她', '它',
+  '那个', '这个', '上次', '之前', '以前', '当时', '那天', '那阵',
+  '什么', '怎么', '怎样', '啥', '哪',
+  '聊过', '聊了', '说过', '讲过', '谈过', '说了',
+  '就是', '因为', '所以', '然后', '还有', '或者', '可是', '不过',
+  '有', '是', '在', '和', '跟', '与', '都', '也', '就', '要', '会', '能', '去', '来',
+  '说', '问', '讲', '谈', '聊', '知道', '记得'
+]);
+
+function cleanQueryText(s) {
+  return String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+// 移除停用词，剩下来的才是「要找的核心内容」。
+// 中文没有空格分词，所以用子串移除而不是按词切分。两条规则：
+//   1. 多字停用词（我们/上次/聊过…）整段移除——它们显然是填充。
+//   2. 单字停用词（的/去/说/要…）只在首尾剥，且保证剩余 ≥ 2 字——
+//      否则"搬去"里的"去"会把核心词拆成"搬"（1 字被丢弃 → 误判空泛查询）。
+function stripStopwords(text) {
+  let t = text;
+  for (const w of RECALL_STOPWORDS) {
+    if (w.length >= 2) t = t.split(w).join('');
+  }
+  const singles = [...RECALL_STOPWORDS].filter(w => w.length === 1);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const w of singles) {
+      if (t.length > 2 && t.startsWith(w)) { t = t.slice(1); changed = true; }
+      else if (t.length > 2 && t.endsWith(w)) { t = t.slice(0, -1); changed = true; }
+    }
+  }
+  return t;
+}
+
+// 剩余文本里有没有实义字符？全是单字停用词（如"了了"）→ 空泛，不算有效词
+function hasContentChar(s) {
+  return [...String(s)].some(ch => !(RECALL_STOPWORDS.has(ch) && ch.length === 1));
+}
+
+function extractRecallTerms(query) {
+  // 支持一次给多个说法：空格/逗号分隔成子查询，各自去停用词（如 "搬家 搬走 换城市"）
+  const subs = String(query || '')
+    .split(/[\s,，、;；]+/)
+    .map(s => cleanQueryText(s))
+    .map(s => stripStopwords(s))
+    .filter(s => s.length >= 2 && hasContentChar(s));
+  return { subs, whole: subs.join(''), raw: String(query || '') };
+}
+
+function scoreRecallMessage(content, terms, whole) {
+  const text = String(content || '').toLowerCase();
+  let score = 0;
+  for (const t of terms) if (text.includes(t)) score += 10;
+  if (whole && text.includes(whole)) score += 5;
+  return score;
+}
+
+const RECALL_MAX_CHARS = 1800;
+const RECALL_MAX_QUERY_CHARS = 60;
+const RECALL_MAX_MSG_CHARS = 220;
+
+function truncateRecall(s, max = RECALL_MAX_MSG_CHARS) {
+  const t = String(s || '');
+  return t.length <= max ? t : t.slice(0, max) + '…';
+}
+
+function recallTimeLabel(ts) {
+  try { return relativeTimeLabel(new Date(ts).getTime(), Date.now()); }
+  catch (e) { return String(ts || ''); }
+}
+
+async function handleRecall(args = {}, sessionId) {
+  const query = String(args.query || '').slice(0, RECALL_MAX_QUERY_CHARS);
+  const { subs, whole, raw } = extractRecallTerms(query);
+  if (!subs.length) {
+    // 空泛查询守卫（借 Haven）：全是停用词/太短 → 不硬搜，让模型请她说具体点
+    return { found: false, vague: true, note: '查询太模糊，没法逐字检索。请让她说得具体一点——聊的是什么事、原话是什么。' };
+  }
+
+  const limit = Math.min(Math.max(parseInt(args.limit, 10) || 3, 1), 5);
+
+  let q = supabase
+    .from('messages')
+    .select('role, content, created_at')
+    .eq('session_id', sessionId)
+    .eq('visible', true)
+    .order('created_at', { ascending: true });
+  const since = String(args.since || '');
+  if (/^\d{4}-\d{2}-\d{2}$/.test(since)) {
+    const sinceISO = new Date(`${since}T00:00:00+08:00`);
+    if (!isNaN(sinceISO.getTime())) q = q.gte('created_at', sinceISO.toISOString());
+  }
+
+  const { data: msgs, error } = await q;
+  if (error || !msgs) {
+    console.error('❌ recall 查询 messages 失败:', error?.message);
+    return { found: false, error: true, note: '聊天记录读取失败。' };
+  }
+
+  // 分组往来（与 pairTurns 语义一致）
+  const exchanges = [];
+  let cur = null;
+  for (const m of msgs) {
+    if (m.role === 'user') {
+      cur = { time: m.created_at, user: m, replies: [] };
+      exchanges.push(cur);
+    } else if (m.role === 'assistant' && cur) {
+      cur.replies.push(m);
+    }
+  }
+
+  // 打分：命中组 = 组内最高命中消息；只收 best > 0 的组
+  const scored = [];
+  for (const ex of exchanges) {
+    const candidates = [ex.user, ...(ex.replies || [])].filter(Boolean);
+    let best = 0;
+    for (const c of candidates) best = Math.max(best, scoreRecallMessage(c.content, subs, whole));
+    if (best > 0) scored.push({ ex, score: best });
+  }
+
+  if (!scored.length) {
+    return { found: false, note: '在聊天记录里没有找到逐字提及。如果确实聊过，请直接告诉她"我们好像没聊过这个"，不要编造、不要凭记忆拼凑。' };
+  }
+
+  // 相关度降序 → 时间新优先
+  scored.sort((a, b) => b.score - a.score || new Date(b.ex.time) - new Date(a.ex.time));
+
+  const matches = [];
+  let total = 0;
+  for (const { ex } of scored) {
+    if (matches.length >= limit) break;
+    const item = {
+      time: recallTimeLabel(ex.time),
+      exchange: [
+        { speaker: '她', text: truncateRecall(ex.user?.content) },
+        ...(ex.replies || []).map(r => ({ speaker: '沈晏', text: truncateRecall(r.content) }))
+      ]
+    };
+    const size = JSON.stringify(item).length;
+    // 至少保证返回一组（哪怕单组超限）；否则 found:true 配空 matches 自相矛盾
+    if (matches.length === 0 || total + size <= RECALL_MAX_CHARS) {
+      total += size;
+      matches.push(item);
+    } else {
+      break;
+    }
+  }
+
+  return {
+    found: true,
+    query: raw,
+    matches,
+    note: `命中 ${matches.length} 组，按相关度与时间排序。逐字引用时保留她/沈晏的说话者归属。`
+  };
+}
+
+async function dispatchTool(name, args, sessionId) {
+  // recall 查的是本地 messages 表，必须住在 server.js；其余工具走 Ombre Brain MCP
+  if (name === 'recall') return handleRecall(args, sessionId);
+  return callOmbreTool(name, args);
+}
     
 
 // ===== 共享工具函数 =====
@@ -210,7 +379,7 @@ function getTools() {
       type: 'function',
       function: {
         name: 'breath_search',
-        description: '按关键词/语义主动检索记忆。语义可用时与 BM25 融合；也可按完整 bucket_id 直读原文。',
+        description: '语义检索浓缩记忆。当她说起过去的事、但你【不知道确切内容、只有模糊主题/印象】时用——比如"我是不是跟你提过什么""关于那件事你记得多少"。返回"可能相关"的记忆片段（大意/主题/情感），不是逐字记录。命中 = 只是可能相关，口气留余地。判断规则：你只有模糊主题/印象 → 用我；你知道确切原话/事件 → 用 recall 拿逐字证据。',
         parameters: {
           type: 'object',
           properties: {
@@ -240,6 +409,27 @@ function getTools() {
             tags: { type: 'string', description: '标签 AND 过滤' },
             catalog: { type: 'boolean', description: '目录模式：每桶只回一行「名称|域|重要度」，不带正文' }
           }
+        }
+      }
+    },
+    // ===== recall：精确回溯原始聊天记录（本地 handler，不走 Ombre） =====
+    // 与 breath_search 的分工是信任层级，不是主题层级：
+    //   recall = 精确层 —— 你知道要找的确切原话/事件时用，命中=高置信「就是那件事」
+    //   breath_search = 语义层 —— 只有模糊主题/印象时用，命中=低置信「可能相关」
+    // 模型根据"我知不知道要找什么"二选一，不需要在两个工具之间纠结先后。
+    {
+      type: 'function',
+      function: {
+        name: 'recall',
+        description: '逐字回溯原始聊天记录。当她说起过去的事、且你【知道要找的那句话/那件事的大致内容】时用——比如她说"我们上次聊搬家的时候""你当时说……"。在原始记录里精确匹配，返回逐字引语+时间+当时的一来一回。命中 = 高置信，可以引用原话、可以纠正她记岔的地方。判断规则：你知道确切内容 → 用我；你只有模糊主题/印象 → 用 breath_search。如果返回 found=false：记录里没有逐字命中，直接告诉她"我们好像没聊过这个"，不要用记忆拼凑、不要编造。',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: '要找的原话/事件关键词，给具体词；可一次给多个说法，空格或逗号分隔（如"搬家 搬走 换城市"），越具体越准' },
+            since: { type: 'string', description: '可选，只搜索这个日期之后的记录，格式 YYYY-MM-DD' },
+            limit: { type: 'number', description: '可选，最多返回几组往来，默认 3，最大 5' }
+          },
+          required: ['query']
         }
       }
     },
@@ -1281,7 +1471,7 @@ function thinkingEffort(thinking) {
 }
 
 // 流式对话：纯流式 + 工具循环，思考链实时转发
-async function handleStreamChat(messages, res, opts = {}) {
+async function handleStreamChat(messages, res, opts = {}, sessionId) {
   const model = toOpenRouterModel(opts.model);
   const thinkingMode = opts.thinking || 'standard';
   const hasReasoning = thinkingMode !== 'off';
@@ -1338,7 +1528,7 @@ async function handleStreamChat(messages, res, opts = {}) {
       let toolResult;
       let success = true;
       try {
-        toolResult = await callOmbreTool(tc.name, tc.arguments);
+        toolResult = await dispatchTool(tc.name, tc.arguments, sessionId);
       } catch (err) {
         toolResult = { error: err.message };
         success = false;
@@ -1738,7 +1928,7 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
     res.flushHeaders();
     if (res.socket) res.socket.setNoDelay(true);
 
-    const { content: finalReply, usageList = [] } = await handleStreamChat(messages, res, opts);
+    const { content: finalReply, usageList = [] } = await handleStreamChat(messages, res, opts, sessionId);
 
     await supabase.from('messages').insert({
       session_id: sessionId,
@@ -1780,7 +1970,7 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
 
         let toolResult;
         try {
-          toolResult = await callOmbreTool(fnName, fnArgs);
+          toolResult = await dispatchTool(fnName, fnArgs, sessionId);
         } catch (err) {
           toolResult = { error: err.message };
           console.error(`❌ 工具 ${fnName} 执行失败:`, err);
