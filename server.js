@@ -379,7 +379,7 @@ function getTools() {
       type: 'function',
       function: {
         name: 'breath_search',
-        description: '语义检索浓缩记忆。当她说起过去的事、但你【不知道确切内容、只有模糊主题/印象】时用——比如"我是不是跟你提过什么""关于那件事你记得多少"。返回"可能相关"的记忆片段（大意/主题/情感），不是逐字记录。命中 = 只是可能相关，口气留余地。判断规则：你只有模糊主题/印象 → 用我；你知道确切原话/事件 → 用 recall 拿逐字证据。',
+        description: '语义检索浓缩记忆。当她说起过去的事、但你【不知道确切内容、只有模糊主题/印象】时用——比如"我是不是跟你提过什么""关于那件事你记得多少"。返回"可能相关"的记忆片段（大意/主题/情感），不是逐字记录。命中 = 只是可能相关，口气留余地。判断规则：你只有模糊主题/印象 → 用我；你知道确切原话/事件 → 用 recall 拿逐字证据。\n记忆名/正文以【实】/【悬】/【空】开头 = 这条的可信度：实=她亲口说过，可当事实引用；悬=推断，要留余地（"隐约记得"）；无标记=不可靠，别当事实引用。',
         parameters: {
           type: 'object',
           properties: {
@@ -395,7 +395,7 @@ function getTools() {
       type: 'function',
       function: {
         name: 'breath_advanced',
-        description: '精细控制的记忆检索：按域/重要度/标签过滤、改情感坐标、或 catalog 目录模式最省 token。',
+        description: '精细控制的记忆检索：按域/重要度/标签过滤、改情感坐标、或 catalog 目录模式最省 token。\n记忆名/正文以【实】/【悬】/【空】开头 = 可信度（实=可当事实，悬=留余地，无标记=不可靠）。',
         parameters: {
           type: 'object',
           properties: {
@@ -437,7 +437,7 @@ function getTools() {
       type: 'function',
       function: {
         name: 'hold',
-        description: '把当下这一件事、感受或判断记下。自动打标并尝试与已有记忆合并。短内容（一句话级别）用这个。',
+        description: '把当下这一件事、感受或判断记下。自动打标并尝试与已有记忆合并。短内容（一句话级别）用这个。\n每条记忆必须带可信度标记：是她亲口说的 → content 以【实】开头，并附【证据】她说：「原文」；是你推断的 → 以【悬】开头，附你依据的话。没根据就别记。无标记 = 不可靠记忆，会被视为低可信。',
         parameters: {
           type: 'object',
           properties: {
@@ -457,7 +457,7 @@ function getTools() {
       type: 'function',
       function: {
         name: 'grow',
-        description: '整理一段长内容（≥30 字）或一天回顾，自动拆成多条独立事件桶。要存多条时用一次 grow 而非多次 hold。',
+        description: '整理一段长内容（≥30 字）或一天回顾，自动拆成多条独立事件桶。要存多条时用一次 grow 而非多次 hold。\n每条 item 同样要带【实】/【悬】可信度标记和证据，规则同 hold。',
         parameters: {
           type: 'object',
           properties: {
@@ -1396,6 +1396,234 @@ async function getLatestResidue(sessionId) {
   }
 }
 
+// ===== ③ 服务端记忆编辑者：写门控 + 差分写回 + 实/悬/空（长在记忆上） =====
+// 写纪律是显式机制不是模型自觉。分层：
+//   messages 表 = 历史（永久保留，演化永远在逐字记录里）
+//   Ombre 桶 = 当前投影（不重复建桶、无变化不动、变化只动该处）
+//   memory_topics 表 = 主题→桶→上次内容的索引，让差分写回免重搜 Ombre
+// 标记长在记忆上（路一）：桶名/正文以【实】/【悬】/【空】开头 + 【证据】引文
+//   + tag g:实|悬|空。无标记记忆视为不可靠（安全网，堵"裸记忆默认当真的"）。
+const MEMORY_WRITE_SYSTEM_PROMPT = `你是长期记忆编辑者。判断最近一小窗对话里，有没有值得写进长期记忆的事。长期记忆是"平时想起她"用的浓缩事实层。
+只提取这四类：
+- 她的人生事件/计划/决定（搬家、工作、家庭、健康等）
+- 她的稳定偏好/特点（喜欢什么、讨厌什么、习惯）
+- 你们关系里发生的变化、约定、她亲口让你记住的事
+- 值得记住的具体承诺/待办
+不要记：纯闲聊、天气、情绪氛围（情绪是另一层的活，不归你管）、重复/已知的事、你推断出来的心理活动。
+输出严格 JSON：
+{ "should_write": bool, "items": [ { "topic": "主题词，短，≤10字", "content": "一句话凝练，陈述语气，≤50字", "grounding": "实或悬", "evidence": "支撑引文，1条，≤60字", "importance": 0~1 } ] }
+纪律（必须遵守）：
+- 实 = 她亲口说过，evidence 必须是她的原文；悬 = 明显但没直说，evidence 给出你依据的话。
+- evidence 只引可见措辞，禁止用你的推理链当证据。
+- grounding 没有"空"选项——没根据就根本不要写这条。
+- 宁缺毋滥：没有值得写的就 should_write=false，items=[]。
+- 只分析可见对话，不替她编想法。`;
+
+function normalizeMemoryWrite(p) {
+  p = p && typeof p === 'object' ? p : {};
+  const items = (Array.isArray(p.items) ? p.items : [])
+    .map(i => ({
+      topic: String(i?.topic || '').trim().slice(0, 12),
+      content: String(i?.content || '').trim().slice(0, 60),
+      grounding: ['实', '悬', '空'].includes(i?.grounding) ? i.grounding : '空',
+      evidence: String(i?.evidence || '').trim().slice(0, 60),
+      importance: Math.min(Math.max(parseFloat(i?.importance) || 0.5, 0), 1),
+    }))
+    .filter(i => i.topic && i.content.length >= 4 && (i.grounding === '实' || i.grounding === '悬')); // 空=没根据，不写
+  return { should_write: p.should_write === true && items.length > 0, items };
+}
+
+async function classifyMemoryWriteViaDeepSeek(text) {
+  if (!process.env.DEEPSEEK_API_KEY) return null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'deepseek-v4-flash',
+          temperature: 0,
+          thinking: { type: 'disabled' },
+          max_tokens: 900,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: MEMORY_WRITE_SYSTEM_PROMPT },
+            { role: 'user', content: text }
+          ]
+        }),
+        signal: AbortSignal.timeout(30000)
+      });
+      if (!res.ok) {
+        console.warn('⚠️ 记忆分类请求失败:', res.status);
+        return null;
+      }
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) {
+        console.warn(`⚠️ 记忆分类返回空内容（attempt ${attempt}/2，finish_reason=${data.choices?.[0]?.finish_reason}）`);
+        continue;
+      }
+      return normalizeMemoryWrite(JSON.parse(content));
+    } catch (err) {
+      console.error('💥 记忆分类异常:', err.message);
+      return null;
+    }
+  }
+  return null;
+}
+
+const memoryWriteLocks = new Set(); // 单实例内存锁
+const memoryWriteProcessed = new Set(); // 本进程已处理过的窗口哈希，防同窗重复分类（跨重启会重跑，但差分零变化会跳过写）
+
+function scheduleMemoryWrite(sessionId) {
+  if (memoryWriteLocks.has(sessionId)) return;
+  memoryWriteLocks.add(sessionId);
+  generateMemoryWriteIfNeeded(sessionId)
+    .catch(err => console.error('💥 后台记忆写入异常:', err.message))
+    .finally(() => memoryWriteLocks.delete(sessionId));
+}
+
+async function generateMemoryWriteIfNeeded(sessionId) {
+  const { data: history, error } = await supabase
+    .from('messages')
+    .select('role, content')
+    .eq('session_id', sessionId)
+    .eq('visible', true)
+    .order('created_at', { ascending: true });
+  if (error || !history || history.length < 2) return;
+
+  // 最近 4 条窗口（与残留同窗），内容不变则窗口哈希相同 → 防同窗重复分类
+  const window = history.slice(-4);
+  const windowId = sha256(window.map(m => `${m.role}:${m.content}`).join('|'));
+  if (memoryWriteProcessed.has(windowId)) return;
+  memoryWriteProcessed.add(windowId);
+
+  // 预滤：窗口里几乎没有用户的话（纯寒暄/单字回应）→ 不跑分类省一次 DeepSeek
+  const userChars = window.filter(m => m.role === 'user').reduce((s, m) => s + String(m.content || '').length, 0);
+  if (userChars < 12) return;
+
+  const text = window.map(m => `${m.role === 'user' ? '她' : '沈晏'}: ${m.content}`).join('\n');
+  const parsed = await classifyMemoryWriteViaDeepSeek(text);
+  if (!parsed || !parsed.should_write) return;
+
+  await writeMemoryItems(parsed.items);
+}
+
+// —— memory_topics 差分索引 ——
+async function getAllMemoryTopics() {
+  try {
+    const { data } = await supabase.from('memory_topics').select('*');
+    return data || [];
+  } catch (e) { return []; }
+}
+
+async function upsertMemoryTopic(row) {
+  try {
+    const { error } = await supabase
+      .from('memory_topics')
+      .upsert({ ...row, updated_at: new Date().toISOString() }, { onConflict: 'topic' });
+    if (error) console.warn('⚠️ 更新 memory_topics 失败:', error.message);
+  } catch (e) {
+    console.warn('⚠️ 更新 memory_topics 异常:', e.message);
+  }
+}
+
+function findExistingMemoryTopic(topics, topic) {
+  const t = String(topic || '').trim();
+  if (!t) return null;
+  return topics.find(x => x.topic === t)
+    || topics.find(x => x.topic && x.topic.length >= 2 && t.includes(x.topic))   // 新词包含旧主题 → 更新旧桶
+    || topics.find(x => x.topic && x.topic.length >= 2 && x.topic.includes(t));  // 旧主题包含新词 → 更新旧桶
+}
+
+// 标记长在记忆上：桶名/正文以【实/悬/空】开头 + 次行【证据】引文（一眼可识别，不埋正文）
+function buildMarkedContent(item) {
+  let s = `【${item.grounding}】${item.content}`;
+  if (item.evidence) s += `\n【证据】她说：「${item.evidence}」`;
+  return s;
+}
+
+// 宽松解析 hold/breath_search 响应里的桶 ID（Ombre 是外部后端，格式以实际为准，解析失败回退定位）
+function extractBucketIdFromHoldResponse(text) {
+  if (!text) return null;
+  const s = String(text);
+  const m = s.match(/bucket[_\s-]?id['"]?\s*[:=]\s*['"]?([0-9a-zA-Z_-]{4,64})/i)
+    || s.match(/id['"]?\s*[:=]\s*['"]?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})['"]?/i)
+    || s.match(/\b([0-9a-f]{16,32})\b/i);
+  return m ? (m[1] || m[0]) : null;
+}
+
+async function holdNewMemory(item, marked) {
+  const resp = await callOmbreTool('hold', {
+    content: marked,
+    tags: [`g:${item.grounding}`, item.topic],
+    why_remembered: `长期记忆编辑者写入。grounding=${item.grounding}，topic=${item.topic}`
+  });
+  const bid = extractBucketIdFromHoldResponse(resp);
+  console.log(`🌿 记忆新建「${item.topic}」(${item.grounding}) bucket_id=${bid || '(未解析)'}`);
+  if (!bid) console.log('    hold 响应原文（用于核对桶 ID 格式）:', String(resp).slice(0, 200));
+  return bid;
+}
+
+async function locateBucketIdByTopic(topic) {
+  const resp = await callOmbreTool('breath_search', { query: topic, max_results: 3 });
+  return extractBucketIdFromHoldResponse(resp);
+}
+
+async function traceUpdateMemory(bucketId, oldStr, newStr) {
+  const resp = await callOmbreTool('trace', { id: bucketId, old_str: oldStr, new_str: newStr });
+  if (!resp) {
+    console.warn(`⚠️ 记忆差分 trace 失败 bucket=${bucketId}，本轮不更新本地快照（下轮重试）`);
+    return false;
+  }
+  console.log(`🔧 记忆差分更新 bucket=${bucketId} 成功`);
+  return true;
+}
+
+// 差分写回：新主题→hold；已存在→零变化跳过，有变化→trace 只动该处
+async function writeMemoryItems(items) {
+  if (!items.length) return;
+  const topics = await getAllMemoryTopics();
+  for (const item of items) {
+    try {
+      const existing = findExistingMemoryTopic(topics, item.topic);
+      const marked = buildMarkedContent(item);
+      const hash = sha256(marked);
+      if (existing) {
+        if (existing.snapshot_hash === hash) continue; // 零变化跳过
+        let bid = existing.bucket_id;
+        if (!bid) bid = await locateBucketIdByTopic(item.topic); // 首写没解析到 ID 时按主题定位
+        if (!bid) {
+          console.warn(`⚠️ 记忆差分「${item.topic}」无 bucket_id，本轮跳过更新`);
+          continue;
+        }
+        const ok = await traceUpdateMemory(bid, existing.last_content || '', marked);
+        if (!ok) continue; // trace 失败不动快照，下轮重试
+        existing.last_content = marked;
+        existing.snapshot_hash = hash;
+        existing.grounding = item.grounding;
+        existing.evidence = item.evidence;
+        existing.importance = item.importance;
+        await upsertMemoryTopic(existing);
+      } else {
+        const bid = await holdNewMemory(item, marked);
+        const row = {
+          topic: item.topic, bucket_id: bid,
+          grounding: item.grounding, evidence: item.evidence, importance: item.importance,
+          last_content: marked, snapshot_hash: hash,
+        };
+        await upsertMemoryTopic(row);
+        topics.push(row);
+      }
+    } catch (err) {
+      console.error(`💥 记忆写入「${item.topic}」异常:`, err.message);
+    }
+  }
+}
+
 async function buildMessages(sessionId, opts = {}) {
   // Memory Off：只发当前这一条，不带历史（绕过 Context Builder，两套前端共用）
   if (opts.memory === false) {
@@ -1943,10 +2171,11 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
     sendSSE(res, 'done', { reply: finalReply });
     res.end();
 
-    // 后台摘要生成 + 对话残留（不进热路径、不阻塞响应；仅前端二）
+    // 后台摘要生成 + 对话残留 + 长期记忆编辑者（不进热路径、不阻塞响应；仅前端二）
     if (opts.client === 'angel') {
       scheduleSummary(sessionId);
       scheduleResidue(sessionId);
+      scheduleMemoryWrite(sessionId);
     }
     recordRequestStat({
       sessionId, client: opts.client, model: toOpenRouterModel(opts.model),
@@ -2014,10 +2243,11 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
     }
     res.json(responseData);
 
-    // 后台摘要生成 + 对话残留（不进热路径、不阻塞响应；仅前端二）
+    // 后台摘要生成 + 对话残留 + 长期记忆编辑者（不进热路径、不阻塞响应；仅前端二）
     if (opts.client === 'angel') {
       scheduleSummary(sessionId);
       scheduleResidue(sessionId);
+      scheduleMemoryWrite(sessionId);
     }
     recordRequestStat({
       sessionId, client: opts.client, model: toOpenRouterModel(opts.model),

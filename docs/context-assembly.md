@@ -91,6 +91,26 @@ recall 是**本地工具**（住在 server.js，不走 Ombre Brain）：模型�
 - 体量硬上限：默认 3 组往来、总输出 ~1800 字符封顶、单条 220 字截断、limit 上限 5。
 - 位置：落在缓存断点之后（随当轮工具消息），不污染前缀。
 
+### 记忆编辑者：谁在写长期记忆
+
+recall 管**读**（回溯原文），breath_search 管**搜**（语义投影）。真正往 Ombre 桶**写**的，是服务端的记忆编辑者——一个响应结束后 fire-and-forget 的后台分类器（同摘要/残留，`scheduleMemoryWrite`，不在热路径）。
+
+**写门控**：不是每句话都值得进长期记忆。深度分类器（deepseek-v4-flash，thinking 关、temp 0、json_object）只从最近 4 条里提取四类：人生事件 / 稳定偏好 / 关系变化 / 承诺待办。纪律与残留同源：**实=她亲口说（证据必须原文引），悬=明显但没直说，宁缺毋滥**，没有"空"选项——没根据就不写，空悬一律不落库。
+
+**差分写回**（`writeMemoryItems` + `memory_topics` 表）：编辑者记录「每个主题 → Ombre 桶 → 上次写入内容快照」。三条路，按变化程度选：
+
+| 情形 | 动作 |
+|---|---|
+| 新主题 | `hold` 新建桶，快照入库 |
+| 内容没变（`snapshot_hash` 相同） | **零变化跳过**，不调任何 Ombre 写 |
+| 内容变了 | `trace` 手术更新，只动那一处，`old_str`=旧快照 |
+
+桶 ID 首写没解析出来时先落库 NULL，更新时用 breath_search 按主题定位；trace 失败不动快照，下轮重试。`sha256` 作零变化判定，不用全文比对。
+
+**grounding 长在记忆上（路一）**：可信度是记忆自身的属性，不是读取时现算的。桶名/正文以 `【实】`/`【悬】`/`【空】` 开头（一眼可识别，不埋进正文），次行 `【证据】她说：「原文」`，另挂 `g:实|悬|空` tag。不管从哪条通道拿回来（hold 桶、breath_search 命中、trace 后读），沈晏拿到记忆的**那一刻**就知道怎么对待。**无标记 = 低可信**是安全网：任何裸记忆不允许默认为真。
+
+与上面的双工具分工合起来是完整闭环：**recall（读原文）→ breath_search（搜大意）→ 编辑者（写与改）**。读侧的诚实契约和写侧的 grounding 是同一个原则的两半——沈晏对自己说出口的话和写进库里的字，可信度都必须看得见。
+
 ---
 
 ## 关键机制：为什么长这样
@@ -142,6 +162,7 @@ OpenRouter 会把消息数组里的 `system` 角色消息**提升合并进顶层
 |---|---|---|
 | `settings`（session_id='global'） | `frozen_rounds`（默认 10）、`live_rounds`（默认 15）、`max_context_tokens`（默认 8000） | 全局配置 |
 | `sessions` | `frozen_until_turn`、`summary_from_turn`、`summary_to_turn`、`summary_text` | 运行状态 |
+| `memory_topics` | `topic`、`bucket_id`、`grounding`、`evidence`、`importance`、`last_content`、`snapshot_hash` | 记忆编辑者差分写回索引（SQL 见 `sql/memory_topics.sql`） |
 
 **注意**：哈希（`frozen_prefix_hash` 等）只用于日志观察，**不进数据库**。不为此增加字段。
 
@@ -216,6 +237,10 @@ OpenRouter 会把消息数组里的 `system` 角色消息**提升合并进顶层
 - `getContextConfig()` / `getSessionState()` —— 配置与状态读取
 - `estimateTokens()` / `sha256()` / `withCacheControl()` —— 工具函数
 - `/chat` 与 `/api/chat` 路由 —— `x-client` 头读取与 `scheduleSummary` 挂钩
+- `handleRecall()` —— recall 本地工具（逐字回溯，诚实契约）
+- `scheduleMemoryWrite()` / `generateMemoryWriteIfNeeded()` —— 记忆编辑者后台分类器（写门控）
+- `writeMemoryItems()` / `holdNewMemory()` / `traceUpdateMemory()` —— 差分写回（新建 / 手术更新 / 零变化跳过）
+- `extractBucketIdFromHoldResponse()` / `locateBucketIdByTopic()` —— 桶 ID 捕获与定位
 
 ---
 
