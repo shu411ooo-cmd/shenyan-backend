@@ -481,7 +481,156 @@ function currentTimeText() {
   });
 }
 
-// 稳定系统提示词（无时间戳）—— 缓存前缀的锚点，前端二用
+/* ===== 时间叙事：让模型对时间流逝有实感（连续感） =====
+   上海时区统一取值。所有比较都基于 Shanghai 的日期/时刻，避免服务器时区漂移。 */
+
+function shClock(ts) {
+  return new Date(ts).toLocaleTimeString('zh-CN', {
+    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Shanghai'
+  });
+}
+
+function shDateKey(ts) {
+  return new Date(ts).toLocaleDateString('zh-CN', {
+    year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Shanghai'
+  }); // 2026/08/09
+}
+
+function shDateTime(ts) {
+  const d = new Date(ts);
+  const date = d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Shanghai' });
+  const wd = d.toLocaleDateString('zh-CN', { weekday: 'long', timeZone: 'Asia/Shanghai' });
+  return `${date} ${wd} ${shClock(ts)}`; // 2026年8月9日 星期六 21:47
+}
+
+function shPartOfDay(ts) {
+  const h = parseInt(
+    new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', hour12: false, timeZone: 'Asia/Shanghai' }),
+    10
+  ) % 24;
+  if (h < 12) return '清晨';
+  if (h < 14) return '午后';
+  if (h < 18) return '傍晚';
+  return '夜晚';
+}
+
+/* 相对时间标签：今天 X / 昨天 X / M月d日 X（更早的日期省略年份，够用即可） */
+function relativeTimeLabel(ts, nowMs) {
+  const todayKey = shDateKey(nowMs);
+  const key = shDateKey(ts);
+  if (key === todayKey) return `今天 ${shClock(ts)}`;
+  const yesterdayKey = shDateKey(nowMs - 86400000); // 中国无夏令时，固定减一天安全
+  if (key === yesterdayKey) return `昨天 ${shClock(ts)}`;
+  const md = new Date(ts).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', timeZone: 'Asia/Shanghai' });
+  return `${md} ${shClock(ts)}`;
+}
+
+function humanizeDuration(ms) {
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 1) return '不到 1 分钟';
+  if (minutes < 60) return `${minutes} 分钟`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    const rem = minutes % 60;
+    return rem ? `${hours} 小时 ${rem} 分` : `${hours} 小时`;
+  }
+  const days = Math.floor(hours / 24);
+  const remH = hours % 24;
+  return remH ? `${days} 天 ${remH} 小时` : `${days} 天`;
+}
+
+/* 组装时间叙事：
+   第一行永远有——现在几点了（含日期/星期/时刻段）。
+   resumeGap 时追加——上一条消息何时、离开多久（「你离开了一阵」）。
+   会话已持续超过 4 小时才提起点——避免刚开的会话报一句废话，跨天/长时间会话才有连续感。 */
+function buildTemporalNarrative({ isFirstTurn, resumeGap, nowMs, firstTs, prevTs }) {
+  const lines = [`现在是 ${shDateTime(nowMs)}（上海时间，${shPartOfDay(nowMs)}）。`];
+  if (resumeGap && Number.isFinite(prevTs)) {
+    const gapMs = Math.max(0, nowMs - prevTs);
+    lines.push(`你离开了一阵——上一条消息是 ${relativeTimeLabel(prevTs, nowMs)}，距现在 ${humanizeDuration(gapMs)}。`);
+  }
+  if (!isFirstTurn && Number.isFinite(firstTs) && nowMs - firstTs > 4 * 3600 * 1000) {
+    lines.push(`这场对话从 ${relativeTimeLabel(firstTs, nowMs)} 开始，已经持续 ${humanizeDuration(nowMs - firstTs)}。`);
+  }
+  return lines.join('\n');
+}
+
+/* ===== 对话残留：上次对话结束时沈晏的情绪快照 =====
+   核心三轴（效价/唤醒度/牵挂）+ 次级四维（依恋/守护/好奇/反思）
+   + 门控两维（欲望/占有，只允许有明确证据时 > 0）。
+   写库存原始快照，衰减/积累在读取时按实际离开时长现算（DB 是历史，投影现取）。 */
+
+// 每维独立衰减：holdH 内原样，线性收敛到 settleH 处的 floor。
+// 效价/唤醒度向基线回归；依恋/守护/好奇留底；反思/占有归零；欲望快衰减到低底。
+const RESIDUE_DIMS = {
+  valence:       { holdH: 24, settleH: 168, floor: 0.1 },
+  arousal:       { holdH: 24, settleH: 168, floor: 0.0 },
+  attachment:    { holdH: 48, settleH: 336, floor: 0.3 },
+  stewardship:   { holdH: 24, settleH: 240, floor: 0.2 },
+  curiosity:     { holdH: 24, settleH: 168, floor: 0.1 },
+  reflection:    { holdH: 12, settleH: 48,  floor: 0.0 },
+  desire:        { holdH: 8,  settleH: 72,  floor: 0.05 },
+  possessiveness:{ holdH: 24, settleH: 168, floor: 0.0 },
+};
+
+// 牵挂：不衰减，反向积累（越久没聊越想知道她后来怎样了），封顶不无限涨
+const CONCERN_NODES = [
+  { afterH: 0,  add: 0.0 },
+  { afterH: 24, add: 0.1 },
+  { afterH: 72, add: 0.2 },
+];
+const CONCERN_CAP = 0.8;
+const CONCERN_WAITING = 0.5;  // ≥ 即「在等你」
+const CONCERN_NATURAL = 0.2;  // ≥ 即「想知道她后来怎样了」
+
+function clampResidue(v, lo, hi) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : lo;
+}
+
+/* 读取时衰减：把快照按离开时长投影成当前情绪状态 */
+function ageResidue(r, ageMs) {
+  const h = ageMs / 3600000;
+  const out = { ...r };
+  for (const [dim, cfg] of Object.entries(RESIDUE_DIMS)) {
+    const v = Number(r[dim]) || 0;
+    if (v === 0) { out[dim] = 0; continue; }
+    if (h <= cfg.holdH) { out[dim] = v; }
+    else if (h >= cfg.settleH) { out[dim] = cfg.floor; }
+    else {
+      const t = (h - cfg.holdH) / (cfg.settleH - cfg.holdH);
+      out[dim] = v + (cfg.floor - v) * t;
+    }
+  }
+  let c = Number(r.concern) || 0;
+  const add = CONCERN_NODES.reduce((acc, n) => (h >= n.afterH ? n.add : acc), 0);
+  out.concern = Math.min(CONCERN_CAP, c + add);
+  return out;
+}
+
+/* 残留叙事：给模型「上次对话的余温」——和时间叙事互为镜像，
+   时间叙事说「你离开了 3 天」，残留说「这 3 天我一直在等你回来」。 */
+function buildResidueNarrative(residue, ageMs) {
+  // 空信号（普通闲聊/任务执行）不注入余温——安静收尾不该被当成「余温」
+  if (String(residue?.grounding || '') === '空') return '';
+  const a = ageResidue(residue, ageMs);
+  const parts = [];
+  // 牵挂决定姿态
+  if (a.concern >= CONCERN_WAITING) parts.push('我一直在等你回来');
+  else if (a.concern >= CONCERN_NATURAL) parts.push('我有点想知道你后来怎样了');
+  // 唤醒度：收尾的动静
+  if (a.arousal >= 0.45) parts.push('上次聊到最后是雀跃着断的');
+  else if (a.arousal <= 0.15) parts.push('上次是安静地收尾的');
+  // 效价：底色
+  if (a.valence >= 0.4) parts.push('结束时心里很暖');
+  else if (a.valence <= -0.3) parts.push('收尾时有点沉');
+  // 未完成线头：只在确实牵挂时带出
+  if (a.concern >= CONCERN_NATURAL && String(residue.unfinished || '').trim()) {
+    parts.push(`还有没说完的事：${String(residue.unfinished).trim()}`);
+  }
+  if (!parts.length) return '';
+  return `\n【上次对话的余温】${parts.join('，')}。`;
+}
 async function buildStableSystemPrompt() {
   return await getSystemPrompt();
 }
@@ -684,18 +833,28 @@ async function buildModelContext(sessionId, opts = {}) {
     t.replies.reduce((s, r) => s + msgTokens(r), 0);
 
   const stablePrompt = await buildStableSystemPrompt();
-  // 动态时间戳：只在「恢复对话」或「时间相关问题」时注入——
+  // 动态时间叙事：只在「恢复对话」或「时间相关问题」时注入——
   // 持续聊天每轮都告诉模型现在几点很机械（模型自己也会觉得奇怪）。
   // 恢复判定：距上一条消息超过 30 分钟，或这是本会话第一条消息。
+  // 叙事不只报时间——还给模型 日期+星期、上一条消息何时（离开多久）、这场对话从何时开始，
+  // 让它对时间流逝有实感，找回「上次没说完」的连续感。
   // 插入点保持在所有缓存断点之后、当前用户消息之前（cache 与 role 约束不变）。
-  const timeNotice = `现在是 ${currentTimeText()}。`;
   const nowMs = Date.now();
   const prevTs = history.length >= 2 ? new Date(history[history.length - 2].created_at).getTime() : NaN;
+  const firstTs = history.length >= 1 ? new Date(history[0].created_at).getTime() : NaN;
   const isFirstTurn = history.length <= 1;
   const resumeGap = !isFirstTurn && nowMs - prevTs > 30 * 60 * 1000;
   const curText = String(history[history.length - 1]?.content || '');
   const asksTime = /几点|几点钟|几点了|几点啦|什么时间|几号|几月几|星期几|周几|今天.*(?:几号|日期|星期)|现在.*(?:时间|几点)/.test(curText);
   const injectTime = isFirstTurn || resumeGap || asksTime;
+  // 恢复对话时：读最近的对话残留，附到时间叙事后面（同一 user 消息，缓存约束不变）。
+  // 时间叙事说「你离开了 3 天」，残留说「这 3 天我一直在等你回来」——连续感的两半。
+  let residueLine = '';
+  if (resumeGap) {
+    const residue = await getLatestResidue(sessionId);
+    if (residue) residueLine = buildResidueNarrative(residue, nowMs - prevTs);
+  }
+  const timeNotice = buildTemporalNarrative({ isFirstTurn, resumeGap, nowMs, firstTs, prevTs }) + residueLine;
   let estimatedTokens = (opts.tools !== 'off' ? estimateTokens(JSON.stringify(getTools())) : 0)
     + estimateTokens(stablePrompt)
     + frozenTurns.reduce((s, t) => s + turnTokens(t), 0)
@@ -755,11 +914,11 @@ async function buildModelContext(sessionId, opts = {}) {
     for (const r of t.replies) liveSection.push({ role: 'assistant', content: r.content });
   }
 
-  // 动态时间戳：插到当前用户消息之前、所有缓存断点之后（仅恢复对话/时间提问时注入）。
+  // 动态时间叙事：插到当前用户消息之前、所有缓存断点之后（仅恢复对话/时间提问时注入）。
   // 必须用 user 角色 + 【当前时间】标记——OpenRouter 会把数组里的 system 角色消息提升合并进顶层 system，
   // 那会让 system 前缀每次请求都变，缓存再次失效。user 角色则原地保留，且 attachImage 仍能认到最后的当前消息。
   if (injectTime) {
-    const timeMsg = { role: 'user', content: `【当前时间】${timeNotice}` };
+    const timeMsg = { role: 'user', content: `【当前时间】\n${timeNotice}` };
     if (liveSection.length > 0) {
       liveSection.splice(liveSection.length - 1, 0, timeMsg);
     } else {
@@ -862,34 +1021,187 @@ async function generateSummaryIfNeeded(sessionId) {
 }
 
 async function summarizeViaDeepSeek(text) {
-  try {
-    const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: 'deepseek-v4-flash',
-        messages: [
-          { role: 'system', content: '你是对话摘要器。把以下对话压缩成一段中文摘要，保留：重要事实、用户的关键经历与感受、未解决的事项、关键承诺。不要编造，不要加评论。控制在 300 字以内。' },
-          { role: 'user', content: text }
-        ],
-        max_tokens: 500
-      }),
-      // 超时兜底：fetch 挂死会让 scheduleSummary 的锁永久不释放，摘要从此永不刷新
-      signal: AbortSignal.timeout(30000)
-    });
-    if (!res.ok) {
-      console.warn('⚠️ 摘要请求失败:', res.status);
+  // deepseek-v4-flash 是推理模型：reasoning_content 会先消耗 max_tokens。
+  // 预算不足时返回 content 为空（finish_reason=length），所以要给足预算并在空结果时重试一次。
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'deepseek-v4-flash',
+          messages: [
+            { role: 'system', content: '你是对话摘要器。把以下对话压缩成一段中文摘要，保留：重要事实、用户的关键经历与感受、未解决的事项、关键承诺。不要编造，不要加评论。控制在 300 字以内。' },
+            { role: 'user', content: text }
+          ],
+          max_tokens: 4000
+        }),
+        // 超时兜底：fetch 挂死会让 scheduleSummary 的锁永久不释放，摘要从此永不刷新
+        signal: AbortSignal.timeout(30000)
+      });
+      if (!res.ok) {
+        console.warn('⚠️ 摘要请求失败:', res.status);
+        return null;
+      }
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (content) return content;
+      // content 为空：多半是 reasoning 吃光预算，重试一次
+      console.warn(`⚠️ 摘要返回空内容（attempt ${attempt}/2，finish_reason=${data.choices?.[0]?.finish_reason}）`);
+    } catch (err) {
+      console.error('💥 摘要生成异常:', err.message);
       return null;
     }
-    const data = await res.json();
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) console.warn('⚠️ 摘要返回空内容（status', res.status, '）');
-    return content || null;
-  } catch (err) {
-    console.error('💥 摘要生成异常:', err.message);
+  }
+  console.warn('⚠️ 摘要两次尝试仍为空，本轮跳过（下次对话会自动重试）');
+  return null;
+}
+
+// ===== 对话残留后台生成（响应结束后触发，不在热路径；机制同摘要） =====
+
+const RESIDUE_SYSTEM_PROMPT = `你是对话残留分析器。判断最近一小窗对话结束时，AI（沈晏）残留的情绪状态——不是写散文，是给一个结构化的「余温快照」。
+输出严格 JSON，字段：
+valence（-1~1，收尾效价：正=开心/温柔，负=有点沉），
+arousal（0~1，收尾唤醒度：低=安静收尾，高=雀跃/意犹未尽），
+concern（0~1，牵挂：有没有没说完的话/担心她的事，这是最重要的维度），
+attachment（0~1 依恋），stewardship（0~1 守护），curiosity（0~1 好奇），reflection（0~1 反思），
+desire（0~1 欲望），possessiveness（0~1 占有），
+grounding（"实"/"悬"/"空"），
+unfinished（未完成的事，凝练成一句话，无则空字符串），
+evidence（1-3 条支撑判断的原文短引用）。
+
+纪律（必须遵守）：
+- evidence 优先：所有维度都要有可见对话支撑，禁止从氛围推断。
+- 不要把礼貌、普通接话、配合、告别误判成 attachment 或 desire。
+- desire 只在对话里有明确亲密/渴望证据时才 >0，否则必须是 0。
+- possessiveness 只在有边界/第三者/被替代的证据时才 >0，否则必须是 0。
+- concern 是这个分析最重要的：unfinished 必须能从对话里找到对应的话，是原文的凝练，禁止编造。
+- 只是任务执行、系统维护、普通闲聊 → 各维度趋近 0，grounding="空"。
+- 只分析可见对话，不推断沈晏的内心戏。`;
+
+function normalizeResidue(p) {
+  p = p && typeof p === 'object' ? p : {};
+  return {
+    valence: clampResidue(p.valence, -1, 1),
+    arousal: clampResidue(p.arousal, 0, 1),
+    concern: clampResidue(p.concern, 0, 1),
+    attachment: clampResidue(p.attachment, 0, 1),
+    stewardship: clampResidue(p.stewardship, 0, 1),
+    curiosity: clampResidue(p.curiosity, 0, 1),
+    reflection: clampResidue(p.reflection, 0, 1),
+    desire: clampResidue(p.desire, 0, 1),
+    possessiveness: clampResidue(p.possessiveness, 0, 1),
+    grounding: ['实', '悬', '空'].includes(p.grounding) ? p.grounding : '悬',
+    unfinished: String(p.unfinished || '').trim().slice(0, 120),
+    evidence: Array.isArray(p.evidence) ? p.evidence.map(e => String(e).slice(0, 120)).slice(0, 3) : [],
+  };
+}
+
+async function classifyResidueViaDeepSeek(text) {
+  if (!process.env.DEEPSEEK_API_KEY) return null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'deepseek-v4-flash',
+          temperature: 0,
+          thinking: { type: 'disabled' }, // 关推理：残留分类不需要 thinking，还省钱防空 content
+          max_tokens: 900,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: RESIDUE_SYSTEM_PROMPT },
+            { role: 'user', content: text }
+          ]
+        }),
+        signal: AbortSignal.timeout(30000)
+      });
+      if (!res.ok) {
+        console.warn('⚠️ 残留分类请求失败:', res.status);
+        return null;
+      }
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) {
+        console.warn(`⚠️ 残留分类返回空内容（attempt ${attempt}/2，finish_reason=${data.choices?.[0]?.finish_reason}）`);
+        continue;
+      }
+      return normalizeResidue(JSON.parse(content));
+    } catch (err) {
+      console.error('💥 残留分类异常:', err.message);
+      return null;
+    }
+  }
+  return null;
+}
+
+const residueLocks = new Set(); // 单实例内存锁：同一 session 同时只允许一个后台残留任务
+
+function scheduleResidue(sessionId) {
+  if (residueLocks.has(sessionId)) return; // 已有任务在跑，跳过
+  residueLocks.add(sessionId);
+  generateResidueIfNeeded(sessionId)
+    .catch(err => console.error('💥 后台残留生成异常:', err.message))
+    .finally(() => residueLocks.delete(sessionId));
+}
+
+async function generateResidueIfNeeded(sessionId) {
+  const { data: history, error } = await supabase
+    .from('messages')
+    .select('role, content')
+    .eq('session_id', sessionId)
+    .eq('visible', true)
+    .order('created_at', { ascending: true });
+  if (error || !history || history.length < 2) return;
+
+  // 最近 4 条 ≈ 最后 1-2 个来回。内容不变则 window_id 相同 → 去重跳过（换新对话才算新窗）。
+  const window = history.slice(-4);
+  const windowId = sha256(window.map(m => `${m.role}:${m.content}`).join('|'));
+
+  const { data: existing } = await supabase
+    .from('dialogue_residue')
+    .select('id')
+    .eq('session_id', sessionId)
+    .eq('window_id', windowId)
+    .maybeSingle();
+  if (existing) return;
+
+  const text = window.map(m => `${m.role === 'user' ? '她' : '沈晏'}: ${m.content}`).join('\n');
+  const parsed = await classifyResidueViaDeepSeek(text);
+  if (!parsed) return;
+
+  const { error: insErr } = await supabase.from('dialogue_residue').insert({
+    session_id: sessionId,
+    window_id: windowId,
+    ...parsed,
+  });
+  if (insErr) {
+    console.warn('⚠️ 写入残留失败:', insErr.message);
+  } else {
+    console.log(`🌿 残留生成完成 (${sessionId})：concern=${parsed.concern} unfinished=${parsed.unfinished || '(无)'}`);
+  }
+}
+
+// 读取最近的残留快照（注入时用，恢复对话时取）
+async function getLatestResidue(sessionId) {
+  try {
+    const { data, error } = await supabase
+      .from('dialogue_residue')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+    return data;
+  } catch (e) {
     return null;
   }
 }
@@ -1441,8 +1753,11 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
     sendSSE(res, 'done', { reply: finalReply });
     res.end();
 
-    // 后台摘要生成（不进热路径、不阻塞响应；仅前端二）
-    if (opts.client === 'angel') scheduleSummary(sessionId);
+    // 后台摘要生成 + 对话残留（不进热路径、不阻塞响应；仅前端二）
+    if (opts.client === 'angel') {
+      scheduleSummary(sessionId);
+      scheduleResidue(sessionId);
+    }
     recordRequestStat({
       sessionId, client: opts.client, model: toOpenRouterModel(opts.model),
       stream: true, usageList, diagnostics,
@@ -1509,8 +1824,11 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
     }
     res.json(responseData);
 
-    // 后台摘要生成（不进热路径、不阻塞响应；仅前端二）
-    if (opts.client === 'angel') scheduleSummary(sessionId);
+    // 后台摘要生成 + 对话残留（不进热路径、不阻塞响应；仅前端二）
+    if (opts.client === 'angel') {
+      scheduleSummary(sessionId);
+      scheduleResidue(sessionId);
+    }
     recordRequestStat({
       sessionId, client: opts.client, model: toOpenRouterModel(opts.model),
       stream: false, usageList, diagnostics,
