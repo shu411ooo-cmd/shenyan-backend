@@ -186,11 +186,31 @@ async function callOmbreTool(toolName, args = {}) {
     }
 
     console.warn('⚠️ 无法解析 tools/call 响应:', parsed);
-    return parsed ? JSON.stringify(parsed) : null;
+    // 解析成功但无 result.content → 视为失败返回 null（已有 warn）。
+    // 之前这里返回 JSON.stringify(parsed)，会把垃圾 JSON 当工具结果注入上下文（如 breath 背景），必须堵死。
+    return null;
   } catch (err) {
     console.error(`💥 工具 ${toolName} 调用失败:`, err);
     return null;
   }
+}
+
+// —— 记忆/工具降级监测（静默降级报警：Seth&Vivi「丢弃出口全部点灯」+ 3novy「降级必须大声报警」）——
+// 每个静默降级出口（breath 注入失败 / 工具返回 null / 主题读取失败）都点灯 + 计入连击；
+// 连续 ≥3 次打一个醒目块；一次健康的 chat 请求清零。
+const degradedMonitor = { n: 0, alarmed: false };
+function markMemoryDegraded(reason) {
+  degradedMonitor.n++;
+  console.error(`⚠️ [记忆降级] ${reason}（连续第 ${degradedMonitor.n} 次）`);
+  if (degradedMonitor.n >= 3 && !degradedMonitor.alarmed) {
+    degradedMonitor.alarmed = true;
+    console.error('⚠️⚠️ 记忆链路连续降级 ≥3 次：breath/工具/主题读取存在持续失败，请检查 Ombre Brain 与 Supabase。');
+  }
+}
+function markMemoryHealthy() {
+  if (degradedMonitor.n > 0) console.log(`🌿 记忆链路恢复（此前连续降级 ${degradedMonitor.n} 次）`);
+  degradedMonitor.n = 0;
+  degradedMonitor.alarmed = false;
 }
 
 // ===== recall：精确回溯原始聊天记录（本地 handler，不依赖 Ombre） =====
@@ -360,6 +380,18 @@ async function dispatchTool(name, args, sessionId) {
   // recall 查的是本地 messages 表，必须住在 server.js；其余工具走 Ombre Brain MCP
   if (name === 'recall') return handleRecall(args, sessionId);
   return callOmbreTool(name, args);
+}
+
+// 工具结果序列化：null/undefined 必须替换成显式错误，绝不把字面 "null" 塞给模型——
+// 沈晏看到 "null" 会当成「工具没找到」，无法区分「真没有」和「后端挂」（最隐蔽的静默降级）。
+function serializeToolResult(name, result, degradedSet) {
+  if (result === null || result === undefined) {
+    markMemoryDegraded(`tool_null:${name}`);
+    if (degradedSet) degradedSet.add('tool_null');
+    console.error(`❌ 工具 ${name} 返回 null（后端无响应），已替换为显式错误`);
+    return JSON.stringify({ error: `工具 ${name} 无响应（后端可能不可用）` });
+  }
+  return JSON.stringify(result);
 }
     
 
@@ -966,7 +998,7 @@ function withCacheControl(msg) {
 // usage 语义（OpenRouter）：OpenAI 风格 cached_tokens 是 prompt_tokens 的子集；
 // Anthropic 风格 cache_read/creation 是独立的桶。两者可能并存，语义可能随 provider 变化——
 // 所以 usage_raw 原样存 JSONB，命中率等派生指标一律从原始数据后算，不固化。
-async function recordRequestStat({ sessionId, client, model, stream, usageList = [], diagnostics = null }) {
+async function recordRequestStat({ sessionId, client, model, stream, usageList = [], diagnostics = null, memory_degraded = null }) {
   try {
     const raw = usageList.filter(Boolean);
     const sum = (f) => raw.reduce((s, u) => s + (f(u) || 0), 0) || null;
@@ -1002,6 +1034,7 @@ async function recordRequestStat({ sessionId, client, model, stream, usageList =
       resume_gap_min: d.resume_gap_min ?? null,
       residue_injected: d.residue_injected ?? null,
       residue_text: d.residue_text ?? null,
+      memory_degraded,
     });
     if (error) console.warn('⚠️ 写入 request_stats 失败:', error.message);
   } catch (err) {
@@ -1257,6 +1290,10 @@ async function generateSummaryIfNeeded(sessionId) {
   const segments = await loadSummarySegments(sessionId);
   const watermark = segments.length ? segments[segments.length - 1].period_end : frozenUntil;
   if (watermark >= summaryEnd) return; // 已覆盖
+  // 水位线推进策略：落后少于阈值先攒着（未覆盖原文在热路径兜底），攒够再压段——
+  // 段变 chunk（~8 轮），summary section 稳定几轮 → 前缀缓存复用；也省 DeepSeek 调用
+  const MIN_SEGMENT_TURNS = 8;
+  if (summaryEnd - watermark < MIN_SEGMENT_TURNS) return; // 攒着，下次对话继续积攒
 
   // 只压缩新增部分（第 watermark+1 ~ summaryEnd 轮），旧段永不重写 —— append-only
   const { data: history } = await supabase
@@ -1628,7 +1665,12 @@ async function getAllMemoryTopics() {
   try {
     const { data } = await supabase.from('memory_topics').select('*');
     return data || [];
-  } catch (e) { return []; }
+  } catch (e) {
+    // fail-closed：读失败返回 null（不是 []）。调用方拿到 null 应跳过本轮差分写回——
+    // 拿 [] 会把所有主题当「不存在」→ 全部重新 hold → Ombre 重复建桶（永久污染）。
+    console.error('💥 读取 memory_topics 失败（本轮差分写回将跳过）:', e.message);
+    return null;
+  }
 }
 
 async function upsertMemoryTopic(row) {
@@ -1698,6 +1740,11 @@ async function traceUpdateMemory(bucketId, oldStr, newStr) {
 async function writeMemoryItems(items, conversationTime = '') {
   if (!items.length) return;
   const topics = await getAllMemoryTopics();
+  if (topics === null) {
+    markMemoryDegraded('memory_topics_read_failed');
+    console.error('❌ 记忆写回跳过：读取现有主题失败（防重复建桶），本轮不写，下轮重试');
+    return;
+  }
   for (const item of items) {
     try {
       const existing = findExistingMemoryTopic(topics, item.topic);
@@ -1882,7 +1929,7 @@ async function handleStreamChat(messages, res, opts = {}, sessionId) {
         role: 'tool',
         tool_call_id: tc.id,
         name: tc.name,
-        content: JSON.stringify(toolResult)
+        content: serializeToolResult(tc.name, toolResult, opts?.degraded)
       });
     }
     // 下一轮不带 tools（避免二次工具调用）
@@ -2225,6 +2272,7 @@ function attachImage(messages, image) {
 
 // 抽为独立函数，/sessions/:id/chat 和 /api/chat 共用
 async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
+  opts.degraded = new Set(); // 本次请求的降级标记，随 recordRequestStat 落 memory_degraded
   // 判断是否对话第一条消息：决定是否注入 breath 背景记忆（只在第一条，后续不调）
   const { count: priorUserCount } = await supabase
     .from('messages')
@@ -2251,12 +2299,20 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
   if (isFirstMessage && opts.tools !== 'off' && opts.memory !== false) {
     try {
       const bg = await callOmbreTool('breath');
-      if (bg && bg.length > 0) {
+      if (bg === null) {
+        // 调用失败（网络/非200/解析失败统一返回 null）——点灯，别静默跳过
+        markMemoryDegraded('breath_null');
+        opts.degraded.add('breath_null');
+        console.error('❌ breath 背景注入失败：返回 null（新对话将无记忆背景）');
+      } else if (bg.length > 0) {
         messages.splice(1, 0, { role: 'user', content: `【背景记忆 · 对话开始前提取】\n${bg}` });
         console.log(`🌿 第一条消息注入 breath 背景（${bg.length} 字符）`);
       }
+      // bg === '' → 合法空（确实没有可浮起的记忆），保持静默，不算降级
     } catch (e) {
-      console.warn('⚠️ breath 背景注入失败:', e.message);
+      markMemoryDegraded('breath_exception');
+      opts.degraded.add('breath_exception');
+      console.error('⚠️ breath 背景注入异常:', e.message);
     }
   }
 
@@ -2294,6 +2350,7 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
     recordRequestStat({
       sessionId, client: opts.client, model: toOpenRouterModel(opts.model),
       stream: true, usageList, diagnostics,
+      memory_degraded: opts.degraded?.size ? [...opts.degraded].join(',') : null,
     });
   } else {
     const tools = opts.tools === 'off' ? null : getTools();
@@ -2330,7 +2387,7 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
           tool_call_id: tc.id,
           role: 'tool',
           name: fnName,
-          content: JSON.stringify(toolResult)
+          content: serializeToolResult(fnName, toolResult, opts.degraded)
         });
       }
 
@@ -2366,8 +2423,12 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
     recordRequestStat({
       sessionId, client: opts.client, model: toOpenRouterModel(opts.model),
       stream: false, usageList, diagnostics,
+      memory_degraded: opts.degraded?.size ? [...opts.degraded].join(',') : null,
     });
   }
+
+  // 本次请求全程无降级 → 连击清零（记忆链路健康信号）
+  if (opts.degraded.size === 0) markMemoryHealthy();
 }
 
 // 测试 Ombre Brain 连接
