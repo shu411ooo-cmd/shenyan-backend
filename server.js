@@ -836,9 +836,10 @@ ${base}
 }
 
 // ===== Context Assembly Layer（仅前端二 x-client: angel 生效） =====
-// 四段组装：System → Frozen → Summary → Live → 当前消息
+// 四段组装：System → Frozen → Summary 段 → Live → 当前消息
 //  - Frozen：最早 frozen_until_turn 轮，字节稳定 = 缓存锚点，边界单调不重切
-//  - Summary：覆盖被省略的中间历史（summary_from_turn ~ summary_to_turn），后台生成，不进热路径
+//  - Summary 段：append-only 分段（summary_segments 表，period_start/period_end 固定），
+//    只覆盖被省略的中间历史；in-context 塌缩为「最新段 + 更早一个锚段」，更老段进 Archive（recall/breath 按需召回）
 //  - Live：最近 live_rounds 轮
 //  - 数据库历史永不删除，只决定发什么给模型。哈希只用于日志观察，不进库。
 
@@ -869,13 +870,52 @@ async function getSessionState(sessionId) {
   try {
     const { data, error } = await supabase
       .from('sessions')
-      .select('frozen_until_turn, summary_from_turn, summary_to_turn, summary_text')
+      .select('frozen_until_turn')
       .eq('id', sessionId)
       .maybeSingle();
     if (error || !data) return {};
     return data;
   } catch (e) {
     return {};
+  }
+}
+
+// —— P1 分段摘要：append-only，每段固定起止（period_start/period_end），不随对话增长 ——
+// 水位线 = 最新段的 period_end；旧段字节永不变 → 前缀缓存命中。
+async function loadSummarySegments(sessionId) {
+  try {
+    const { data, error } = await supabase
+      .from('summary_segments')
+      .select('period_start, period_end, content')
+      .eq('session_id', sessionId)
+      .order('period_start', { ascending: true });
+    if (error) {
+      console.warn('⚠️ 读取 summary_segments 失败:', error.message);
+      return [];
+    }
+    return data || [];
+  } catch (e) {
+    console.warn('⚠️ 读取 summary_segments 异常:', e.message);
+    return [];
+  }
+}
+
+async function insertSummarySegment(sessionId, periodStart, periodEnd, content) {
+  try {
+    const { error } = await supabase.from('summary_segments').insert({
+      session_id: sessionId,
+      period_start: periodStart,
+      period_end: periodEnd,
+      content,
+    });
+    if (error) {
+      console.warn('⚠️ 写入 summary_segments 失败:', error.message);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn('⚠️ 写入 summary_segments 异常:', e.message);
+    return false;
   }
 }
 
@@ -1007,17 +1047,21 @@ async function buildModelContext(sessionId, opts = {}) {
     liveTurns = turns; // 短历史：全部发
   }
 
-  // —— 摘要可用性：存在且覆盖中间段起点即可用。
-  // 后台摘要刷新总在响应之后，热路径看到的 summary_to 恒差 1 轮（永远到不了「盖满整个中间段」），
+  // —— 分段摘要可用性：水位线 = 最新段 period_end（append-only，旧段字节永不变）。
+  // 后台分段生成总在响应之后，热路径看到的水位线恒差 1 轮（永远到不了「盖满整个中间段」），
   // 用「盖满」当门槛会让摘要永远失效、中间段原文永远照发 → 预算被撑爆 → live 被裁 → 失忆。
   // 改为：摘要压缩到 summaryCoversTo，只把没覆盖的最近几轮原文补进来。
-  const hasSummaryText = !!state.summary_text && Number.isInteger(state.summary_from_turn) &&
-    Number.isInteger(state.summary_to_turn) && state.summary_to_turn >= frozenUntil + 1;
-  const summaryCoversTo = hasSummaryText ? state.summary_to_turn : frozenUntil;
+  const segments = await loadSummarySegments(sessionId);
+  const segWatermark = segments.length ? segments[segments.length - 1].period_end : null;
+  const hasSegment = Number.isInteger(segWatermark) && segWatermark >= frozenUntil + 1;
+  const summaryCoversTo = hasSegment ? segWatermark : frozenUntil;
   // 摘要没覆盖的最近几轮（原文保留）；没有摘要时等于整个中间段
-  let uncoveredMiddle = hasSummaryText
+  let uncoveredMiddle = hasSegment
     ? middleTurns.slice(summaryCoversTo - frozenUntil)
     : middleTurns;
+  // in-context 段：最新段恒在（缓存锚点）+ 更早一个锚段（预算允许时）；更老段进 Archive（recall/breath 按需召回）
+  const latestSeg = segments.length ? segments[segments.length - 1] : null;
+  let anchorSeg = segments.length >= 2 ? segments[segments.length - 2] : null;
 
   // —— token 预算 ——
   const msgTokens = (m) => Array.isArray(m.content)
@@ -1061,7 +1105,8 @@ async function buildModelContext(sessionId, opts = {}) {
   let estimatedTokens = (opts.tools !== 'off' ? estimateTokens(JSON.stringify(getTools())) : 0)
     + estimateTokens(stablePrompt)
     + frozenTurns.reduce((s, t) => s + turnTokens(t), 0)
-    + (hasSummaryText ? estimateTokens(state.summary_text) : 0)
+    + (latestSeg ? estimateTokens(latestSeg.content) : 0)
+    + (anchorSeg ? estimateTokens(anchorSeg.content) : 0)
     + uncoveredMiddle.reduce((s, t) => s + turnTokens(t), 0)
     + liveTurns.reduce((s, t) => s + turnTokens(t), 0)
     + (injectTime ? estimateTokens(timeNotice) : 0);
@@ -1079,6 +1124,12 @@ async function buildModelContext(sessionId, opts = {}) {
   while (estimatedTokens > config.max_context_tokens && uncoveredMiddle.length > 0) {
     estimatedTokens -= turnTokens(uncoveredMiddle[0]);
     uncoveredMiddle.shift();
+    trimmedTurns++;
+  }
+  // 仍超预算 → 丢弃更早锚段（保留最新段 + Frozen，缓存锚点不动；更老段只是降级到按需召回）
+  if (estimatedTokens > config.max_context_tokens && anchorSeg) {
+    estimatedTokens -= estimateTokens(anchorSeg.content);
+    anchorSeg = null;
     trimmedTurns++;
   }
 
@@ -1100,11 +1151,17 @@ async function buildModelContext(sessionId, opts = {}) {
     frozenSection[frozenSection.length - 1] = withCacheControl(frozenSection[frozenSection.length - 1]);
   }
 
-  if (hasSplit && (middleTurns.length > 0 || hasSummaryText)) {
-    if (hasSummaryText) {
+  if (hasSplit && (middleTurns.length > 0 || segments.length > 0)) {
+    if (anchorSeg) {
       summarySection.push(withCacheControl({
         role: 'user',
-        content: `【历史摘要 · 第 ${state.summary_from_turn}~${state.summary_to_turn} 轮】\n${state.summary_text}`
+        content: `【历史摘要 · 第 ${anchorSeg.period_start}~${anchorSeg.period_end} 轮】\n${anchorSeg.content}`
+      }));
+    }
+    if (latestSeg) {
+      summarySection.push(withCacheControl({
+        role: 'user',
+        content: `【历史摘要 · 第 ${latestSeg.period_start}~${latestSeg.period_end} 轮】\n${latestSeg.content}`
       }));
     }
     for (const t of uncoveredMiddle) {
@@ -1140,10 +1197,11 @@ async function buildModelContext(sessionId, opts = {}) {
   const diagnostics = {
     history_turns: totalTurns,
     frozen_turns: frozenTurns.length,
-    summary_present: hasSummaryText,
-    summary_range: hasSummaryText ? [state.summary_from_turn, state.summary_to_turn] : null,
-    summary_from: hasSummaryText ? state.summary_from_turn : null,
-    summary_to: hasSummaryText ? state.summary_to_turn : null,
+    summary_present: segments.length > 0,
+    summary_range: segments.length ? [segments[0].period_start, segments[segments.length - 1].period_end] : null,
+    summary_from: segments.length ? segments[0].period_start : null,
+    summary_to: segments.length ? segments[segments.length - 1].period_end : null,
+    segments_count: segments.length,
     middle_raw_turns: uncoveredMiddle.length,
     live_turns: liveTurns.length,
     messages_sent: messages.length,
@@ -1193,12 +1251,14 @@ async function generateSummaryIfNeeded(sessionId) {
   }
 
   const liveStart = totalTurns - config.live_rounds + 1;
-  const summaryEnd = liveStart - 1; // summary 应覆盖到的最后一轮
-  // 触发条件：存在被省略的中间段 且 当前摘要覆盖已落后
+  const summaryEnd = liveStart - 1; // 分段应覆盖到的最后一轮
+  // 触发条件：存在被省略的中间段 且 水位线（最新段 period_end）已落后
   if (summaryEnd < frozenUntil + 1) return; // 中间段为空
-  if (state.summary_to_turn != null && state.summary_to_turn >= summaryEnd) return; // 已覆盖
+  const segments = await loadSummarySegments(sessionId);
+  const watermark = segments.length ? segments[segments.length - 1].period_end : frozenUntil;
+  if (watermark >= summaryEnd) return; // 已覆盖
 
-  // 读中间段原文（第 frozenUntil+1 ~ summaryEnd 轮）
+  // 只压缩新增部分（第 watermark+1 ~ summaryEnd 轮），旧段永不重写 —— append-only
   const { data: history } = await supabase
     .from('messages')
     .select('role, content')
@@ -1206,25 +1266,21 @@ async function generateSummaryIfNeeded(sessionId) {
     .eq('visible', true)
     .order('created_at', { ascending: true });
   const turns = pairTurns(history);
-  const middleTurns = turns.slice(frozenUntil, summaryEnd);
-  if (!middleTurns.length) return;
+  const newTurns = turns.slice(watermark, summaryEnd);
+  if (!newTurns.length) return;
 
-  const textToCompress = middleTurns.flatMap(t => {
+  const textToCompress = newTurns.flatMap(t => {
     const lines = [`用户: ${t.user.content}`];
     for (const r of t.replies) lines.push(`沈晏: ${r.content}`);
     return lines;
   }).join('\n');
 
   const summary = await summarizeViaDeepSeek(textToCompress);
-  if (!summary) return; // 失败不动覆盖范围，下次请求自动重试
+  if (!summary) return; // 失败不动水位线，下次请求自动重试
 
-  await supabase.from('sessions').update({
-    summary_from_turn: frozenUntil + 1,
-    summary_to_turn: summaryEnd,
-    summary_text: summary,
-    updated_at: new Date().toISOString(),
-  }).eq('id', sessionId);
-  console.log(`✅ 后台摘要生成完成 (${sessionId})：第 ${frozenUntil + 1}~${summaryEnd} 轮`);
+  const ok = await insertSummarySegment(sessionId, watermark + 1, summaryEnd, summary);
+  if (!ok) return;
+  console.log(`✅ 分段摘要生成 (${sessionId})：第 ${watermark + 1}~${summaryEnd} 轮（现共 ${segments.length + 1} 段）`);
 }
 
 async function summarizeViaDeepSeek(text) {
