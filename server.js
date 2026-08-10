@@ -1282,23 +1282,34 @@ evidence 选取规则（最重要）：
 - desire 只在对话里有明确亲密/渴望证据时才 >0，否则必须是 0。
 - possessiveness 只在有边界/第三者/被替代的证据时才 >0，否则必须是 0。
 - 只是任务执行、系统维护、普通闲聊 → 各维度趋近 0，grounding="空"，evidence 为空数组。
+- 一致性铁律（grounding/evidence/unfinished 必须自洽）：有 evidence → "实"；无 evidence 但有 unfinished → "悬"；evidence 与 unfinished 都为空 → 必须是 "空"。自然结束不是 unfinished 的内容——对话自然结束时 unfinished 必须是空字符串（禁止写「自然结束」「没有未完成」这类话），evidence 空数组，grounding="空"。
 - 只分析可见对话，不推断沈晏的内心戏。`;
 
 function normalizeResidue(p) {
   p = p && typeof p === 'object' ? p : {};
+  const evidence = Array.isArray(p.evidence) ? p.evidence.map(e => String(e).slice(0, 120)).slice(0, 1) : []; // 只留断点那一条，防止相似证据变噪音
+  let unfinished = String(p.unfinished || '').trim().slice(0, 120);
+  // 一致性兜底（2026-08-11 真实案例：grounding=实 + unfinished="对话...自然结束" 自相矛盾）：
+  //   - 自然结束是状态不是内容——分类器把「自然结束/没有未完成」当 unfinished 写时清空它
+  //   - grounding 直接由 evidence/unfinished 推导，不再信模型猜的：有 evidence → 实；
+  //     无 evidence 有 unfinished → 悬；两者都无 → 空
+  if (/(没有未完成|无未完成)|对话.{0,12}自然结束|已自然收尾/.test(unfinished)) unfinished = '';
+  const hasEvidence = evidence.length > 0;
+  const grounding = hasEvidence ? '实' : (unfinished ? '悬' : '空');
+  const isNaturalEnd = !hasEvidence && !unfinished; // 自然结束：无证据无线头 → concern 归零，不给注入留把柄
   return {
     valence: clampResidue(p.valence, -1, 1),
     arousal: clampResidue(p.arousal, 0, 1),
-    concern: clampResidue(p.concern, 0, 1),
+    concern: isNaturalEnd ? 0 : clampResidue(p.concern, 0, 1),
     attachment: clampResidue(p.attachment, 0, 1),
     stewardship: clampResidue(p.stewardship, 0, 1),
     curiosity: clampResidue(p.curiosity, 0, 1),
     reflection: clampResidue(p.reflection, 0, 1),
     desire: clampResidue(p.desire, 0, 1),
     possessiveness: clampResidue(p.possessiveness, 0, 1),
-    grounding: ['实', '悬', '空'].includes(p.grounding) ? p.grounding : '悬',
-    unfinished: String(p.unfinished || '').trim().slice(0, 120),
-    evidence: Array.isArray(p.evidence) ? p.evidence.map(e => String(e).slice(0, 120)).slice(0, 1) : [], // 只留断点那一条，防止相似证据变噪音
+    grounding,
+    unfinished,
+    evidence,
   };
 }
 
