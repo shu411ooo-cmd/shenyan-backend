@@ -770,8 +770,9 @@ const CONCERN_NODES = [
   { afterH: 72, add: 0.2 },
 ];
 const CONCERN_CAP = 0.8;
-const CONCERN_WAITING = 0.5;  // ≥ 即「在等你」
-const CONCERN_NATURAL = 0.2;  // ≥ 即「想知道她后来怎样了」
+// ≥ CONCERN_NATURAL 才把未完成的线头带进恢复上下文。
+// 0.5「在等你」档不再在叙事里区分（留给将来 recall 的注意力权重，叙事不写情绪档位）。
+const CONCERN_NATURAL = 0.2;
 
 function clampResidue(v, lo, hi) {
   const n = Number(v);
@@ -798,28 +799,26 @@ function ageResidue(r, ageMs) {
   return out;
 }
 
-/* 残留叙事：给模型「上次对话的余温」——和时间叙事互为镜像，
-   时间叙事说「你离开了 3 天」，残留说「这 3 天我一直在等你回来」。 */
+/* 残留叙事：给模型「上次对话的余温」——和时间叙事互为镜像。
+   设计（2026-08-10 四模型评审 + 用户拍板后定稿）：
+   - 只注入两样东西：断点原文（L3 证据）+ 一个线程条件（「那句话还悬着」）。
+   - 删掉「我一直在等你/雀跃着断的/心里很暖」这类情绪结论句——内容必须由模型读原文自己感受。
+   - valence/arousal 及次级四维只留在后台做 recall/attention 权重，不进叙事。
+   - 无具体线头（无 evidence 也无 unfinished）则不注入——宁可无，不编余温。 */
 function buildResidueNarrative(residue, ageMs) {
   // 空信号（普通闲聊/任务执行）不注入余温——安静收尾不该被当成「余温」
   if (String(residue?.grounding || '') === '空') return '';
   const a = ageResidue(residue, ageMs);
-  const parts = [];
-  // 牵挂决定姿态
-  if (a.concern >= CONCERN_WAITING) parts.push('我一直在等你回来');
-  else if (a.concern >= CONCERN_NATURAL) parts.push('我有点想知道你后来怎样了');
-  // 唤醒度：收尾的动静
-  if (a.arousal >= 0.45) parts.push('上次聊到最后是雀跃着断的');
-  else if (a.arousal <= 0.15) parts.push('上次是安静地收尾的');
-  // 效价：底色
-  if (a.valence >= 0.4) parts.push('结束时心里很暖');
-  else if (a.valence <= -0.3) parts.push('收尾时有点沉');
-  // 未完成线头：只在确实牵挂时带出
-  if (a.concern >= CONCERN_NATURAL && String(residue.unfinished || '').trim()) {
-    parts.push(`还有没说完的事：${String(residue.unfinished).trim()}`);
-  }
-  if (!parts.length) return '';
-  return `\n【上次对话的余温】${parts.join('，')}。`;
+  // 牵挂是叙事闸：低于「想知道她怎样了」就不提线头，整段不注入
+  if (a.concern < CONCERN_NATURAL) return '';
+  // 断点原文（L3）优先——分类器只产 1 条，即收尾断掉的那句逐字引用
+  const ev = Array.isArray(residue.evidence) ? residue.evidence : [];
+  const bp = String(ev[0] || '').trim().slice(0, 120);
+  if (bp) return `\n【上次对话的余温】上次的话断在这——她说：「${bp}」。那句话还悬着。`;
+  // 无原文才退到事实凝练（L2，分类器已保证不带情绪判断）；再无则整个不注入
+  const unfinished = String(residue.unfinished || '').trim();
+  if (unfinished) return `\n【上次对话的余温】还有没说完的事：${unfinished}。`;
+  return '';
 }
 async function buildStableSystemPrompt() {
   return await getSystemPrompt();
@@ -912,13 +911,16 @@ function sha256(text) {
 }
 
 // —— cache_control 断点（OpenRouter 透传给 Anthropic，请求上限 4 个） ——
+// 稳定段（frozen 末块 / summary）用 1h TTL：字节级稳定，值得留长一点，别让 5 分钟 TTL 把跨时段的复用打断。
+// 动态尾巴不在这（顶层 cache_control 只挂在最后一条消息上，保持默认 5m）。
+// 断点排序合法：1h 在前、5m 在后（Anthropic 只禁 1h-after-5m）。
 function withCacheControl(msg) {
   if (msg.role === 'tool') return msg;
   if (Array.isArray(msg.content)) {
     return { ...msg, content: msg.content.map((b, i) =>
-      i === msg.content.length - 1 ? { ...b, cache_control: { type: 'ephemeral' } } : b) };
+      i === msg.content.length - 1 ? { ...b, cache_control: { type: 'ephemeral', ttl: '1h' } } : b) };
   }
-  return { ...msg, content: [{ type: 'text', text: msg.content, cache_control: { type: 'ephemeral' } }] };
+  return { ...msg, content: [{ type: 'text', text: msg.content, cache_control: { type: 'ephemeral', ttl: '1h' } }] };
 }
 
 // —— 记录一次 chat 请求的真实 usage 到 request_stats（失败只告警，不阻断） ——
@@ -1072,7 +1074,8 @@ async function buildModelContext(sessionId, opts = {}) {
   // —— 组装消息 ——
   const messages = [{
     role: 'system',
-    content: [{ type: 'text', text: stablePrompt, cache_control: { type: 'ephemeral' } }]
+    // 稳定前缀锚：1h TTL（与 frozen/summary 一致，见 withCacheControl）
+    content: [{ type: 'text', text: stablePrompt, cache_control: { type: 'ephemeral', ttl: '1h' } }]
   }];
   const frozenSection = [];
   const summarySection = [];
@@ -1252,24 +1255,30 @@ async function summarizeViaDeepSeek(text) {
 
 // ===== 对话残留后台生成（响应结束后触发，不在热路径；机制同摘要） =====
 
-const RESIDUE_SYSTEM_PROMPT = `你是对话残留分析器。判断最近一小窗对话结束时，AI（沈晏）残留的情绪状态——不是写散文，是给一个结构化的「余温快照」。
+const RESIDUE_SYSTEM_PROMPT = `你是对话残留分析器。判断最近一小窗对话结束时，AI（沈晏）残留的状态——不是写散文，是给一个结构化的「余温素材快照」。
+注意：你只负责提取素材，不负责写沈晏的情绪结论。沈晏在不在等你、想不想念、期不期待，都禁止写进任何字段——那要由模型读原文自己得出。
+
 输出严格 JSON，字段：
-valence（-1~1，收尾效价：正=开心/温柔，负=有点沉），
-arousal（0~1，收尾唤醒度：低=安静收尾，高=雀跃/意犹未尽），
-concern（0~1，牵挂：有没有没说完的话/担心她的事，这是最重要的维度），
+valence（-1~1，收尾效价：正=开心/温柔，负=有点沉，仅作后台记录，不进叙事），
+arousal（0~1，收尾唤醒度：低=安静收尾，高=意犹未尽，仅作后台记录，不进叙事），
+concern（0~1，牵挂：有没有没说完的话/担心她的事，这是最重要的维度——决定线头要不要进恢复上下文），
 attachment（0~1 依恋），stewardship（0~1 守护），curiosity（0~1 好奇），reflection（0~1 反思），
 desire（0~1 欲望），possessiveness（0~1 占有），
 grounding（"实"/"悬"/"空"），
-unfinished（未完成的事，凝练成一句话，无则空字符串），
-evidence（1-3 条支撑判断的原文短引用）。
+unfinished（未完成的事：只准事实凝练——你们在聊什么、停在哪；禁止任何情绪判断或结论，无则空字符串），
+evidence（只产 1 条：收尾断掉的那句原文，逐字引用，最长 120 字，无则空数组）。
+
+evidence 选取规则（最重要）：
+- 取对话最后一句有效内容；若最后一句本身无意义（如「哈哈哈哈」「晚安」「表情」），退到更早一句、能独立表达未完成事项的一小段原文。
+- 必须逐字引用，禁止转述、凝练、拼接。
+- 只有对话真的断在某个未完成点时才填；对话自然结束、没有悬而未决的话 → evidence 为空数组，unfinished 也为空，concern 趋近 0，grounding="空"。
 
 纪律（必须遵守）：
 - evidence 优先：所有维度都要有可见对话支撑，禁止从氛围推断。
 - 不要把礼貌、普通接话、配合、告别误判成 attachment 或 desire。
 - desire 只在对话里有明确亲密/渴望证据时才 >0，否则必须是 0。
 - possessiveness 只在有边界/第三者/被替代的证据时才 >0，否则必须是 0。
-- concern 是这个分析最重要的：unfinished 必须能从对话里找到对应的话，是原文的凝练，禁止编造。
-- 只是任务执行、系统维护、普通闲聊 → 各维度趋近 0，grounding="空"。
+- 只是任务执行、系统维护、普通闲聊 → 各维度趋近 0，grounding="空"，evidence 为空数组。
 - 只分析可见对话，不推断沈晏的内心戏。`;
 
 function normalizeResidue(p) {
@@ -1286,7 +1295,7 @@ function normalizeResidue(p) {
     possessiveness: clampResidue(p.possessiveness, 0, 1),
     grounding: ['实', '悬', '空'].includes(p.grounding) ? p.grounding : '悬',
     unfinished: String(p.unfinished || '').trim().slice(0, 120),
-    evidence: Array.isArray(p.evidence) ? p.evidence.map(e => String(e).slice(0, 120)).slice(0, 3) : [],
+    evidence: Array.isArray(p.evidence) ? p.evidence.map(e => String(e).slice(0, 120)).slice(0, 1) : [], // 只留断点那一条，防止相似证据变噪音
   };
 }
 
