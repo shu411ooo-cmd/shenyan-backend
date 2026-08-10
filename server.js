@@ -814,7 +814,8 @@ function buildResidueNarrative(residue, ageMs) {
   // 断点原文（L3）优先——分类器只产 1 条，即收尾断掉的那句逐字引用
   const ev = Array.isArray(residue.evidence) ? residue.evidence : [];
   const bp = String(ev[0] || '').trim().slice(0, 120);
-  if (bp) return `\n【上次对话的余温】上次的话断在这——她说：「${bp}」。那句话还悬着。`;
+  // 归属不硬编码（断点可能是沈晏自己的话）——只背原文，引语内容自带人称，模型读得出谁说的
+  if (bp) return `\n【上次对话的余温】上次的话断在这：「${bp}」。那句话还悬着。`;
   // 无原文才退到事实凝练（L2，分类器已保证不带情绪判断）；再无则整个不注入
   const unfinished = String(residue.unfinished || '').trim();
   if (unfinished) return `\n【上次对话的余温】还有没说完的事：${unfinished}。`;
