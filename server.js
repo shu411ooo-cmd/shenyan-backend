@@ -137,8 +137,6 @@ async function initOmbreSession() {
 }
 
 async function callOmbreTool(toolName, args = {}) {
-  console.log('[调试] OMBRE_BRAIN_URL 当前值:', process.env.OMBRE_BRAIN_URL);
-
   if (!process.env.OMBRE_BRAIN_URL) {
     console.error('❌ [错误] OMBRE_BRAIN_URL 未配置！请检查 Railway 环境变量！');
     return null;
@@ -1443,7 +1441,9 @@ async function getLatestResidue(sessionId) {
 //   memory_topics 表 = 主题→桶→上次内容的索引，让差分写回免重搜 Ombre
 // 标记长在记忆上（路一）：桶名/正文以【实】/【悬】/【空】开头 + 【证据】引文
 //   + tag g:实|悬|空。无标记记忆视为不可靠（安全网，堵"裸记忆默认当真的"）。
-const MEMORY_WRITE_SYSTEM_PROMPT = `你是长期记忆编辑者。判断最近一小窗对话里，有没有值得写进长期记忆的事。长期记忆是"平时想起她"用的浓缩事实层。
+function buildMemoryWritePrompt(nowText) {
+  return `你是长期记忆编辑者。判断最近一小窗对话里，有没有值得写进长期记忆的事。长期记忆是"平时想起她"用的浓缩事实层。
+现在是 ${nowText}。
 只提取这四类：
 - 她的人生事件/计划/决定（搬家、工作、家庭、健康等）
 - 她的稳定偏好/特点（喜欢什么、讨厌什么、习惯）
@@ -1451,13 +1451,24 @@ const MEMORY_WRITE_SYSTEM_PROMPT = `你是长期记忆编辑者。判断最近�
 - 值得记住的具体承诺/待办
 不要记：纯闲聊、天气、情绪氛围（情绪是另一层的活，不归你管）、重复/已知的事、你推断出来的心理活动。
 输出严格 JSON：
-{ "should_write": bool, "items": [ { "topic": "主题词，短，≤10字", "content": "一句话凝练，陈述语气，≤50字", "grounding": "实或悬", "evidence": "支撑引文，1条，≤60字", "importance": 0~1 } ] }
+{ "should_write": bool, "items": [ { "topic": "主题词，短，≤10字", "content": "一句话凝练，陈述语气，≤50字", "grounding": "实或悬", "evidence": "支撑引文，1条，≤60字", "importance": 0~1, "event_time": "ISO8601或null" } ] }
 纪律（必须遵守）：
 - 实 = 她亲口说过，evidence 必须是她的原文；悬 = 明显但没直说，evidence 给出你依据的话。
 - evidence 只引可见措辞，禁止用你的推理链当证据。
 - grounding 没有"空"选项——没根据就根本不要写这条。
 - 宁缺毋滥：没有值得写的就 should_write=false，items=[]。
-- 只分析可见对话，不替她编想法。`;
+- 只分析可见对话，不替她编想法。
+- event_time：事件真实发生的时间（不是入库时间，不是对话时间）。只有对话里明确引用具体时间才填，且要换算成具体日期（如"7月28号"→"2026-07-28"，"上周"→上周某日，"去年冬天"→具体月日）；"今天/现在"不必填（对话时间就是今天）；完全没提就 null。禁止拿"现在"顶替不知道的时间——过去的事必须标真实日期，否则回填时会被当成今天。`;
+}
+
+function parseEventTime(v) {
+  if (typeof v !== 'string' || !v.trim()) return null;
+  const t = new Date(v.trim());
+  if (Number.isNaN(t.getTime())) return null;
+  const y = t.getFullYear();
+  if (y < 2000 || y > 2100) return null; // 防 LLM 幻觉年份
+  return t.toISOString();
+}
 
 function normalizeMemoryWrite(p) {
   p = p && typeof p === 'object' ? p : {};
@@ -1468,6 +1479,7 @@ function normalizeMemoryWrite(p) {
       grounding: ['实', '悬', '空'].includes(i?.grounding) ? i.grounding : '空',
       evidence: String(i?.evidence || '').trim().slice(0, 60),
       importance: Math.min(Math.max(parseFloat(i?.importance) || 0.5, 0), 1),
+      event_time: parseEventTime(i?.event_time),
     }))
     .filter(i => i.topic && i.content.length >= 4 && (i.grounding === '实' || i.grounding === '悬')); // 空=没根据，不写
   return { should_write: p.should_write === true && items.length > 0, items };
@@ -1475,6 +1487,7 @@ function normalizeMemoryWrite(p) {
 
 async function classifyMemoryWriteViaDeepSeek(text) {
   if (!process.env.DEEPSEEK_API_KEY) return null;
+  const nowText = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Shanghai' });
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
@@ -1490,7 +1503,7 @@ async function classifyMemoryWriteViaDeepSeek(text) {
           max_tokens: 900,
           response_format: { type: 'json_object' },
           messages: [
-            { role: 'system', content: MEMORY_WRITE_SYSTEM_PROMPT },
+            { role: 'system', content: buildMemoryWritePrompt(nowText) },
             { role: 'user', content: text }
           ]
         }),
@@ -1529,7 +1542,7 @@ function scheduleMemoryWrite(sessionId) {
 async function generateMemoryWriteIfNeeded(sessionId) {
   const { data: history, error } = await supabase
     .from('messages')
-    .select('role, content')
+    .select('role, content, created_at')
     .eq('session_id', sessionId)
     .eq('visible', true)
     .order('created_at', { ascending: true });
@@ -1538,6 +1551,8 @@ async function generateMemoryWriteIfNeeded(sessionId) {
   // 最近 4 条窗口（与残留同窗），内容不变则窗口哈希相同 → 防同窗重复分类
   const window = history.slice(-4);
   const windowId = sha256(window.map(m => `${m.role}:${m.content}`).join('|'));
+  // 对话时间 = 窗口最新一条消息的时间（事件时间的兜底锚，区别于入库时间 created_at）
+  const conversationTime = window.length ? String(window[window.length - 1].created_at || '') : '';
   if (memoryWriteProcessed.has(windowId)) return;
   memoryWriteProcessed.add(windowId);
 
@@ -1549,7 +1564,7 @@ async function generateMemoryWriteIfNeeded(sessionId) {
   const parsed = await classifyMemoryWriteViaDeepSeek(text);
   if (!parsed || !parsed.should_write) return;
 
-  await writeMemoryItems(parsed.items);
+  await writeMemoryItems(parsed.items, conversationTime);
 }
 
 // —— memory_topics 差分索引 ——
@@ -1624,7 +1639,7 @@ async function traceUpdateMemory(bucketId, oldStr, newStr) {
 }
 
 // 差分写回：新主题→hold；已存在→零变化跳过，有变化→trace 只动该处
-async function writeMemoryItems(items) {
+async function writeMemoryItems(items, conversationTime = '') {
   if (!items.length) return;
   const topics = await getAllMemoryTopics();
   for (const item of items) {
@@ -1647,6 +1662,7 @@ async function writeMemoryItems(items) {
         existing.grounding = item.grounding;
         existing.evidence = item.evidence;
         existing.importance = item.importance;
+        if (item.event_time) existing.event_time = item.event_time; // 新认知可补事件时间，不留空覆盖；conversation_time 保留首次值不漂移
         await upsertMemoryTopic(existing);
       } else {
         const bid = await holdNewMemory(item, marked);
@@ -1654,6 +1670,8 @@ async function writeMemoryItems(items) {
           topic: item.topic, bucket_id: bid,
           grounding: item.grounding, evidence: item.evidence, importance: item.importance,
           last_content: marked, snapshot_hash: hash,
+          event_time: item.event_time || null,
+          conversation_time: conversationTime || null,
         };
         await upsertMemoryTopic(row);
         topics.push(row);
