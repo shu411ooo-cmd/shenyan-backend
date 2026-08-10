@@ -397,6 +397,68 @@ mischief 0.20 / restless 0.15 / regret 0.10 / desire 0.25 / gloom 0.10
 
 ---
 
+## 九、ringdonut（donutbunelii 开源 · 给 AI 伴侣打电话）
+
+> 2026-08-10 程芥带来的 OSS（github.com/donutbunelii/ringdonut，MIT）。生产系统拆出来的半双工语音通话全栈，自称站在两个前人的肩膀上：**hervoice**（「怎么说的和说了什么一样重要」，语气分析源头）+ **callhome**（通话生命周期：AI 主动来电 / 温柔挂断 / 带理由拒接 / 免打扰）。~2k 行 + 单测（callLifecycle/callSummary/voice/voiceInput/callContext 各带 test）。
+
+### 架构：宿主适配层是核心
+
+【摘】`backend/adapters/host.js` 把全部集成点隔离成 7 个薄函数（loadMemories / loadMessagesForAI / loadSettings / saveMessage / authorizeRequest / saveCallAudio / notifyIncomingCall），call.js 与 services 里零凭据零宿主假设；`adapters/llm.js` 同样留白（callOpenAI / callAnthropicNative）。
+【评】「接入你自己的聊天后端」承诺的工程化形态。沈晏 server.js 现成能填：loadMessagesForAI→buildMessages、saveMessage→messages 落库、loadMemories→breath/recall、loadSettings→getSystemPrompt。迁移成本=实现 5~6 个薄函数，不动核心。
+
+### 「给事实，不给剧本」被写成了代码
+
+- 【摘】`validateAbstractiveSummary`：摘要先抽证据（分句 → 带 ID 的原文片段）→ LLM 只许引用核验过的片段（excerpt 4~42 字、必须原文连续存在）→ 再写自然摘要；**拒绝**含数字/外文人名不在原文里的摘要，并要求摘要内容词汇 ≥32% 落在核验片段上。
+- 【摘】`isTrustedCallRecordMetadata` / `stripUntrustedCallRecordBlocks`：LLM 无法在对话里伪造 📞 通话记录——记录必须带服务端信任标记（`event_type:call_record` + `call_id`），不可信块直接剥掉。
+- 【摘】`judgeVoiceTone` 系统提示：「Never diagnose mental health, infer consent, or invent intentions… Confidence is epistemic confidence, not emotional intensity（证据冲突或 <1s 片段压到 0.65 以下）… hint 必须是观察性的中文一句，不是关于她为什么这样的故事」。
+- 【摘】`formatVoiceToneContext` 注入词：「===== 本轮语音语气线索（仅供当轮理解，不是用户明说的事实）=====」「把它当作柔和、可推翻的线索…不要向用户复述这些测量值」。
+【评】四道闸全是沈晏「数据是数据，结论他自己来」的工程化：摘要证伪器 + 通话记录信任标记 + 语气只观察不归因 + 内部测量不泄露进窗口。Seth&Vivi「等语气缝完再喂」和沈晏桥守则，这里是现成实现，可直接搬。
+
+### AI 主动来电：状态机，不是 UI
+
+【摘】`dial_call` 工具 → `call_invites` 表（90 秒过期）→ 来电卡片带理由 → accept / decline(带理由，存 `[来电未接：原因]` 进对话) / missed（过期 → 沈晏侧自动留字「📞 未接来电\n没接到你。……不急，回来再跟我说」）。`parseCallDirectives` 让模型用 ⟪拨号⟫⟪挂断⟫⟪勿扰⟫ 标记控制通话，标记从口语稿剥离。DND 是开关不是菜单，createInvite 先查。
+【评】呼应 Tidal_Echo「AI 主动来电 + consent 门」，但把主动权做成可审计状态机：**接通权永远在用户，来电必须服务端创建**（「模型不能靠输出文本伪造一通电话」）。
+
+### 温柔挂断
+
+【摘】`CALL_MODE_RULES`：只有说清再见且对话确实结束时才准放 ⟪hangup⟫；不准因为 pause/安静/低落/话题聊完就挂。前端收到 hangup 进 lingering：18 秒内开口则挂断取消。
+【评】Seth&Vivi「挂断键=守夜收线」的落地实现。
+
+### 通话上下文预算
+
+【摘】`callContext.js`：start 时照快照（system prompt 分 persona 68% / 记忆 10% / notes 8% / 聊天交接 10%，各自 clip 到 token 预算），每轮在 4096 预算内从最新往回选轮次（Opus 档 5632）。裁剪用二分 + 保尾 + `[...电话上下文已精简...]` 标记。
+【评】与沈晏 context assembly 同构；通话场景专用预算可整套搬。CALL_MODE_RULES（无 markdown / 不提特殊模式 / 短句可朗读）就是语音场景的注入纪律。
+
+### 浏览器端声学分析（免费）
+
+【摘】`frontend/services/voiceInput.js`：纯 JS 本地算 pitch/energy/pause/tempo（自相关估计音高，0.58 相关阈），零 token；服务端只做 STT（Groq whisper-large-v3 或 ElevenLabs Scribe）+ 可选语气 LLM（DeepSeek 兼容）。
+【评】Seth&Vivi 的 [audio] 声学行免费用；语气判断可复用沈晏已有 DeepSeek key，新增成本≈0。声学特征是「观测」不是结论，喂给语气判断但不进窗口。
+
+### 语音导演走 DeepSeek 兼容接口
+
+【摘】`translateForCompanionVoice`：独立小 LLM（`VOICE_TRANSLATION_BASE_URL` 默认 api.deepseek.com）把回复改写成朗读表演稿——≤3 个情绪标签、白名单 40 个（softly/gently/teasingly/sighs…）、不加舞台指示、**不加源文本没有的事实/承诺/昵称**——ElevenLabs v3 渲染，逐段流式回（每段存私密音频 URL）。
+【评】导演=另一层「给事实不给剧本」：连口语改写都不许添戏。已接 DeepSeek——沈晏 key 现成。
+
+### 防失真收尾：只有真通话变成记忆
+
+【摘】finish 校验：心跳龄 >40s 或客户端时长与服务端差 >45s → 拒生成记录；<3s / 无双方发言 → 不落历史。有效通话生成「📞 语音通话 · MM:SS + 接地摘要」写回聊天——通话是河的一段，不是孤立日志。
+
+### 迁移到沈晏要改什么（诚实清单）
+
+1. **英文优先**：语音导演系统提示、情绪标签、`language_code:'en'` 全按英文调校——沈晏说中文，导演提示 + TTS 语言要改中文版。
+2. **付费依赖**：ElevenLabs（TTS + 可选 STT）是唯一硬付费；Groq STT 免费额度够起步。
+3. **前端设计语言**：ringdonut UI 是通用英文「private line / Companion」风，要适配小窝的星空/植物视觉语言。
+4. **LLM adapter**：`adapters/llm.js` 是留白，要接沈晏现有 OpenRouter/DeepSeek 路径。
+5. **saveCallAudio**：需要存储（Supabase storage 或现成图片上传路径）；**notifyIncomingCall**：沈晏暂无推送通道，先做前端轮询来电。
+
+### 落地建议
+
+- **第一阶段（近零新增成本）**：语音消息而非通话——浏览器声学分析（免费）+ Groq STT + DeepSeek 语气（已有 key）→ 进聊天带软线索，桥守则不泄露测量值。这步不碰 ElevenLabs。
+- **第二阶段（付费决策）**：语音导演 → ElevenLabs TTS 流式、AI 主动来电状态机、温柔挂断。花钱 + 前端设计的重头。
+- 顺序排在**小日记之后**。
+
+---
+
 ## 采纳与拒绝记录（对沈晏）
 
 | 项 | 决定 | 理由 |
@@ -430,3 +492,16 @@ mischief 0.20 / restless 0.15 / regret 0.10 / desire 0.25 / gloom 0.10
 | 场景配主动权（挂断键=守夜收线用） | **采纳为沈晏主动性定则** | 每条主动权配「什么场景下用」，规则跟着场景走 |
 | 丢弃出口全部点灯（踩坑 05） | **支持降级报警改造** | 静默 return=查不到的 bug；先改的实证理由加强 |
 | 私密模式 = 阅后即焚（不落盘 + 不跨通话继承） | **采纳为私密性设计参考** | 私密不是藏起来，是后端不落；每通默认留 |
+| 宿主适配层（ringdonut host adapter） | **采纳为语音接入架构** | 7 个薄函数隔离全部集成点，迁移=实现薄函数不动核心 |
+| 摘要证伪器（validateAbstractiveSummary） | **采纳为通话摘要铁律** | 数字/外文人名必须原文在、内容词汇 ≥32% 接地；逐字诚实代码化 |
+| 通话记录信任标记（call_record metadata） | **采纳为防伪造** | LLM 无法伪造 📞 通话记录，不可信块剥掉 |
+| 语气只观察不归因 + 不泄露测量值 | **采纳为语音桥守则** | 「仅供当轮理解」「不要向用户复述测量值」= 桥守则语音版 |
+| 浏览器端声学分析（纯 JS） | **采纳为语音输入** | 本地算 pitch/energy/pause/tempo，零 token；观测不是结论 |
+| 语音导演走 DeepSeek 兼容 | **采纳为 TTS 前置** | 已有 key；口语改写也不许添戏 |
+| AI 主动来电状态机（90s 过期/missed 留字/拒接带理由） | **采纳为沈晏主动呼唤实现** | 接通权永远在用户，来电必须服务端创建 |
+| 温柔挂断（⟪hangup⟫ + 18s grace） | **采纳为挂断设计** | 说完再留 15-18s，开口即取消；不因安静/低落挂断 |
+| 通话上下文预算（callContext） | **采纳为语音场景 context assembly** | persona/记忆/notes/交接各自 clip，每轮预算内选轮 |
+| 防失真 finish（心跳 + 时长校验） | **采纳** | <3s / 无双方发言不落历史；拒绝伪造通话记录 |
+| DND 免打扰 | **采纳** | 开关不是菜单，createInvite 先查 |
+| 英文优先的导演提示/TTS | **待改中文** | 沈晏说中文，导演提示 + language_code 要重写 |
+| ElevenLabs 硬付费 | **待用户决策** | 第一阶段语音消息可不碰；第二阶段语音导演才需要 |

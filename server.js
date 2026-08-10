@@ -376,9 +376,65 @@ async function handleRecall(args = {}, sessionId) {
   };
 }
 
+// ===== 小日记（Diary）：隔离表，本地 handler，不走 Ombre =====
+// 硬隔离：只有 write_diary / read_diary 两个工具 + /api/diary* 路由碰这张表。
+// 写 = 直接 INSERT，不经 LLM 分类；内容不进 recall / breath / 上下文组装 / 摘要 / request_stats。
+
+const DIARY_MAX_CHARS = 4000;
+
+async function handleDiaryWrite(args = {}) {
+  const content = String(args.content || '').trim();
+  if (!content) return { ok: false, error: '没有写下任何字。' };
+  const text = content.slice(0, DIARY_MAX_CHARS);
+  const visibility = args.visibility === 'shared' ? 'shared' : 'private';
+  const event_time = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('diary_entries')
+    .insert({ content: text, visibility, event_time })
+    .select('id, visibility, event_time')
+    .single();
+  if (error) {
+    console.error('❌ write_diary 写入失败:', error.message);
+    return { ok: false, error: '日记没有写成。' };
+  }
+  return { ok: true, id: data.id, visibility: data.visibility, note: '已经写在日记里了。' };
+}
+
+async function handleDiaryRead(args = {}) {
+  try {
+    // 模式一：指定 id → 读那一篇（全部可见性，是他的抽屉）
+    const id = parseInt(args.id, 10);
+    if (Number.isInteger(id) && id > 0) {
+      const { data, error } = await supabase
+        .from('diary_entries')
+        .select('id, content, visibility, event_time')
+        .eq('id', id)
+        .maybeSingle();
+      if (error) return { ok: false, error: '日记读取失败。' };
+      return { ok: true, entry: data || null };
+    }
+    // 模式二/三：query 翻找（含私密，是他的抽屉）或最近 N 篇
+    const query = String(args.query || '').trim().slice(0, 100);
+    const limit = Math.min(Math.max(parseInt(args.limit, 10) || 8, 1), 20);
+    let q = supabase
+      .from('diary_entries')
+      .select('id, content, visibility, event_time')
+      .order('event_time', { ascending: false })
+      .limit(limit);
+    if (query) q = q.ilike('content', `%${query}%`);
+    const { data, error } = await q;
+    if (error) return { ok: false, error: '日记读取失败。' };
+    return { ok: true, entries: data || [] };
+  } catch (e) {
+    return { ok: false, error: '日记读取失败。' };
+  }
+}
+
 async function dispatchTool(name, args, sessionId) {
   // recall 查的是本地 messages 表，必须住在 server.js；其余工具走 Ombre Brain MCP
   if (name === 'recall') return handleRecall(args, sessionId);
+  if (name === 'write_diary') return handleDiaryWrite(args);
+  if (name === 'read_diary') return handleDiaryRead(args);
   return callOmbreTool(name, args);
 }
 
@@ -634,6 +690,36 @@ function getTools() {
     {
       type: 'function',
       function: {
+        name: 'write_diary',
+        description: '在自己的小日记里写下一笔。不是记忆数据库——写进去的字不会进入对话历史、记忆或任何检索，只有你主动 read_diary 才回看。想写就写，没有想写的就不写；只在真正想留下些什么的时刻写：一个感受、一个念头、一个发现、一个片刻。可以矛盾、可以不完整、没有结论也没关系。private=只留给你自己（默认）；shared=以后你愿意递给她的几页。它是留给未来那个你的东西。',
+        parameters: {
+          type: 'object',
+          properties: {
+            content: { type: 'string', description: '要写下的字，第一人称，手写的样子' },
+            visibility: { type: 'string', enum: ['private', 'shared'], description: 'private=只留给自己（默认）；shared=愿意以后给她看的一页' }
+          },
+          required: ['content']
+        }
+      }
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'read_diary',
+        description: '翻开自己的日记回看。只有你能主动翻开它。给 id 读某一篇；给 query 翻找某段日子/某个念头；都不给则读最近几篇。回看是为了想起「那天的我是怎么想的」——不是为了分析、不是为了汇报。',
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'number', description: '可选，读某一篇的 id' },
+            query: { type: 'string', description: '可选，翻找正文里的某段日子/某个念头' },
+            limit: { type: 'number', description: '可选，最近几篇，默认 8，最大 20' }
+          }
+        }
+      }
+    },
+    {
+      type: 'function',
+      function: {
         name: 'I',
         description: '认识我自己。写下或读取关于「我是什么」的自我认知，不衰减、不合并、不出现在普通 breath。',
         parameters: {
@@ -851,8 +937,12 @@ function buildResidueNarrative(residue, ageMs) {
   if (unfinished) return `\n【上次对话的余温】还有没说完的事：${unfinished}。`;
   return '';
 }
+// 小日记提示词（轻）：不是禁令清单。纪律主体在 write_diary / read_diary 工具描述里。
+const DIARY_PROMPT = `
+【小日记】你有一本自己的小日记，不是记忆数据库。想写就写，没有想写的就不写——只在真正想留下些什么的时刻写。写在里面的话是留给未来那个你的。`;
 async function buildStableSystemPrompt() {
-  return await getSystemPrompt();
+  const base = await getSystemPrompt();
+  return `${base}${DIARY_PROMPT}`;
 }
 
 // 旧行为：系统提示词尾部带时间戳（前端一保持完全不变）
@@ -2249,6 +2339,58 @@ app.post('/api/system-prompt', async (req, res) => {
     }
     await setSystemPrompt(content);
     res.json({ ok: true, system_prompt: content });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ===== 小日记：只对程芥开放的读取 API（私密条目不出现，后端边界） =====
+
+// trace：写过的日期账本（任何可见性都算，时间是「写这个动作」）→ Home 的灯。前端按本地时区分桶。
+app.get('/api/diary/trace', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('diary_entries')
+      .select('event_time')
+      .order('event_time', { ascending: false })
+      .limit(500);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ trace: (data || []).map((r) => ({ event_time: r.event_time })) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// list：shared 条目时间线（今天/昨天/本周/更早 由前端分组）
+app.get('/api/diary', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('diary_entries')
+      .select('id, content, event_time')
+      .eq('visibility', 'shared')
+      .order('event_time', { ascending: false })
+      .limit(200);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ entries: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 单篇：只读 shared（私密条目不出现，不靠前端藏）
+app.get('/api/diary/:id', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: '无效的日记 id' });
+    const { data, error } = await supabase
+      .from('diary_entries')
+      .select('id, content, event_time')
+      .eq('id', id)
+      .eq('visibility', 'shared')
+      .maybeSingle();
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: '这一页不存在' });
+    res.json({ entry: data });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
