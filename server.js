@@ -961,6 +961,9 @@ async function recordRequestStat({ sessionId, client, model, stream, usageList =
       frozen_prefix_hash: d.frozen_prefix_hash ?? null,
       summary_hash: d.summary_hash ?? null,
       live_hash: d.live_hash ?? null,
+      resume_gap_min: d.resume_gap_min ?? null,
+      residue_injected: d.residue_injected ?? null,
+      residue_text: d.residue_text ?? null,
     });
     if (error) console.warn('⚠️ 写入 request_stats 失败:', error.message);
   } catch (err) {
@@ -1043,9 +1046,18 @@ async function buildModelContext(sessionId, opts = {}) {
   // 恢复对话时：读最近的对话残留，附到时间叙事后面（同一 user 消息，缓存约束不变）。
   // 时间叙事说「你离开了 3 天」，残留说「这 3 天我一直在等你回来」——连续感的两半。
   let residueLine = '';
+  let residueInjected = false; // 观测：本次请求残留注入是否触发（进 request_stats，供测试验收）
+  let residueText = null;
   if (resumeGap) {
     const residue = await getLatestResidue(sessionId);
-    if (residue) residueLine = buildResidueNarrative(residue, nowMs - prevTs);
+    if (residue) {
+      residueLine = buildResidueNarrative(residue, nowMs - prevTs);
+      if (residueLine) {
+        residueInjected = true;
+        residueText = residueLine.trim();
+        console.log(`🌿 [余温注入] session=${sessionId} grounding=${residue.grounding} concern=${residue.concern}: ${residueText}`);
+      }
+    }
   }
   const timeNotice = buildTemporalNarrative({ isFirstTurn, resumeGap, nowMs, firstTs, prevTs }) + residueLine;
   let estimatedTokens = (opts.tools !== 'off' ? estimateTokens(JSON.stringify(getTools())) : 0)
@@ -1142,6 +1154,9 @@ async function buildModelContext(sessionId, opts = {}) {
     frozen_prefix_hash: frozenHash,
     summary_hash: summaryHash || null,
     live_hash: liveHash,
+    resume_gap_min: resumeGap && Number.isFinite(prevTs) ? Math.round((nowMs - prevTs) / 60000) : null,
+    residue_injected: residueInjected,
+    residue_text: residueText,
   };
 
   console.log(`[ContextAssembly] ${JSON.stringify({ session: sessionId, ...diagnostics })}`);
