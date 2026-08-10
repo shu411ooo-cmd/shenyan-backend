@@ -1273,7 +1273,7 @@ evidence 选取规则（最重要）：
 - evidence[0] 是「断点所在的那一句」：能独立表达未完成事项的原文（通常是引出未完成线头的她的话，或沈晏被截断的半句话）。
 - 优先取最近出现的这一句；若最后一句只是完整的回应、不承载未完成事项（如「我先去忙了」），往前找承载未完成事项的那句。
 - 若最后一句本身无意义（如「哈哈哈哈」「晚安」「表情」），退到更早一句、能独立表达未完成事项的原文。
-- 必须逐字引用，禁止转述、凝练、拼接。
+- 必须逐字引用，禁止转述、凝练、拼接；禁止带「她：」「沈晏：」这类角色前缀——只引用那一句本身的话。
 - 只有对话真的断在某个未完成点时才填；对话自然结束、没有悬而未决的话 → evidence 为空数组，unfinished 也为空，concern 趋近 0，grounding="空"。
 
 纪律（必须遵守）：
@@ -1287,7 +1287,9 @@ evidence 选取规则（最重要）：
 
 function normalizeResidue(p) {
   p = p && typeof p === 'object' ? p : {};
-  const evidence = Array.isArray(p.evidence) ? p.evidence.map(e => String(e).slice(0, 120)).slice(0, 1) : []; // 只留断点那一条，防止相似证据变噪音
+  const evidence = Array.isArray(p.evidence)
+    ? p.evidence.map(e => String(e).replace(/^(?:她|沈晏)\s*[：:]\s*/, '').slice(0, 120)).slice(0, 1) // 剥掉模型误抄的角色前缀（她：/沈晏：），只留那一句本身的话；只留断点那一条
+    : [];
   let unfinished = String(p.unfinished || '').trim().slice(0, 120);
   // 一致性兜底（2026-08-11 真实案例：grounding=实 + unfinished="对话...自然结束" 自相矛盾）：
   //   - 自然结束是状态不是内容——分类器把「自然结束/没有未完成」当 unfinished 写时清空它
