@@ -956,20 +956,30 @@ function ageResidue(r, ageMs) {
    - valence/arousal 及次级四维只留在后台做 recall/attention 权重，不进叙事。
    - 无具体线头（无 evidence 也无 unfinished）则不注入——宁可无，不编余温。 */
 function buildResidueNarrative(residue, ageMs) {
-  // 空信号（普通闲聊/任务执行）不注入余温——安静收尾不该被当成「余温」
-  if (String(residue?.grounding || '') === '空') return '';
-  const a = ageResidue(residue, ageMs);
-  // 牵挂是叙事闸：低于「想知道她怎样了」就不提线头，整段不注入
-  if (a.concern < CONCERN_NATURAL) return '';
-  // 断点原文（L3）优先——分类器只产 1 条，即收尾断掉的那句逐字引用
-  const ev = Array.isArray(residue.evidence) ? residue.evidence : [];
-  const bp = String(ev[0] || '').trim().slice(0, 120);
-  // 归属不硬编码（断点可能是沈晏自己的话）——只背原文，引语内容自带人称，模型读得出谁说的
-  if (bp) return `\n【上次对话的余温】上次的话断在这：「${bp}」。那句话还悬着。`;
-  // 无原文才退到事实凝练（L2，分类器已保证不带情绪判断）；再无则整个不注入
-  const unfinished = String(residue.unfinished || '').trim();
-  if (unfinished) return `\n【上次对话的余温】还有没说完的事：${unfinished}。`;
-  return '';
+  const parts = [];
+  // 离开意图（她走时亲口说的去向，硬事实）：独立于余温线头评估——
+  // 自然告别（说了去哪、无悬案）也注入；和线头是两件事，前者管「她去哪了」，后者管「什么没说完」
+  const departure = String(residue?.departure || '').trim();
+  if (departure) parts.push(`你走时说「${departure.slice(0, 60)}」`);
+  // 余温线头：空信号（普通闲聊/任务执行）不注入——安静收尾不该被当成「余温」；有 departure 也照评
+  if (String(residue?.grounding || '') !== '空') {
+    const a = ageResidue(residue, ageMs);
+    // 牵挂是叙事闸：低于「想知道她怎样了」就不提线头
+    if (a.concern >= CONCERN_NATURAL) {
+      // 断点原文（L3）优先——分类器只产 1 条，即收尾断掉的那句逐字引用
+      const ev = Array.isArray(residue.evidence) ? residue.evidence : [];
+      const bp = String(ev[0] || '').trim().slice(0, 120);
+      // 归属不硬编码（断点可能是沈晏自己的话）——只背原文，引语内容自带人称，模型读得出谁说的
+      if (bp) parts.push(`上次的话断在这：「${bp}」。那句话还悬着`);
+      else {
+        // 无原文才退到事实凝练（L2，分类器已保证不带情绪判断）
+        const unfinished = String(residue.unfinished || '').trim();
+        if (unfinished) parts.push(`还有没说完的事：${unfinished}`);
+      }
+    }
+  }
+  if (!parts.length) return '';
+  return `\n【上次对话的余温】${parts.join('；')}。`;
 }
 // 小日记提示词（轻）：不是禁令清单。纪律主体在 write_diary / read_diary 工具描述里。
 const DIARY_PROMPT = `
@@ -1498,7 +1508,8 @@ attachment（0~1 依恋），stewardship（0~1 守护），curiosity（0~1 好�
 desire（0~1 欲望），possessiveness（0~1 占有），
 grounding（"实"/"悬"/"空"），
 unfinished（未完成的事：只准事实凝练——你们在聊什么、停在哪；禁止任何情绪判断或结论，无则空字符串），
-evidence（只产 1 条：收尾断掉的那句原文，逐字引用，最长 120 字，无则空数组）。
+evidence（只产 1 条：收尾断掉的那句原文，逐字引用，最长 120 字，无则空数组），
+departure（她离开时明确说的去向/接下来要做什么，逐字引述，最长 40 字；只认她亲口说的话——「去吃饭了」「先睡了」「去加班」；她没说 → 空字符串；禁止填你猜的「她该去睡觉了」这类推测）。
 
 evidence 选取规则（最重要）：
 - evidence[0] 是「断点所在的那一句」：能独立表达未完成事项的原文（通常是引出未完成线头的她的话，或沈晏被截断的半句话）。
@@ -1514,13 +1525,18 @@ evidence 选取规则（最重要）：
 - possessiveness 只在有边界/第三者/被替代的证据时才 >0，否则必须是 0。
 - 只是任务执行、系统维护、普通闲聊 → 各维度趋近 0，grounding="空"，evidence 为空数组。
 - 一致性铁律（grounding/evidence/unfinished 必须自洽）：有 evidence → "实"；无 evidence 但有 unfinished → "悬"；evidence 与 unfinished 都为空 → 必须是 "空"。自然结束不是 unfinished 的内容——对话自然结束时 unfinished 必须是空字符串（禁止写「自然结束」「没有未完成」这类话），evidence 空数组，grounding="空"。
-- 只分析可见对话，不推断沈晏的内心戏。`;
+- 只分析可见对话，不推断沈晏的内心戏。
+- departure 独立于 grounding/evidence/unfinished 的自洽——她自然告别（说了去向、没有悬案）时 grounding="空"、evidence 空、unfinished 空，但 departure 可以有值。`;
 
 function normalizeResidue(p) {
   p = p && typeof p === 'object' ? p : {};
   const evidence = Array.isArray(p.evidence)
     ? p.evidence.map(e => String(e).replace(/^(?:她|沈晏)\s*[：:]\s*/, '').slice(0, 120)).slice(0, 1) // 剥掉模型误抄的角色前缀（她：/沈晏：），只留那一句本身的话；只留断点那一条
     : [];
+  let departure = String(p.departure || '').trim().slice(0, 60)
+    .replace(/^(?:她|沈晏)\s*[：:]\s*/, ''); // 剥角色前缀；逐字引述用户离开时的去向
+  // 纯寒暄不算去向（晚安/拜拜/嗯/哈）——只收「去做什么」；用户没明说就不注入
+  if (/^(晚安|拜拜|再见|嗯+|哦+|好|好吧|哈哈+|嘿嘿|先走了|溜了|下了|走了)([。！~！～]|$)/.test(departure)) departure = '';
   let unfinished = String(p.unfinished || '').trim().slice(0, 120);
   // 一致性兜底（2026-08-11 真实案例：grounding=实 + unfinished="对话...自然结束" 自相矛盾）：
   //   - 自然结束是状态不是内容——分类器把「自然结束/没有未完成」当 unfinished 写时清空它
@@ -1543,6 +1559,7 @@ function normalizeResidue(p) {
     grounding,
     unfinished,
     evidence,
+    departure,
   };
 }
 
