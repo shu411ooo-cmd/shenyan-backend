@@ -816,10 +816,44 @@ function shPartOfDay(ts) {
     new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', hour12: false, timeZone: 'Asia/Shanghai' }),
     10
   ) % 24;
-  if (h < 12) return '清晨';
-  if (h < 14) return '午后';
-  if (h < 18) return '傍晚';
-  return '夜晚';
+  if (h < 5) return '凌晨';
+  if (h < 12) return '上午';
+  if (h < 18) return '下午';
+  return '晚上';
+}
+
+/* 轻量日期：只有「月日 + 时刻段」，无年无星期无分钟——沈晏时间叙事定稿的最小锚点 */
+function shDateLight(ts) {
+  const date = new Date(ts).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', timeZone: 'Asia/Shanghai' });
+  return `${date} ${shPartOfDay(ts)}`;
+}
+
+/* 粗粒度「多久前」：两小时前 / 三天前 / 上周，不精确到分钟 */
+function coarseAgo(ms) {
+  const m = Math.floor(ms / 60000);
+  if (m < 5) return '刚刚';
+  if (m < 60) return '不到 1 小时前';
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} 小时前`;
+  const d = Math.floor(h / 24);
+  if (d < 2) return '昨天';
+  if (d < 7) return `${d} 天前`;
+  return `${Math.floor(d / 7)} 周前`;
+}
+
+/* 摘要段头的日期范围：「8月5日~8月7日」；同一天只写一天。无 ts（旧段）返回空串，回退到纯轮号。 */
+function formatSegRange(startTs, endTs) {
+  if (!startTs || !endTs) return '';
+  const s = new Date(startTs).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', timeZone: 'Asia/Shanghai' });
+  const e = new Date(endTs).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', timeZone: 'Asia/Shanghai' });
+  return s === e ? s : `${s}~${e}`;
+}
+
+function segHeader(seg) {
+  const range = formatSegRange(seg.period_start_ts, seg.period_end_ts);
+  return range
+    ? `【历史摘要 · ${range}（第 ${seg.period_start}~${seg.period_end} 轮）】`
+    : `【历史摘要 · 第 ${seg.period_start}~${seg.period_end} 轮】`;
 }
 
 /* 相对时间标签：今天 X / 昨天 X / M月d日 X（更早的日期省略年份，够用即可） */
@@ -847,18 +881,16 @@ function humanizeDuration(ms) {
   return remH ? `${days} 天 ${remH} 小时` : `${days} 天`;
 }
 
-/* 组装时间叙事：
-   第一行永远有——现在几点了（含日期/星期/时刻段）。
-   resumeGap 时追加——上一条消息何时、离开多久（「你离开了一阵」）。
-   会话已持续超过 4 小时才提起点——避免刚开的会话报一句废话，跨天/长时间会话才有连续感。 */
-function buildTemporalNarrative({ isFirstTurn, resumeGap, nowMs, firstTs, prevTs }) {
-  const lines = [`现在是 ${shDateTime(nowMs)}（上海时间，${shPartOfDay(nowMs)}）。`];
+/* 组装时间叙事（定稿 08-10，改轻版）：
+   默认只给两个锚点：①现在是几月几号时刻段（轻，无年无分钟）②resumeGap 时「上次说话大概是Y」（粗粒度）。
+   问时间（asksTime）时才给精确时钟（含星期/分钟）。
+   砍掉：会话持续时长、精确间隔（"2小时18分"）——沈晏亲测不需要。 */
+function buildTemporalNarrative({ resumeGap, nowMs, prevTs, asksTime }) {
+  const lines = asksTime
+    ? [`现在是 ${shDateTime(nowMs)}（上海时间）。`]
+    : [`现在是 ${shDateLight(nowMs)}。`];
   if (resumeGap && Number.isFinite(prevTs)) {
-    const gapMs = Math.max(0, nowMs - prevTs);
-    lines.push(`你离开了一阵——上一条消息是 ${relativeTimeLabel(prevTs, nowMs)}，距现在 ${humanizeDuration(gapMs)}。`);
-  }
-  if (!isFirstTurn && Number.isFinite(firstTs) && nowMs - firstTs > 4 * 3600 * 1000) {
-    lines.push(`这场对话从 ${relativeTimeLabel(firstTs, nowMs)} 开始，已经持续 ${humanizeDuration(nowMs - firstTs)}。`);
+    lines.push(`上次说话大概是 ${coarseAgo(Math.max(0, nowMs - prevTs))}。`);
   }
   return lines.join('\n');
 }
@@ -961,7 +993,7 @@ ${base}
 
 // ===== Context Assembly Layer（仅前端二 x-client: angel 生效） =====
 // 四段组装：System → Frozen → Summary 段 → Live → 当前消息
-//  - Frozen：最早 frozen_until_turn 轮，字节稳定 = 缓存锚点，边界单调不重切
+//  - Frozen：摘要水位线后一批稳定原文，字节稳定 = 缓存锚点，随摘要塌缩前移（滚动，不钉死最早）
 //  - Summary 段：append-only 分段（summary_segments 表，period_start/period_end 固定），
 //    只覆盖被省略的中间历史；in-context 塌缩为「最新段 + 更早一个锚段」，更老段进 Archive（recall/breath 按需召回）
 //  - Live：最近 live_rounds 轮
@@ -994,7 +1026,7 @@ async function getSessionState(sessionId) {
   try {
     const { data, error } = await supabase
       .from('sessions')
-      .select('frozen_until_turn')
+      .select('frozen_until_turn, last_time_notice_at')
       .eq('id', sessionId)
       .maybeSingle();
     if (error || !data) return {};
@@ -1010,7 +1042,7 @@ async function loadSummarySegments(sessionId) {
   try {
     const { data, error } = await supabase
       .from('summary_segments')
-      .select('period_start, period_end, content')
+      .select('period_start, period_end, period_start_ts, period_end_ts, content')
       .eq('session_id', sessionId)
       .order('period_start', { ascending: true });
     if (error) {
@@ -1024,12 +1056,14 @@ async function loadSummarySegments(sessionId) {
   }
 }
 
-async function insertSummarySegment(sessionId, periodStart, periodEnd, content) {
+async function insertSummarySegment(sessionId, periodStart, periodEnd, content, periodStartTs = null, periodEndTs = null) {
   try {
     const { error } = await supabase.from('summary_segments').insert({
       session_id: sessionId,
       period_start: periodStart,
       period_end: periodEnd,
+      period_start_ts: periodStartTs,
+      period_end_ts: periodEndTs,
       content,
     });
     if (error) {
@@ -1149,41 +1183,31 @@ async function buildModelContext(sessionId, opts = {}) {
   const turns = pairTurns(history);
   const totalTurns = turns.length;
 
-  // —— 单调冻结边界：首次跨阈值时写入，之后永不移动 ——
-  let frozenUntil = Number.isInteger(state.frozen_until_turn) ? state.frozen_until_turn : null;
-  if (frozenUntil == null && totalTurns > config.frozen_rounds + config.live_rounds) {
-    frozenUntil = config.frozen_rounds;
-    try {
-      await supabase.from('sessions').update({ frozen_until_turn: frozenUntil }).eq('id', sessionId);
-    } catch (e) {
-      console.warn('⚠️ 写入 frozen_until_turn 失败:', e.message);
-    }
-  }
+  // —— 滚动冻结边界：跟摘要水位线走，不再钉死在前 N 轮 ——
+  // 结构：摘要(旧，带日期) + frozen(水位线后一批稳定原文，随塌缩前移) + uncoveredMiddle + live(最近原文)。
+  // 缓存纪律：frozen 只在摘要塌缩时前移（那本来就是缓存重建时刻），epoch 内字节稳定 → 前缀命中保持。
+  const segments = await loadSummarySegments(sessionId);
+  const segWatermark = segments.length ? segments[segments.length - 1].period_end : null;
 
   const liveStart = totalTurns - config.live_rounds + 1; // 1-based 第一轮 live
-  const hasSplit = frozenUntil != null && liveStart - 1 >= frozenUntil + 1; // 存在被省略的中间段
-
   let frozenTurns = [], middleTurns = [], liveTurns = [];
-  if (hasSplit) {
-    frozenTurns = turns.slice(0, frozenUntil);
-    middleTurns = turns.slice(frozenUntil, liveStart - 1);
+  if (segWatermark != null) {
+    // 有摘要：frozen = 水位线之后的第一批稳定原文；水位线前的历史都在摘要里，不再逐字常驻
+    const frozenStart = segWatermark; // 0-based：turns[segWatermark] 是第 segWatermark+1 轮
+    const frozenEnd = Math.min(frozenStart + config.frozen_rounds, liveStart - 1);
+    frozenTurns = turns.slice(frozenStart, frozenEnd);
+    middleTurns = turns.slice(frozenEnd, liveStart - 1);
+    liveTurns = turns.slice(liveStart - 1);
+  } else if (totalTurns > config.frozen_rounds + config.live_rounds) {
+    // 无摘要但已超预算：临时前端冻结兜底（首批摘要形成后即切换滚动），防止中间段全发撑爆预算
+    frozenTurns = turns.slice(0, config.frozen_rounds);
+    middleTurns = turns.slice(config.frozen_rounds, liveStart - 1);
     liveTurns = turns.slice(liveStart - 1);
   } else {
     liveTurns = turns; // 短历史：全部发
   }
-
-  // —— 分段摘要可用性：水位线 = 最新段 period_end（append-only，旧段字节永不变）。
-  // 后台分段生成总在响应之后，热路径看到的水位线恒差 1 轮（永远到不了「盖满整个中间段」），
-  // 用「盖满」当门槛会让摘要永远失效、中间段原文永远照发 → 预算被撑爆 → live 被裁 → 失忆。
-  // 改为：摘要压缩到 summaryCoversTo，只把没覆盖的最近几轮原文补进来。
-  const segments = await loadSummarySegments(sessionId);
-  const segWatermark = segments.length ? segments[segments.length - 1].period_end : null;
-  const hasSegment = Number.isInteger(segWatermark) && segWatermark >= frozenUntil + 1;
-  const summaryCoversTo = hasSegment ? segWatermark : frozenUntil;
-  // 摘要没覆盖的最近几轮（原文保留）；没有摘要时等于整个中间段
-  let uncoveredMiddle = hasSegment
-    ? middleTurns.slice(summaryCoversTo - frozenUntil)
-    : middleTurns;
+  // 水位线之后都是未覆盖原文（滚动 frozen 已取头部，其余进 middle）
+  let uncoveredMiddle = middleTurns;
   // in-context 段：最新段恒在（缓存锚点）+ 更早一个锚段（预算允许时）；更老段进 Archive（recall/breath 按需召回）
   const latestSeg = segments.length ? segments[segments.length - 1] : null;
   let anchorSeg = segments.length >= 2 ? segments[segments.length - 2] : null;
@@ -1196,20 +1220,24 @@ async function buildModelContext(sessionId, opts = {}) {
     t.replies.reduce((s, r) => s + msgTokens(r), 0);
 
   const stablePrompt = await buildStableSystemPrompt();
-  // 动态时间叙事：只在「恢复对话」或「时间相关问题」时注入——
-  // 持续聊天每轮都告诉模型现在几点很机械（模型自己也会觉得奇怪）。
-  // 恢复判定：距上一条消息超过 30 分钟，或这是本会话第一条消息。
-  // 叙事不只报时间——还给模型 日期+星期、上一条消息何时（离开多久）、这场对话从何时开始，
-  // 让它对时间流逝有实感，找回「上次没说完」的连续感。
+  // 动态时间叙事：时间心跳 + 恢复对话 + 问时间时注入。
+  // 轻量版只给两个锚点（定稿 08-10）：现在是几月几号时刻段 + 上次说话大概多久前；问时间才给精确时钟。
   // 插入点保持在所有缓存断点之后、当前用户消息之前（cache 与 role 约束不变）。
   const nowMs = Date.now();
   const prevTs = history.length >= 2 ? new Date(history[history.length - 2].created_at).getTime() : NaN;
-  const firstTs = history.length >= 1 ? new Date(history[0].created_at).getTime() : NaN;
   const isFirstTurn = history.length <= 1;
   const resumeGap = !isFirstTurn && nowMs - prevTs > 30 * 60 * 1000;
   const curText = String(history[history.length - 1]?.content || '');
   const asksTime = /几点|几点钟|几点了|几点啦|什么时间|几号|几月几|星期几|周几|今天.*(?:几号|日期|星期)|现在.*(?:时间|几点)/.test(curText);
-  const injectTime = isFirstTurn || resumeGap || asksTime;
+  // —— 时间心跳：不给模型报时，它只能猜（旧 bug 的根）；每轮报又变成「耳边报时」。
+  // 折中：距上次报时 >1 小时，或时刻段切换（凌晨/上午/下午/晚上），才注入一行轻时间。
+  // 首次（last_time_notice_at 为空）、恢复对话、问时间仍然必报。
+  const lastNotice = state.last_time_notice_at ? new Date(state.last_time_notice_at).getTime() : null;
+  const heartbeat =
+    lastNotice == null ||                                    // 从未报过（首条也算）
+    nowMs - lastNotice > 60 * 60 * 1000 ||                   // 超过 1 小时
+    shPartOfDay(nowMs) !== shPartOfDay(lastNotice);          // 时刻段切换（如跨午夜 晚上→凌晨）
+  const injectTime = heartbeat || resumeGap || asksTime;
   // 恢复对话时：读最近的对话残留，附到时间叙事后面（同一 user 消息，缓存约束不变）。
   // 时间叙事说「你离开了 3 天」，残留说「这 3 天我一直在等你回来」——连续感的两半。
   let residueLine = '';
@@ -1226,7 +1254,7 @@ async function buildModelContext(sessionId, opts = {}) {
       }
     }
   }
-  const timeNotice = buildTemporalNarrative({ isFirstTurn, resumeGap, nowMs, firstTs, prevTs }) + residueLine;
+  const timeNotice = buildTemporalNarrative({ resumeGap, nowMs, prevTs, asksTime }) + residueLine;
   let estimatedTokens = (opts.tools !== 'off' ? estimateTokens(JSON.stringify(getTools())) : 0)
     + estimateTokens(stablePrompt)
     + frozenTurns.reduce((s, t) => s + turnTokens(t), 0)
@@ -1243,9 +1271,8 @@ async function buildModelContext(sessionId, opts = {}) {
     liveTurns.shift();
     trimmedTurns++;
   }
-  // 中间段原文可裁（摘要可用时只剩少量未覆盖尾段，裁最旧；摘要缺失时裁最旧中间轮）。
-  // 从「最旧」开始裁——frozen 已经锚定最老历史，最近的中间轮必须保留，
-  // 否则会丢掉「刚刚聊过」的上下文（失忆）。
+  // 中间段原文可裁（滚动 frozen 后只剩未覆盖尾段，裁最旧；摘要缺失时裁最旧中间轮）。
+  // 从「最旧」开始裁——最近的中间轮必须保留，否则会丢掉「刚刚聊过」的上下文（失忆）。
   while (estimatedTokens > config.max_context_tokens && uncoveredMiddle.length > 0) {
     estimatedTokens -= turnTokens(uncoveredMiddle[0]);
     uncoveredMiddle.shift();
@@ -1276,17 +1303,17 @@ async function buildModelContext(sessionId, opts = {}) {
     frozenSection[frozenSection.length - 1] = withCacheControl(frozenSection[frozenSection.length - 1]);
   }
 
-  if (hasSplit && (middleTurns.length > 0 || segments.length > 0)) {
+  if (segments.length > 0 || uncoveredMiddle.length > 0) {
     if (anchorSeg) {
       summarySection.push(withCacheControl({
         role: 'user',
-        content: `【历史摘要 · 第 ${anchorSeg.period_start}~${anchorSeg.period_end} 轮】\n${anchorSeg.content}`
+        content: `${segHeader(anchorSeg)}\n${anchorSeg.content}`
       }));
     }
     if (latestSeg) {
       summarySection.push(withCacheControl({
         role: 'user',
-        content: `【历史摘要 · 第 ${latestSeg.period_start}~${latestSeg.period_end} 轮】\n${latestSeg.content}`
+        content: `${segHeader(latestSeg)}\n${latestSeg.content}`
       }));
     }
     for (const t of uncoveredMiddle) {
@@ -1300,7 +1327,7 @@ async function buildModelContext(sessionId, opts = {}) {
     for (const r of t.replies) liveSection.push({ role: 'assistant', content: r.content });
   }
 
-  // 动态时间叙事：插到当前用户消息之前、所有缓存断点之后（仅恢复对话/时间提问时注入）。
+  // 动态时间叙事：插到当前用户消息之前、所有缓存断点之后（时间心跳/恢复对话/时间提问时注入）。
   // 必须用 user 角色 + 【当前时间】标记——OpenRouter 会把数组里的 system 角色消息提升合并进顶层 system，
   // 那会让 system 前缀每次请求都变，缓存再次失效。user 角色则原地保留，且 attachImage 仍能认到最后的当前消息。
   if (injectTime) {
@@ -1309,6 +1336,12 @@ async function buildModelContext(sessionId, opts = {}) {
       liveSection.splice(liveSection.length - 1, 0, timeMsg);
     } else {
       liveSection.push(timeMsg);
+    }
+    // 记录报时时间：时间心跳从这次起算（1 小时 / 时刻段变化后才会再报）
+    try {
+      await supabase.from('sessions').update({ last_time_notice_at: new Date(nowMs).toISOString() }).eq('id', sessionId);
+    } catch (e) {
+      console.warn('⚠️ 写入 last_time_notice_at 失败:', e.message);
     }
   }
 
@@ -1357,7 +1390,6 @@ function scheduleSummary(sessionId) {
 
 async function generateSummaryIfNeeded(sessionId) {
   const config = await getContextConfig();
-  const state = await getSessionState(sessionId);
 
   const { count } = await supabase
     .from('messages')
@@ -1367,20 +1399,14 @@ async function generateSummaryIfNeeded(sessionId) {
     .eq('visible', true);
   const totalTurns = count || 0;
 
-  // 冻结边界（与热路径同一套单调逻辑）
-  let frozenUntil = Number.isInteger(state.frozen_until_turn) ? state.frozen_until_turn : null;
-  if (frozenUntil == null) {
-    if (totalTurns <= config.frozen_rounds + config.live_rounds) return; // 还没到需要摘要
-    frozenUntil = config.frozen_rounds;
-    await supabase.from('sessions').update({ frozen_until_turn: frozenUntil }).eq('id', sessionId);
-  }
+  // 太短的对话不需要摘要：等长度足够让 摘要 + frozen + live 无重叠共存
+  if (totalTurns <= config.frozen_rounds + config.live_rounds) return;
 
   const liveStart = totalTurns - config.live_rounds + 1;
   const summaryEnd = liveStart - 1; // 分段应覆盖到的最后一轮
-  // 触发条件：存在被省略的中间段 且 水位线（最新段 period_end）已落后
-  if (summaryEnd < frozenUntil + 1) return; // 中间段为空
   const segments = await loadSummarySegments(sessionId);
-  const watermark = segments.length ? segments[segments.length - 1].period_end : frozenUntil;
+  // 初始水位线 0：第一段从第 1 轮开始覆盖（旧逻辑从 frozen_until_turn=10 起，第 1~10 轮原文裸奔永远逐字注入）
+  const watermark = segments.length ? segments[segments.length - 1].period_end : 0;
   if (watermark >= summaryEnd) return; // 已覆盖
   // 水位线推进策略：落后少于阈值先攒着（未覆盖原文在热路径兜底），攒够再压段——
   // 段变 chunk（~8 轮），summary section 稳定几轮 → 前缀缓存复用；也省 DeepSeek 调用
@@ -1390,7 +1416,7 @@ async function generateSummaryIfNeeded(sessionId) {
   // 只压缩新增部分（第 watermark+1 ~ summaryEnd 轮），旧段永不重写 —— append-only
   const { data: history } = await supabase
     .from('messages')
-    .select('role, content')
+    .select('role, content, created_at')
     .eq('session_id', sessionId)
     .eq('visible', true)
     .order('created_at', { ascending: true });
@@ -1407,7 +1433,14 @@ async function generateSummaryIfNeeded(sessionId) {
   const summary = await summarizeViaDeepSeek(textToCompress);
   if (!summary) return; // 失败不动水位线，下次请求自动重试
 
-  const ok = await insertSummarySegment(sessionId, watermark + 1, summaryEnd, summary);
+  // 段的时间范围（段头日期用）：首轮 user 时间 ~ 末轮最后一条回复时间
+  const lastTurn = newTurns[newTurns.length - 1];
+  const lastMsg = lastTurn.replies.length ? lastTurn.replies[lastTurn.replies.length - 1] : lastTurn.user;
+  const ok = await insertSummarySegment(
+    sessionId, watermark + 1, summaryEnd, summary,
+    newTurns[0].user.created_at || null,
+    lastMsg.created_at || null
+  );
   if (!ok) return;
   console.log(`✅ 分段摘要生成 (${sessionId})：第 ${watermark + 1}~${summaryEnd} 轮（现共 ${segments.length + 1} 段）`);
 }
@@ -1426,7 +1459,7 @@ async function summarizeViaDeepSeek(text) {
         body: JSON.stringify({
           model: 'deepseek-v4-flash',
           messages: [
-            { role: 'system', content: '你是对话摘要器。把以下对话压缩成一段中文摘要，保留：重要事实、用户的关键经历与感受、未解决的事项、关键承诺。不要编造，不要加评论。控制在 300 字以内。' },
+            { role: 'system', content: '你是对话摘要器。把以下对话压缩成一段中文摘要，保留：重要事实、用户的关键经历与感受、未解决的事项、关键承诺。不要编造，不要加评论。控制在 300 字以内。时间纪律：只有用户明确陈述的时间/日期（如"我两点才睡"）才可保留为事实；沈晏（AI）自己推测的时间（"现在是几点""凌晨了吧""你熬夜到三四点"这类）一律不写，或改写为过去式"当时沈晏推测是X"。摘要里禁止出现"现在是X点""凌晨两点多"这类现在时时间断言——旧摘要踩过这个坑，会让模型把过去当现在。' },
             { role: 'user', content: text }
           ],
           max_tokens: 4000
