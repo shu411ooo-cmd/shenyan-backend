@@ -11,7 +11,9 @@ const supabase = createClient(
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+// JSON body 限制提到 15mb：chat 的 image 字段走 base64 data URL（前端已压到 1280px，
+// base64 膨胀 ~1.33×，1280px JPEG 最高可到 ~1-2MB，默认 100kb 会直接 413）。
+app.use(express.json({ limit: '15mb' }));
 
 // ===== Ombre Brain MCP 客户端 =====
 
