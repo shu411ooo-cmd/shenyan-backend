@@ -3341,10 +3341,22 @@ async function runKeepalive(sessionId, cfg) {
   const grounded = source.length > 0 && contextText.includes(source);
   if (action === 'message' && !grounded) { action = content ? 'diary' : 'none'; } // 宁丢勿假
 
+  // 对话直发：message 留言直接合并进 messages 对话流——她回来在对话里看到，不再走信箱 UI。
+  // 只在 message 且有内容时合并；diary 收件人是沈晏自己、none 无内容，都不进对话流。
+  // 合并失败 → merged=false → loadPendingKeepalive 走动态区注入兜底，留言不丢。
+  let merged = false;
+  if (action === 'message' && content) {
+    const { error: merr } = await supabase
+      .from('messages')
+      .insert({ session_id: sessionId, role: 'assistant', content, source: 'keepalive' });
+    if (merr) console.warn('⚠️ 合并 keepalive 留言进对话流失败（将走注入兜底）:', merr.message);
+    else merged = true;
+  }
+
   // 写 keepalive_log，拿回 wake_id
   const { data: inserted, error: werr } = await supabase
     .from('keepalive_log')
-    .insert({ session_id: sessionId, run_at: new Date().toISOString(), action, content, source, thoughts })
+    .insert({ session_id: sessionId, run_at: new Date().toISOString(), action, content, source, thoughts, merged })
     .select('id')
     .single();
   if (werr) console.warn('⚠️ 写 keepalive_log 失败:', werr.message);
@@ -3364,6 +3376,7 @@ async function runKeepalive(sessionId, cfg) {
       wake_id: wakeId,
       source_hit: grounded,
       thoughts_len: thoughts.length,
+      merged,
       model: toOpenRouterModel(cfg.model),
       estimated_tokens: diagnostics?.estimated_tokens || null,
       frozen_prefix_hash: diagnostics?.frozen_prefix_hash || null,
@@ -3420,8 +3433,9 @@ async function keepaliveCheck() {
   }
 }
 
-/* 动态区注入：把未认领的唤醒记录（留言/日记）拼进用户消息的上下文（意识连续性）。
-   只注入「还没被认领」的；用户开口后由 consumeKeepalive 置 consumed。 */
+/* 动态区注入：把未认领的唤醒记录（日记/未合并的留言）拼进用户消息的上下文（意识连续性）。
+   只注入「还没被认领」的；用户开口后由 consumeKeepalive 置 consumed。
+   message 已合并进对话流的（merged=true）不在此列——它在 live 区对沈晏直接可见，无需再注入。 */
 async function loadPendingKeepalive(sessionId) {
   try {
     const { data, error } = await supabase
@@ -3430,6 +3444,7 @@ async function loadPendingKeepalive(sessionId) {
       .eq('session_id', sessionId)
       .eq('consumed', false)
       .in('action', ['message', 'diary'])
+      .not('merged', 'is', 'true')
       .order('run_at', { ascending: true });
     if (error || !data?.length) return { notes: '', ids: [] };
     const nowMs = Date.now();
@@ -3444,16 +3459,25 @@ async function loadPendingKeepalive(sessionId) {
   }
 }
 
-/* 认领：只消费「这次上下文里真实注入过」的 ids（GPT 评审修订）——你开口即认领。 */
+/* 认领：只消费「这次上下文里真实注入过」的 ids（GPT 评审修订）——你开口即认领。
+   已合并进对话流的 message（merged=true）：它不再走注入，改为开口即认领——
+   否则 consumed 永远不置位，hasUnconsumedMessage 会一直挡着沈晏再醒。 */
 async function consumeKeepalive(sessionId, injectedIds = []) {
   try {
-    if (!Array.isArray(injectedIds) || !injectedIds.length) return;
-    const { error } = await supabase
+    const { error: e1 } = await supabase
       .from('keepalive_log')
       .update({ consumed: true })
       .eq('session_id', sessionId)
-      .in('id', injectedIds);
-    if (error) console.warn('⚠️ 认领 keepalive_log 失败:', error.message);
+      .eq('merged', true);
+    if (e1) console.warn('⚠️ 认领已合并留言失败:', e1.message);
+    if (Array.isArray(injectedIds) && injectedIds.length) {
+      const { error: e2 } = await supabase
+        .from('keepalive_log')
+        .update({ consumed: true })
+        .eq('session_id', sessionId)
+        .in('id', injectedIds);
+      if (e2) console.warn('⚠️ 认领 keepalive_log 失败:', e2.message);
+    }
   } catch (e) {
     console.warn('⚠️ 认领 keepalive_log 异常:', e.message);
   }
