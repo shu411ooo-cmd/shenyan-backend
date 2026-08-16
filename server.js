@@ -3660,11 +3660,13 @@ app.post('/api/keepalive/check', async (req, res) => {
   }
 });
 
-// ===== 分享链接卡片（Task 2）=====
+// ===== 分享链接卡片 =====
 // GET /api/share/preview?url=xxx → 抓 og 元数据（标题/图/描述/站点名）+ 可选正文纯文本
 // 设计：前端聊天里贴链接 → 渲染卡片；body=true 时同时抓正文给沈晏读。
-// 反爬现实（2026-08-16 实测）：bilibili/公众号/普通网页 ✅；知乎 403；小红书只有默认封面。
-// 抓不到的（知乎/小红书正文）诚实返回 error，不硬编。
+// 反爬现实（2026-08-16 实测）：bilibili/公众号/普通网页 ✅；知乎 403；小红书 og:image 是占位图。
+// 增强（2026-08-16）：多 UA 重试（Googlebot 拿 SEO SSR）、og 多变体 + JSON-LD、
+// 相对 URL 转绝对、小红书 SSR 挖掘（__INITIAL_STATE__ 里的 note 对象）。
+// 抓不到的诚实返回 error，不硬编。
 function stripHtml(html) {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -3681,54 +3683,256 @@ function stripHtml(html) {
     .trim();
 }
 
+// 相对引用 → 绝对 URL（base 用 finalUrl，redirect 后真实地址）
+function resolveAbsUrl(base, ref) {
+  if (!ref) return null;
+  try { return new URL(ref, base).href; } catch { return null; }
+}
+
+// 元数据提取：og 多变体 + twitter + <link image_src> + JSON-LD 兜底
+// 返回 { title, image, description, site_name }（缺失为 null）
+function extractMetaHtml(html, baseUrl) {
+  const get = (prop) => {
+    const m = html.match(new RegExp(`(?:property|name)="(?:og:)?${prop}"\\s+content="([^"]*)"`, 'i'));
+    return m ? m[1].trim() : null;
+  };
+  const getTwitter = (prop) => {
+    const m = html.match(new RegExp(`name="twitter:${prop}"\\s+content="([^"]*)"`, 'i'));
+    return m ? m[1].trim() : null;
+  };
+  let title = get('title') || getTwitter('title') || (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]?.trim() || null;
+  let description = get('description') || getTwitter('description') || get('desc') || null;
+  const site_name = get('site_name') || null;
+  // 作者：og:author / article:author / name=author（不强制 og: 前缀）
+  let author = get('author')
+    || ((html.match(/(?:property|name)="(?:article:)?author"\s+content="([^"]*)"/i) || [])[1]?.trim() || null);
+
+  // 图：og:image → twitter:image → link[rel=image_src]
+  let image = get('image') || getTwitter('image') || null;
+  if (!image) {
+    const im = html.match(/<link[^>]+rel="image_src"[^>]+href="([^"]+)"/i)
+      || html.match(/<link[^>]+href="([^"]+)"[^>]+rel="image_src"/i);
+    if (im) image = im[1];
+  }
+  if (image) image = resolveAbsUrl(baseUrl, image);
+
+  // JSON-LD 兜底：只在主 meta 缺字段时补（防广告位覆盖）
+  if (!title || !description || !image) {
+    const ldM = html.match(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i);
+    if (ldM) {
+      try {
+        const walk = (node) => {
+          if (!node || typeof node !== 'object') return;
+          if (Array.isArray(node)) { node.forEach(walk); return; }
+          if (!title && (node.headline || node.name)) title = String(node.headline || node.name);
+          if (!description && node.description) description = String(node.description);
+          if (!image && (node.image || node.thumbnailUrl)) {
+            const im = Array.isArray(node.image) ? node.image[0] : (node.image || node.thumbnailUrl);
+            image = typeof im === 'string' ? resolveAbsUrl(baseUrl, im) : resolveAbsUrl(baseUrl, im?.url || im?.contentUrl);
+          }
+          for (const k in node) walk(node[k]);
+        };
+        walk(JSON.parse(ldM[1]));
+      } catch { /* JSON-LD 解析失败就忽略，不影响主链路 */ }
+    }
+  }
+  if (description && description.length > 400) description = description.slice(0, 400) + '…';
+  return { title, image, description, site_name, author };
+}
+
+// 从 HTML 里提取标记后的 JSON 对象窗口（括号配平，防嵌套 JSON 截断）
+function extractJsonWindow(html, marker) {
+  const i = html.indexOf(marker);
+  if (i < 0) return null;
+  const start = html.indexOf('{', i);
+  if (start < 0) return null;
+  let depth = 0, inStr = false, esc = false;
+  for (let j = start; j < html.length; j++) {
+    const ch = html[j];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}') { depth--; if (depth === 0) return html.slice(start, j + 1); }
+  }
+  return null;
+}
+
+// 宽容解析：小红书 SSR 状态里有 JS 字面量（undefined/NaN/Infinity），转合法 JSON
+function lenientJsonParse(raw) {
+  const cleaned = raw
+    .replace(/:\s*undefined\b/g, ': null')
+    .replace(/:\s*NaN\b/g, ': null')
+    .replace(/:\s*Infinity\b/g, ': null');
+  return JSON.parse(cleaned);
+}
+
+// 小红书笔记 SSR 挖掘：window.__INITIAL_STATE__ 里的 note 对象
+// 小红书对 SEO bot SSR 完整内容（og:image 常给平台占位图，真实封面在 SSR 的 noteDetailMap 里）
+// 返回 { title, desc, cover, author } 或 null
+function digXhsNote(html) {
+  // HTML 里可能出现多个 __INITIAL_STATE__，逐个试，找到含 noteDetailMap 的那个
+  let idx = 0;
+  while (true) {
+    const pos = html.indexOf('__INITIAL_STATE__', idx);
+    if (pos < 0) break;
+    const raw = extractJsonWindow(html, '__INITIAL_STATE__', pos);
+    idx = pos + 1;
+    if (!raw || raw.length < 500) continue;
+    let state;
+    try { state = lenientJsonParse(raw); } catch { continue; }
+    const note = findXhsNote(state);
+    if (note) return note;
+  }
+  return null;
+}
+
+// 在 state 树里找小红书 note 对象（noteDetailMap 容器里的 note）
+function findXhsNote(state) {
+  if (!state || typeof state !== 'object') return null;
+  // 直接命中 noteDetailMap 容器
+  const nm = state.note && state.note.noteDetailMap;
+  if (nm) {
+    for (const k in nm) {
+      const n = nm[k] && nm[k].note;
+      if (n && (n.desc || n.imageList || n.title)) {
+        const coverRaw = Array.isArray(n.imageList) ? n.imageList[0] : n.cover;
+        const cover = coverRaw
+          ? resolveAbsUrl('https://www.xiaohongshu.com', typeof coverRaw === 'string' ? coverRaw : (coverRaw.urlDefault || coverRaw.urlPre || coverRaw.url))
+          : null;
+        const desc = String(n.desc || '');
+        return {
+          title: n.title || desc.split('\n')[0].slice(0, 80) || null,
+          desc: desc.slice(0, 4000) || null,
+          // 封面转 https（SSR 里是 http://，浏览器 mixed-content 会拦）
+          cover: cover ? cover.replace(/^http:\/\//i, 'https://') : null,
+          author: (n.user && (n.user.nickname || n.user.name)) || (nm[k].user && nm[k].user.nickname) || null,
+        };
+      }
+    }
+  }
+  // 兜底：深度优先找 (desc/title + imageList/cover) 特征
+  const find = (node, depth = 0) => {
+    if (depth > 5 || !node || typeof node !== 'object') return null;
+    if (Array.isArray(node)) {
+      for (const it of node) { const r = find(it, depth + 1); if (r) return r; }
+      return null;
+    }
+    if ((node.desc || node.title) && (node.imageList || node.cover)) return node;
+    for (const k in node) { const r = find(node[k], depth + 1); if (r) return r; }
+    return null;
+  };
+  const note = find(state);
+  if (!note) return null;
+  const coverRaw = Array.isArray(note.imageList) ? note.imageList[0] : note.cover;
+  const cover = coverRaw ? resolveAbsUrl('https://www.xiaohongshu.com', typeof coverRaw === 'string' ? coverRaw : (coverRaw.urlDefault || coverRaw.urlPre || coverRaw.url)) : null;
+  const desc = String(note.desc || '');
+  return {
+    title: note.title || desc.split('\n')[0].slice(0, 80) || null,
+    desc: desc.slice(0, 4000) || null,
+    cover: cover ? cover.replace(/^http:\/\//i, 'https://') : null,
+    author: (note.user && (note.user.nickname || note.user.name)) || null,
+  };
+}
+
 app.get('/api/share/preview', async (req, res) => {
   try {
     const rawUrl = String(req.query.url || '').trim();
     if (!rawUrl) return res.status(400).json({ error: '缺少 url 参数' });
     if (!/^https?:\/\//i.test(rawUrl)) return res.status(400).json({ error: 'url 必须是 http(s) 链接' });
 
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 12000);
-    let response;
-    try {
-      response = await fetch(rawUrl, {
-        signal: ctrl.signal,
-        redirect: 'follow',
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
-          'Accept-Language': 'zh-CN,zh;q=0.9',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        },
-      });
-    } finally {
+    // 多 UA 尝试：普通 Chrome → Googlebot（SEO SSR 全量内容）→ 手机。拿到像样的页面就停。
+    const UAS = [
+      ['chrome', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'],
+      ['seo', 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'],
+      ['mobile', 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'],
+    ];
+    let html = '';
+    let finalUrl = rawUrl;
+    for (const [, ua] of UAS) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 12000);
+      try {
+        const resp = await fetch(rawUrl, {
+          signal: ctrl.signal,
+          redirect: 'follow',
+          headers: {
+            'User-Agent': ua,
+            'Accept-Language': 'zh-CN,zh;q=0.9',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Referer': (() => { try { return new URL(rawUrl).origin + '/'; } catch { return undefined; } })(),
+          },
+        });
+        if (!resp.ok) { clearTimeout(timer); continue; }
+        finalUrl = resp.url || rawUrl;
+        html = await resp.text();
+      } catch { clearTimeout(timer); continue; }
       clearTimeout(timer);
+      if (html && html.length >= 2000) break; // 拿到像样的 HTML 就不再试
     }
-    if (!response.ok) return res.status(502).json({ error: `页面返回 ${response.status}` });
+    if (!html || html.length < 200) return res.status(502).json({ error: '页面内容为空（可能被反爬拦截）' });
 
-    const html = await response.text();
-    if (!html || html.length < 100) return res.status(502).json({ error: '页面内容为空（可能被反爬拦截）' });
+    const base = finalUrl;
+    const meta = extractMetaHtml(html, base);
+    const isXhs = /xiaohongshu\.com|xhslink\.cn/i.test(finalUrl) || /xiaohongshu\.com|xhslink\.cn/i.test(rawUrl);
 
-    const getMeta = (prop) => {
-      const m = html.match(new RegExp(`(?:property|name)="(?:og:)?${prop}"\\s+content="([^"]*)"`, 'i'));
-      return m ? m[1].trim() : null;
+    // 小红书 SSR 挖掘：og:image 常给占位图，真实封面/标题/描述/作者在 __INITIAL_STATE__
+    let xhsNote = null;
+    if (isXhs) {
+      xhsNote = digXhsNote(html);
+      if (xhsNote) {
+        if (xhsNote.title && !meta.title) meta.title = xhsNote.title;
+        // 小红书 og:description 是平台 slogan（"3 亿人的生活经验"），SSR desc 才是正文首行——直接覆盖
+        if (xhsNote.desc) meta.description = xhsNote.desc.slice(0, 400);
+        if (xhsNote.cover && (!meta.image || /(placeholder|default|cover\.s|fe-platform|picasso-static)/i.test(meta.image))) {
+          meta.image = xhsNote.cover;
+        }
+        if (xhsNote.author && !meta.author) meta.author = xhsNote.author;
+      }
+    }
+
+    // 站点名：og → title 尾巴（_ / - / · 分隔）→ 域名
+    let siteName = meta.site_name;
+    if (!siteName && meta.title) {
+      const sepM = meta.title.match(/\s*[_\-·|｜]\s*([^_\-·|｜]+?)\s*$/);
+      if (sepM) siteName = sepM[1].trim();
+    }
+    if (!siteName) { try { siteName = new URL(rawUrl).hostname.replace(/^www\./, ''); } catch { /* 忽略 */ } }
+    // 清站点名噪声（17173 那种 "**中国游戏门户站"）
+    siteName = String(siteName || '').replace(/[*#*]|[☀-➿]/g, '').trim();
+    if (siteName === 'xhslink.cn' || siteName === 'www.xiaohongshu.com') siteName = '小红书';
+
+    const card = {
+      url: rawUrl,
+      final_url: finalUrl !== rawUrl ? finalUrl : undefined,
+      title: meta.title,
+      image: meta.image,
+      description: meta.description,
+      site_name: siteName,
+      author: meta.author,
     };
-    const title = getMeta('title') || (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]?.trim() || null;
-    const image = getMeta('image');
-    const description = getMeta('description');
 
-    // 站点名：og:site_name → <title> 尾巴（"标题_站点"）→ 域名
-    const siteName = getMeta('site_name')
-      || (title && title.includes('_') ? title.split('_').pop().trim() : null)
-      || (() => { try { return new URL(rawUrl).hostname.replace(/^www\./, ''); } catch { return null; } })();
-
-    const card = { url: rawUrl, title, image, description, site_name: siteName };
-
-    // body=true：抓正文纯文本（公众号 js_content / B站 JSON / 通用 <p> 兜底）
+    // body=true：抓正文纯文本（公众号 js_content / 小红书 note.desc / B站 / 通用 <p> 兜底）
     if (req.query.body === 'true' || req.query.body === '1') {
       let body = '';
       const jsContent = html.match(/id="js_content"([\s\S]*?)<script/i);
       if (jsContent) {
         body = stripHtml(jsContent[1]);
+      } else if (isXhs && xhsNote && xhsNote.desc) {
+        // 小红书笔记正文就是 desc；[话题] 是话题标签壳，去掉壳只留 #标签
+        body = xhsNote.desc.replace(/\[话题\]/g, '').trim();
+      } else if (/bilibili\.com/i.test(finalUrl) && html.includes('__INITIAL_STATE__')) {
+        const braw = extractJsonWindow(html, '__INITIAL_STATE__');
+        if (braw) {
+          try {
+            const st = JSON.parse(braw);
+            body = st.videoData?.desc || '';
+          } catch { /* 忽略 */ }
+        }
       } else {
         const ps = [];
         const re = /<p[^>]*>([\s\S]*?)<\/p>/gi;
@@ -4067,5 +4271,7 @@ module.exports = {
   handleVerdict,
   getAttentionMaterial,
   topicHits,
+  extractMetaHtml,
+  digXhsNote,
   supabase,
 };
