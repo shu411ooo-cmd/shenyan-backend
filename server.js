@@ -4440,6 +4440,127 @@ app.get('/api/music/stream', async (req, res) => {
   }
 });
 
+// ===== 音乐室 · 酷狗扫码登录 + 私人歌单 =====
+// 登录态（token/userid）存 settings 表（kugou_token/kugou_userid），
+// 每次转发歌单请求时带上。token 会过期，前端可引导重新扫码。
+
+// 拿 settings 里的酷狗登录态
+async function getKugouAuth() {
+  try {
+    const { data, error } = await supabase
+      .from('settings')
+      .select('kugou_token, kugou_userid')
+      .eq('session_id', 'global')
+      .maybeSingle();
+    if (error || !data) return null;
+    return (data.kugou_token && data.kugou_userid) ? { token: data.kugou_token, userid: data.kugou_userid } : null;
+  } catch { return null; }
+}
+
+async function saveKugouAuth(token, userid) {
+  const { error } = await supabase
+    .from('settings')
+    .upsert({ session_id: 'global', kugou_token: token, kugou_userid: String(userid) }, { onConflict: 'session_id' });
+  return !error;
+}
+
+// 1. 生成登录二维码：先拿 key，再拼成扫码 URL（返回 base64 二维码图，前端直接 <img>）
+app.get('/api/music/login/qr', async (req, res) => {
+  try {
+    const keyResp = await fetch(`${KUGOU_PROXY}/login/qr/key`, { timeout: 15000 });
+    const keyBody = await keyResp.json();
+    const key = keyBody?.data?.key || keyBody?.qrcode || keyBody?.data?.qrcode;
+    if (!key) return res.status(502).json({ error: '酷狗未返回二维码 key' });
+    // qrimg=1 让代理返回 base64 二维码图
+    const qrResp = await fetch(`${KUGOU_PROXY}/login/qr/create?key=${encodeURIComponent(key)}&qrimg=1`, { timeout: 15000 });
+    const qrBody = await qrResp.json();
+    const base64 = qrBody?.data?.base64;
+    if (!base64) return res.status(502).json({ error: '酷狗未返回二维码图' });
+    res.json({ key, qrImage: base64 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 2. 轮询扫码状态：status==4 表示已授权，存下 token 并返回成功
+app.get('/api/music/login/check', async (req, res) => {
+  try {
+    const key = String(req.query.key || '').trim();
+    if (!key) return res.status(400).json({ error: '缺少 key 参数' });
+    const resp = await fetch(`${KUGOU_PROXY}/login/qr/check?key=${encodeURIComponent(key)}`, { timeout: 15000 });
+    const body = await resp.json();
+    const data = body?.data || body || {};
+    const status = data.status;
+    if (status === 4 && data.token) {
+      await saveKugouAuth(data.token, data.userid);
+      res.json({ status: 'ok', userid: data.userid });
+    } else {
+      // 0=过期 1=等待扫码 2=待确认 其它=还没扫
+      res.json({ status: status === 1 ? 'wait' : status === 2 ? 'confirm' : status === 0 ? 'expired' : 'wait' });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3. 登录态查询（前端进音乐室时看是否已登录）
+app.get('/api/music/login/status', async (req, res) => {
+  const auth = await getKugouAuth();
+  res.json({ loggedIn: !!auth, userid: auth ? auth.userid : null });
+});
+
+// 4. 拉取私人歌单列表（需登录）
+app.get('/api/music/playlists', async (req, res) => {
+  try {
+    const auth = await getKugouAuth();
+    if (!auth) return res.status(401).json({ error: '未登录酷狗' });
+    const resp = await fetch(
+      `${KUGOU_PROXY}/user/playlist?userid=${encodeURIComponent(auth.userid)}&token=${encodeURIComponent(auth.token)}`,
+      { timeout: 15000 }
+    );
+    const body = await resp.json();
+    // 结构：data.my_playlist[]（type=2 自建）/data.favorite_playlist（我喜欢）之类，容错展开
+    const raw = body?.data || body || {};
+    const mine = (raw.my_playlist || raw.playlist || []).map((p) => ({
+      listid: String(p.specialid || p.listid || ''),
+      name: p.specialname || p.listname || p.name || '未命名歌单',
+      count: p.count || p.songcount || 0,
+    }));
+    res.json({ playlists: mine.filter((p) => p.listid) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 5. 拉取歌单内歌曲（需登录），返回可直接播放的 {title, artist, hash, mixId}
+app.get('/api/music/playlist', async (req, res) => {
+  try {
+    const listid = String(req.query.listid || '').trim();
+    if (!listid) return res.status(400).json({ error: '缺少 listid 参数' });
+    const auth = await getKugouAuth();
+    if (!auth) return res.status(401).json({ error: '未登录酷狗' });
+    const resp = await fetch(
+      `${KUGOU_PROXY}/playlist/track/all/new?listid=${encodeURIComponent(listid)}&userid=${encodeURIComponent(auth.userid)}&token=${encodeURIComponent(auth.token)}&pagesize=50`,
+      { timeout: 20000 }
+    );
+    const body = await resp.json();
+    const raw = body?.data || body || {};
+    const lists = raw.info || raw.songs || raw.list || [];
+    const songs = lists
+      .filter((s) => s.hash || s.FileHash)
+      .map((s) => ({
+        title: s.filename || s.songname || s.name || '未命名',
+        artist: (s.filename || s.songname || '').split(' - ')[0] || '',
+        duration: s.duration || 0,
+        hash: s.hash || s.FileHash,
+        mixId: String(s.audio_id || s.album_audio_id || s.MixSongID || ''),
+      }));
+    res.json({ songs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 只在直接运行时启动（node server.js）；被 require 时不 listen，导出 handler 供测试
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
