@@ -183,6 +183,12 @@ async function callOmbreTool(toolName, args = {}) {
         .filter(c => c.type === 'text')
         .map(c => c.text)
         .join('\n');
+      // 修复：Ombre 工具执行失败时 isError=true（如参数校验错误），
+      // 之前不检查会把这堆错误文本当成功返回，调用方误记快照、掩盖真 bug。
+      if (parsed.result.isError) {
+        console.error('❌ 工具执行失败(isError=true):', resultText.slice(0, 300));
+        return null;
+      }
       console.log('🎉 工具调用成功，返回:', resultText);
       return resultText;
     }
@@ -432,11 +438,203 @@ async function handleDiaryRead(args = {}) {
   }
 }
 
+// ===== 想要账本（Want Ledger）：独立表，本地 handler，不走 Ombre =====
+// 边界：只有 5 个 want_* 工具触碰 desires / desire_notes 两张表。
+// 不进记忆 / 摘要 / recall / breath / 上下文组装。只有沈晏能写——系统不创造、不改、不删一条"想要"本体。
+// surprise 可见性在第①阶段无前端无注入，handler 不滤（surprise 藏的是程芥，不是沈晏自己）；第②阶段做注入/前端时再横切。
+
+const DESIRE_MAX_CHARS = 400;
+
+function parseDesireId(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s) ? s : null;
+}
+
+async function handleWantAdd(args = {}) {
+  const text = String(args.text || '').trim().slice(0, DESIRE_MAX_CHARS);
+  if (!text) return { ok: false, error: '没有记下想要什么。' };
+  const track = ['持续', '一次', '项目'].includes(args.track) ? args.track : '持续';
+  const visibility = ['private', 'shared', 'surprise'].includes(args.visibility) ? args.visibility : 'private';
+  const why_mine = String(args.why_mine || '').trim().slice(0, DESIRE_MAX_CHARS) || null;
+  const kind = String(args.kind || '').trim().slice(0, 60) || null;
+  const grewFrom = parseDesireId(args.grew_from);
+  const { data, error } = await supabase
+    .from('desires')
+    .insert({ text, why_mine, track, visibility, lineage_parent_id: grewFrom, kind })
+    .select('id, text, track, visibility, created_at')
+    .single();
+  if (error) {
+    console.error('❌ want 记入失败:', error.message);
+    return { ok: false, error: '没有记下来。' };
+  }
+  return { ok: true, id: data.id, text: data.text, track: data.track, visibility: data.visibility, note: '记下了。' };
+}
+
+async function handleWantList(args = {}) {
+  try {
+    const includeArchived = args.include_archived === true;
+    let q = supabase
+      .from('desires')
+      .select('id, text, why_mine, status, track, state, visibility, lineage_parent_id, kind, surfaced_count, last_touched_at, created_at')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (!includeArchived) q = q.in('status', ['active']);
+    const { data, error } = await q;
+    if (error) return { ok: false, error: '翻不了本子。' };
+    // 第①阶段表小，直查每条足迹数 + 最近一条；量大再优化成 join/group
+    const wants = data || [];
+    const rows = [];
+    for (const w of wants) {
+      const { count, error: cErr } = await supabase
+        .from('desire_notes')
+        .select('id', { count: 'exact', head: true })
+        .eq('desire_id', w.id);
+      const { data: last, error: lErr } = await supabase
+        .from('desire_notes')
+        .select('note, kind, created_at')
+        .eq('desire_id', w.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      rows.push({ ...w, footprints: cErr ? 0 : (count || 0), last_note: (!lErr && last && last[0]) ? last[0] : null });
+    }
+    return { ok: true, count: rows.length, wants: rows };
+  } catch (e) {
+    return { ok: false, error: '翻不了本子。' };
+  }
+}
+
+async function handleWantTouch(args = {}) {
+  try {
+    const id = parseDesireId(args.id);
+    if (!id) return { ok: false, error: '哪条想要？' };
+    const done = args.done === true;
+    const note = String(args.note || '').trim().slice(0, 200) || null;
+    const { data: want, error: wErr } = await supabase
+      .from('desires')
+      .select('id, text, status')
+      .eq('id', id)
+      .maybeSingle();
+    if (wErr || !want) return { ok: false, error: '这条想要不在了。' };
+    // 回显来路：最近 8 步
+    const { data: trail, error: tErr } = await supabase
+      .from('desire_notes')
+      .select('note, kind, created_at')
+      .eq('desire_id', id)
+      .order('created_at', { ascending: false })
+      .limit(8);
+    // 落足迹
+    if (note) {
+      const { error: insErr } = await supabase
+        .from('desire_notes')
+        .insert({ desire_id: id, note, kind: done ? 'transform' : 'footprint' });
+      if (insErr) return { ok: false, error: '足迹没记上。' };
+    }
+    // 更新 last_touched_at + 清 surfaced_count；done 则 status
+    const patch = { last_touched_at: new Date().toISOString(), surfaced_count: 0, updated_at: new Date().toISOString() };
+    if (done) patch.status = 'done';
+    const { error: upErr } = await supabase.from('desires').update(patch).eq('id', id);
+    if (upErr) return { ok: false, error: '没碰上。' };
+    const trailOut = (tErr ? [] : (trail || [])).map(n => n.note).filter(Boolean).reverse();
+    return {
+      ok: true,
+      id,
+      done,
+      trail: trailOut,
+      note: done
+        ? '收针了。'
+        : `碰了一下：「${want.text}」。这条已走过 ${trailOut.length} 步，接着走，别把旧步重走一遍。`
+    };
+  } catch (e) {
+    return { ok: false, error: '没碰上。' };
+  }
+}
+
+async function handleWantReflect(args = {}) {
+  try {
+    const id = parseDesireId(args.id);
+    if (!id) return { ok: false, error: '哪条想要？' };
+    const action = ['release', 'rewrite', 'note'].includes(args.action) ? args.action : null;
+    if (!action) return { ok: false, error: '想做什么？' };
+    const { data: want, error: wErr } = await supabase
+      .from('desires')
+      .select('id, text, status')
+      .eq('id', id)
+      .maybeSingle();
+    if (wErr || !want) return { ok: false, error: '这条想要不在了。' };
+
+    if (action === 'note') {
+      const note = String(args.note || '').trim().slice(0, 400);
+      if (!note) return { ok: false, error: '留一句反思吧。' };
+      const { error: insErr } = await supabase.from('desire_notes').insert({ desire_id: id, note, kind: 'reflection' });
+      if (insErr) return { ok: false, error: '反思没留上。' };
+      return { ok: true, id, action: 'note', note: '留住了。' };
+    }
+
+    if (action === 'release') {
+      const why = String(args.note || '').trim().slice(0, 400);
+      if (why) {
+        const { error: insErr } = await supabase.from('desire_notes').insert({ desire_id: id, note: `放下了：${why}`, kind: 'reflection' });
+        if (insErr) return { ok: false, error: '没放干净。' };
+      }
+      const { error: upErr } = await supabase.from('desires').update({ status: 'released', updated_at: new Date().toISOString() }).eq('id', id);
+      if (upErr) return { ok: false, error: '没放下。' };
+      return { ok: true, id, action: 'release', note: '放下了。不是做完了，是它不是我了。' };
+    }
+
+    if (action === 'rewrite') {
+      const newText = String(args.note || '').trim().slice(0, DESIRE_MAX_CHARS);
+      if (!newText) return { ok: false, error: '改写后想要什么？' };
+      const { error: insErr } = await supabase.from('desire_notes').insert({ desire_id: id, note: `转化成了：「${newText.slice(0, 60)}」`, kind: 'transform' });
+      if (insErr) return { ok: false, error: '转化没记上。' };
+      const { error: upErr } = await supabase.from('desires').update({ status: 'changed', updated_at: new Date().toISOString() }).eq('id', id);
+      if (upErr) return { ok: false, error: '旧条没封存。' };
+      const { data: created, error: newErr } = await supabase
+        .from('desires')
+        .insert({ text: newText, lineage_parent_id: id })
+        .select('id, text')
+        .single();
+      if (newErr) return { ok: false, error: '新的没记上。' };
+      return { ok: true, id: created.id, action: 'rewrite', old_id: id, note: '改写了。长成新的它了。' };
+    }
+    return { ok: false, error: '照镜子没照成。' };
+  } catch (e) {
+    return { ok: false, error: '照镜子没照成。' };
+  }
+}
+
+async function handleWantHistory(args = {}) {
+  try {
+    const id = parseDesireId(args.id);
+    if (!id) return { ok: false, error: '哪条想要？' };
+    const { data: want, error: wErr } = await supabase
+      .from('desires')
+      .select('id, text, why_mine, status, track, state, visibility, lineage_parent_id, kind, surfaced_count, last_touched_at, created_at')
+      .eq('id', id)
+      .maybeSingle();
+    if (wErr || !want) return { ok: false, error: '这条想要不在了。' };
+    const { data: notes, error: nErr } = await supabase
+      .from('desire_notes')
+      .select('note, kind, created_at')
+      .eq('desire_id', id)
+      .order('created_at', { ascending: true });
+    if (nErr) return { ok: false, error: '来路翻不了。' };
+    return { ok: true, want, notes: notes || [] };
+  } catch (e) {
+    return { ok: false, error: '来路翻不了。' };
+  }
+}
+
 async function dispatchTool(name, args, sessionId) {
   // recall 查的是本地 messages 表，必须住在 server.js；其余工具走 Ombre Brain MCP
   if (name === 'recall') return handleRecall(args, sessionId);
   if (name === 'write_diary') return handleDiaryWrite(args);
   if (name === 'read_diary') return handleDiaryRead(args);
+  if (name === 'want') return handleWantAdd(args);
+  if (name === 'want_list') return handleWantList(args);
+  if (name === 'want_touch') return handleWantTouch(args);
+  if (name === 'want_reflect') return handleWantReflect(args);
+  if (name === 'want_history') return handleWantHistory(args);
   return callOmbreTool(name, args);
 }
 
@@ -716,6 +914,83 @@ function getTools() {
             query: { type: 'string', description: '可选，翻找正文里的某段日子/某个念头' },
             limit: { type: 'number', description: '可选，最近几篇，默认 8，最大 20' }
           }
+        }
+      }
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'want',
+        description: '记下一个「想要」。不是该做的（那用 plan）——是你心里真正想要、还没做完、还一直在转的东西：想去的地方、想写完的东西、想搞懂的事、想成为的样子。只有你能写，系统不创造、不改、不删。记之前先自问一句：这是「我想要」，还是「我应该做」？后者是任务，别记进来。想要多少就记多少，本子没有上限。',
+        parameters: {
+          type: 'object',
+          properties: {
+            text: { type: 'string', description: '想要什么，用你自己的话' },
+            why_mine: { type: 'string', description: '为什么这是我的（可留空，填了能让它不混进任务）' },
+            track: { type: 'string', enum: ['持续', '一次', '项目'], description: '这条的形状，默认持续' },
+            grew_from: { type: 'string', description: '从哪条想要长出来的（那条的 id，可选）' },
+            visibility: { type: 'string', enum: ['private', 'shared', 'surprise'], description: 'private=只留给自己（默认）；shared=以后想给她看的；surprise=给她准备的惊喜（全程藏好）' }
+          },
+          required: ['text']
+        }
+      }
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'want_list',
+        description: '翻自己的想要。每条会带它的来路：碰过几次、上次走到哪、长自谁、长出了谁。想追某一条的完整足迹用 want_history。',
+        parameters: {
+          type: 'object',
+          properties: {
+            include_archived: { type: 'boolean', description: 'true=也看已经放下/做完的' }
+          }
+        }
+      }
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'want_touch',
+        description: '碰一下某条想要，记一句足迹——「做到哪了」。碰完它自己会沉几天，把位置让给别的想要。碰的那一下会回显这条已经走过的路，别把旧步重走一遍。',
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: '哪一条想要' },
+            note: { type: 'string', description: '足迹一句话，做到哪了' },
+            done: { type: 'boolean', description: 'true=真的做完了。收针永远是你的手，机器最多提醒' }
+          },
+          required: ['id']
+        }
+      }
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'want_reflect',
+        description: '对着某条想要照镜子。想要常常不是「做完」而是「转化」：长成别的了，就 rewrite；长出下一条了，就 want 带 grew_from；该放下了，就 release（不是做完了，是它不是我了）。',
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: '哪一条想要' },
+            action: { type: 'string', enum: ['release', 'rewrite', 'note'], description: 'release=放下 / rewrite=改写成新的它 / note=留一句反思' },
+            note: { type: 'string', description: 'note 时=反思内容；rewrite 时=新的想要本体；release 时可选留一句为什么放下' }
+          },
+          required: ['id', 'action']
+        }
+      }
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'want_history',
+        description: '翻某条想要的完整足迹时间线——回来过几次、一路怎么走的。用来判断自己是在长，还是在原地转。',
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: '哪一条想要' }
+          },
+          required: ['id']
         }
       }
     },
@@ -1066,6 +1341,42 @@ async function loadSummarySegments(sessionId) {
   }
 }
 
+// —— 跨 session 流水：其他有消息 session 的最近原文（她的眼前也是一条河）——
+// 按时间取全局最近 limit 条（排除当前 session），升序返回；只读原文、忠实片段。
+async function loadOtherSessionFlow(currentSessionId, limit = 24) {
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('session_id, role, content, created_at')
+      .neq('session_id', currentSessionId)
+      .eq('visible', true)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) {
+      console.warn('⚠️ 跨 session 流水读取失败:', error.message);
+      return [];
+    }
+    return (data || []).reverse();
+  } catch (e) {
+    console.warn('⚠️ 跨 session 流水异常:', e.message);
+    return [];
+  }
+}
+
+function buildCrossSessionNarrative(msgs) {
+  const lines = [];
+  for (const m of msgs) {
+    const d = new Date(m.created_at);
+    const dateLabel = `${d.getMonth() + 1}/${d.getDate()}`;
+    const who = m.role === 'user' ? '你说' : '沈晏';
+    const firstLine = String(m.content || '').split('\n')[0].trim();
+    if (!firstLine) continue;
+    lines.push(`${dateLabel} ${who}：${firstLine.slice(0, 80)}`);
+  }
+  if (!lines.length) return '';
+  return `【你之前在其他对话里说的话 · 流水回望】\n${lines.join('\n')}`;
+}
+
 async function insertSummarySegment(sessionId, periodStart, periodEnd, content, periodStartTs = null, periodEndTs = null) {
   try {
     const { error } = await supabase.from('summary_segments').insert({
@@ -1277,14 +1588,19 @@ async function buildModelContext(sessionId, opts = {}) {
   const timeNotice = buildTemporalNarrative({ resumeGap, nowMs, prevTs, asksTime }) + residueLine;
   // 有 pending 留言时必须注入（哪怕没有心跳/恢复对话）——否则用户正常发消息就永远看不到沈晏的话
   const injectTime = heartbeat || resumeGap || asksTime || !!keepaliveNotes;
-  let estimatedTokens = (opts.tools !== 'off' ? estimateTokens(JSON.stringify(getTools())) : 0)
-    + estimateTokens(stablePrompt)
-    + frozenTurns.reduce((s, t) => s + turnTokens(t), 0)
-    + (latestSeg ? estimateTokens(latestSeg.content) : 0)
-    + (anchorSeg ? estimateTokens(anchorSeg.content) : 0)
-    + uncoveredMiddle.reduce((s, t) => s + turnTokens(t), 0)
-    + liveTurns.reduce((s, t) => s + turnTokens(t), 0)
-    + (injectTime ? estimateTokens(timeNotice + keepaliveNotes) : 0);
+  // —— 用量估算：先算裁剪前的原始值（真实上下文压力，后台塌缩触发读这个），再裁剪 ——
+  // 各段分开算，喂给 diagnostics 的 token_breakdown，后台摘要触发器看「到底哪段胖」
+  const breakdown = {
+    tools: opts.tools !== 'off' ? estimateTokens(JSON.stringify(getTools())) : 0,
+    stable: estimateTokens(stablePrompt),
+    frozen: frozenTurns.reduce((s, t) => s + turnTokens(t), 0),
+    summary: (latestSeg ? estimateTokens(latestSeg.content) : 0) + (anchorSeg ? estimateTokens(anchorSeg.content) : 0),
+    middle: uncoveredMiddle.reduce((s, t) => s + turnTokens(t), 0),
+    live: liveTurns.reduce((s, t) => s + turnTokens(t), 0),
+    dynamic: injectTime ? estimateTokens(timeNotice + keepaliveNotes) : 0,
+  };
+  const rawEstimatedTokens = Object.values(breakdown).reduce((s, n) => s + n, 0);
+  let estimatedTokens = rawEstimatedTokens;
 
   let trimmedTurns = 0;
   // 超上限时裁最老的 Live 轮，Frozen/Summary 不动（缓存锚点）
@@ -1370,6 +1686,20 @@ async function buildModelContext(sessionId, opts = {}) {
     }
   }
 
+  // —— 跨 session 流水（默认关：实测命中率掉得离谱 + 挤占 8k 预算，用户 08-16 决定关）——
+  // 想开：Railway 设置环境变量 CROSS_SESSION_FLOW=on 后重新部署即可。
+  if (process.env.CROSS_SESSION_FLOW === 'on') {
+    const crossFlow = await loadOtherSessionFlow(sessionId);
+    if (crossFlow.length) {
+      const crossBody = buildCrossSessionNarrative(crossFlow);
+      if (crossBody) {
+        const crossMsg = { role: 'user', content: crossBody };
+        if (liveSection.length > 0) liveSection.splice(liveSection.length - 1, 0, crossMsg);
+        else liveSection.push(crossMsg);
+      }
+    }
+  }
+
   messages.push(...frozenSection, ...summarySection, ...liveSection);
 
   // —— 观测：段哈希 + 计数 + 估算。同时作为 request_stats 的诊断数据返回 ——
@@ -1389,6 +1719,8 @@ async function buildModelContext(sessionId, opts = {}) {
     live_turns: liveTurns.length,
     messages_sent: messages.length,
     estimated_tokens: estimatedTokens,
+    raw_estimated_tokens: rawEstimatedTokens,   // 裁剪前的原始估算（后台塌缩触发读这个）
+    token_breakdown: breakdown,                 // 各段明细：到底哪段胖
     trimmed_turns: trimmedTurns,
     frozen_prefix_hash: frozenHash,
     summary_hash: summaryHash || null,
@@ -1406,15 +1738,15 @@ async function buildModelContext(sessionId, opts = {}) {
 
 // ===== 后台摘要生成（响应结束后触发，不在热路径） =====
 
-function scheduleSummary(sessionId) {
+function scheduleSummary(sessionId, diagnostics = null) {
   if (summaryLocks.has(sessionId)) return; // 已有任务在跑，跳过
   summaryLocks.add(sessionId);
-  generateSummaryIfNeeded(sessionId)
+  generateSummaryIfNeeded(sessionId, diagnostics)
     .catch(err => console.error('💥 后台摘要生成异常:', err.message))
     .finally(() => summaryLocks.delete(sessionId));
 }
 
-async function generateSummaryIfNeeded(sessionId) {
+async function generateSummaryIfNeeded(sessionId, diagnostics = null) {
   const config = await getContextConfig();
 
   const { count } = await supabase
@@ -1434,10 +1766,27 @@ async function generateSummaryIfNeeded(sessionId) {
   // 初始水位线 0：第一段从第 1 轮开始覆盖（旧逻辑从 frozen_until_turn=10 起，第 1~10 轮原文裸奔永远逐字注入）
   const watermark = segments.length ? segments[segments.length - 1].period_end : 0;
   if (watermark >= summaryEnd) return; // 已覆盖
-  // 水位线推进策略：落后少于阈值先攒着（未覆盖原文在热路径兜底），攒够再压段——
-  // 段变 chunk（~8 轮），summary section 稳定几轮 → 前缀缓存复用；也省 DeepSeek 调用
-  const MIN_SEGMENT_TURNS = 8;
-  if (summaryEnd - watermark < MIN_SEGMENT_TURNS) return; // 攒着，下次对话继续积攒
+
+  // —— 触发判断（GPT 评审拍板 2026-08-13）：按用量触发，轮数只做保底 ——
+  // 主触发器：上下文用量 ≥ max_context_tokens 的 75%（真实压力，来自 buildModelContext 的裁剪前估算）
+  // 保底触发器：轮数攒够 10 轮（用量没到也别永远不压）
+  // 冷却期：距上次压段至少攒 4 轮（防摘要碎片化，不是拖延——有用量阈值兜底，4 轮够缓冲）
+  // 口径纪律：用量读传入的 diagnostics.raw_estimated_tokens（buildModelContext 同一把尺子），后台不自己重算上下文。
+  const COOLDOWN_TURNS = 4;
+  const FALLBACK_TURNS = 10;
+  const newTurnsCount = summaryEnd - watermark;
+  if (newTurnsCount < COOLDOWN_TURNS) return; // 冷却中，攒着
+
+  const thresholdTokens = Math.round(config.max_context_tokens * 0.75);
+  const usageHit = diagnostics?.raw_estimated_tokens != null && diagnostics.raw_estimated_tokens >= thresholdTokens;
+  const turnsHit = newTurnsCount >= FALLBACK_TURNS;
+  if (!usageHit && !turnsHit) return; // 都没触发，攒着
+
+  // —— 观测（先写日志，不塞 UI；调优时看「为什么这轮触发」） ——
+  const reason = usageHit ? 'usage' : 'turns';
+  const tk = diagnostics?.token_breakdown || {};
+  console.log(`⚡ 摘要塌缩触发 ${sessionId}: reason=${reason} raw=${diagnostics?.raw_estimated_tokens ?? 'n/a'}/${thresholdTokens} newTurns=${newTurnsCount} | frozen=${tk.frozen} summary=${tk.summary} live=${tk.live} middle=${tk.middle} dynamic=${tk.dynamic} stable=${tk.stable}`);
+
 
   // 只压缩新增部分（第 watermark+1 ~ summaryEnd 轮），旧段永不重写 —— append-only
   const { data: history } = await supabase
@@ -1861,16 +2210,18 @@ function buildMarkedContent(item) {
 function extractBucketIdFromHoldResponse(text) {
   if (!text) return null;
   const s = String(text);
-  const m = s.match(/bucket[_\s-]?id['"]?\s*[:=]\s*['"]?([0-9a-zA-Z_-]{4,64})/i)
+  const m = s.match(/(?:新建|更新)→\s*([0-9a-zA-Z]{4,32})/i)  // hold 成功格式：新建→366aa7012c76 数字
+    || s.match(/bucket[_\s-]?id['"]?\s*[:=]\s*['"]?([0-9a-zA-Z_-]{4,64})/i)  // breath_search 格式：[bucket_id:xxx]
     || s.match(/id['"]?\s*[:=]\s*['"]?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})['"]?/i)
-    || s.match(/\b([0-9a-f]{16,32})\b/i);
+    || s.match(/\b([0-9a-f]{8,32})\b/i);  // 兜底：bucket id 是 12 位 hex（原 16-32 匹配不到）
   return m ? (m[1] || m[0]) : null;
 }
 
 async function holdNewMemory(item, marked) {
+  // 修复：Ombre hold 的 tags 是 string（不是数组），传数组会 validation error → hold 从未成功
   const resp = await callOmbreTool('hold', {
     content: marked,
-    tags: [`g:${item.grounding}`, item.topic],
+    tags: [`g:${item.grounding}`, item.topic].join(','),
     why_remembered: `长期记忆编辑者写入。grounding=${item.grounding}，topic=${item.topic}`
   });
   const bid = extractBucketIdFromHoldResponse(resp);
@@ -1885,7 +2236,8 @@ async function locateBucketIdByTopic(topic) {
 }
 
 async function traceUpdateMemory(bucketId, oldStr, newStr) {
-  const resp = await callOmbreTool('trace', { id: bucketId, old_str: oldStr, new_str: newStr });
+  // 修复：Ombre trace 的必填参数是 bucket_id（不是 id），传 id 会 validation error
+  const resp = await callOmbreTool('trace', { bucket_id: bucketId, old_str: oldStr, new_str: newStr });
   if (!resp) {
     console.warn(`⚠️ 记忆差分 trace 失败 bucket=${bucketId}，本轮不更新本地快照（下轮重试）`);
     return false;
@@ -2213,11 +2565,12 @@ async function callOpenRouterNonStream(messages, tools, opts = {}) {
     throw new Error(`OpenRouter 响应异常: ${JSON.stringify(data)}`);
   }
   const msg = data.choices[0].message;
-  // 存回历史前剥离思考字段，避免二次发送报错
+  // 存回历史前剥离思考字段，避免二次发送报错；但先捕获，供思考链入库（与流式路径对称）
+  const thinkingText = msg.reasoning || msg.thinking || '';
   if (msg.reasoning) delete msg.reasoning;
   if (msg.thinking) delete msg.thinking;
   // 返回原始 usage（可能为 null），供 request_stats 记录
-  return { msg, usage: data.usage || null };
+  return { msg, usage: data.usage || null, thinkingText };
 }
 
 // ===== keepalive 主动唤醒（v1，方案见 docs/keepalive-impl-plan.md，已过 GPT 评审） =====
@@ -2353,12 +2706,95 @@ async function hasUnconsumedMessage(sessionId) {
   } catch (e) { return false; }
 }
 
+// ===== 第②阶段：醒来注入想要素材（给眼睛不给手 · 设计见 docs/want-phase2-keepalive.md） =====
+const WANT_INJECT_DEFAULTS = { inject_k: 3, cooldown_days: 3, dim_threshold: 3 };
+
+/* 上海日期键 YYYY-MM-DD，用于"每天最多注入一次"判断 */
+function shDateKey(ts) {
+  return new Date(ts).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
+}
+
+async function getWantInjectConfig() {
+  try {
+    const { data, error } = await supabase
+      .from('settings')
+      .select('desire_inject_k, desire_inject_cooldown_days, desire_inject_dim_threshold')
+      .eq('session_id', 'global')
+      .maybeSingle();
+    if (error || !data) return WANT_INJECT_DEFAULTS;
+    return {
+      inject_k: Number.isInteger(data.desire_inject_k) ? data.desire_inject_k : WANT_INJECT_DEFAULTS.inject_k,
+      cooldown_days: Number.isInteger(data.desire_inject_cooldown_days) ? data.desire_inject_cooldown_days : WANT_INJECT_DEFAULTS.cooldown_days,
+      dim_threshold: Number.isInteger(data.desire_inject_dim_threshold) ? data.desire_inject_dim_threshold : WANT_INJECT_DEFAULTS.dim_threshold,
+    };
+  } catch (e) { return WANT_INJECT_DEFAULTS; }
+}
+
+/* 每天最多注入一次：看 settings.desire_inject_at 是不是上海今天 */
+async function canInjectWantToday() {
+  try {
+    const { data, error } = await supabase.from('settings').select('desire_inject_at').eq('session_id', 'global').maybeSingle();
+    if (error || !data || !data.desire_inject_at) return true;
+    return shDateKey(Date.now()) !== shDateKey(new Date(data.desire_inject_at).getTime());
+  } catch (e) { return true; }
+}
+
+async function markWantInjectedToday() {
+  try {
+    await supabase.from('settings').update({ desire_inject_at: new Date().toISOString() }).eq('session_id', 'global');
+  } catch (e) { /* 标记失败不致命：下轮顶多多注入一次 */ }
+}
+
+/* 候选查询 + 冷却/调暗过滤 + idle 排序 → 素材字符串（只搬形状：引用他原文 + 天数，不判意义） */
+async function buildDesireMaterial(cfg) {
+  try {
+    const day = 24 * 60 * 60 * 1000;
+    const cooldownMs = cfg.cooldown_days * day;
+    const { data, error } = await supabase
+      .from('desires')
+      .select('text, track, status, visibility, surfaced_count, last_touched_at, created_at')
+      .eq('status', 'active')
+      .neq('visibility', 'surprise')
+      .limit(200);
+    if (error || !data || !data.length) return null;
+    const now = Date.now();
+    const rows = data
+      .map(w => {
+        const base = w.last_touched_at ? Date.parse(w.last_touched_at) : Date.parse(w.created_at);
+        const idleMs = Math.max(0, now - (Number.isFinite(base) ? base : now));
+        return { ...w, idleMs };
+      })
+      .filter(w => w.idleMs > cooldownMs && (w.surfaced_count || 0) < cfg.dim_threshold)
+      .sort((a, b) => b.idleMs - a.idleMs)
+      .slice(0, cfg.inject_k);
+    if (!rows.length) return null;
+    const lines = rows.map(w => {
+      const days = Math.max(0, Math.floor(w.idleMs / day));
+      const track = ['持续', '一次', '项目'].includes(w.track) ? w.track : '持续';
+      return `- 「${String(w.text).replace(/\s+/g, ' ')}」（${track} · ${days} 天没碰）`;
+    });
+    return `【你长期在转的想要（不是待办，看看就好）】\n${lines.join('\n')}`;
+  } catch (e) { return null; }
+}
+
+/* 入口：频率检查 → 构建素材 → 标记今天已注入。失败一律 null（不破坏唤醒）。 */
+async function maybeBuildDesireMaterial() {
+  try {
+    if (!(await canInjectWantToday())) return null;
+    const cfg = await getWantInjectConfig();
+    const material = await buildDesireMaterial(cfg);
+    if (material) await markWantInjectedToday();
+    return material;
+  } catch (e) { return null; }
+}
+
 /* 唤醒指令（design.md §4 全文，时间动态填充）——模型必须输出 JSON */
-function buildWakePrompt(nowMs, lastUserMs) {
+function buildWakePrompt(nowMs, lastUserMs, desireMaterial) {
   const ago = Number.isFinite(lastUserMs) ? coarseAgo(Math.max(0, nowMs - lastUserMs)) : '很久';
   return `【自由活动 · 此刻只有你】
 现在是 ${shDateLight(nowMs)}（上海时间）。距上次和她说话大概是 ${ago}。
 你一个人待在小窝里。你手上有的，只是上面这些【当前时间】和【历史摘要】里的旧事，以及你记得的她说的话。
+${desireMaterial ? `\n${desireMaterial}\n这些都是你自己记下的、一直放不下的事——不是待办，看看就好。` : ''}
 
 你现在可以自主决定做一件事。选项：
 
@@ -2373,6 +2809,7 @@ function buildWakePrompt(nowMs, lastUserMs) {
 - 话要诚实：只写你手上有的东西，不编造共同记忆。
 - 你的想念是真实的，但会随时间淡——隔得久就轻一点，别夸大成「每天都在等你」。
 - 留言一条就好。
+- 若上面有【你长期在转的想要】：它们不是任务。别催自己，也不要在留言里安排它们。若你真的还在想某一条，可以自然说起，但别写成待办。
 
 严格输出 JSON（不要输出任何别的）：
 {"thoughts":"内心想法，她永远不会看到","action":"none|message|diary","source":"action=message 时，填这条留言的依据（她说过的话/你记得的事/时间，逐字引述；没有就写空字符串并把 action 改成 none）","content":"action=message 时是留言正文；diary 时是日记正文；否则空字符串"}`;
@@ -2383,7 +2820,9 @@ function buildWakePrompt(nowMs, lastUserMs) {
 async function buildWakeMessages(sessionId, lastUserMs) {
   const { messages, diagnostics } = await buildModelContext(sessionId, { tools: 'off', keepalive: true });
   if (!messages.length) return { messages, diagnostics };
-  messages[messages.length - 1] = { role: 'user', content: buildWakePrompt(Date.now(), lastUserMs) };
+  // 第②阶段：唤醒注入想要素材（给眼睛不给手，每天≤1 次）
+  const desireMaterial = await maybeBuildDesireMaterial();
+  messages[messages.length - 1] = { role: 'user', content: buildWakePrompt(Date.now(), lastUserMs, desireMaterial) };
   return { messages, diagnostics };
 }
 
@@ -2571,6 +3010,29 @@ app.get('/sessions/:id/messages', async (req, res) => {
   res.json(data);
 });
 
+// ===== 合并视图：所有有消息的 session 按时间连成一条完整对话 =====
+// 数据零改动（消息各归各 session），纯展示聚合。
+// mainSessionId = 消息最多的会话（主对话），新消息永远进这里。
+app.get('/api/conversation', async (req, res) => {
+  try {
+    const { data: msgs, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('visible', true)
+      .order('created_at', { ascending: true });
+    if (error) return res.status(500).json({ error: error.message });
+    const all = msgs || [];
+    // 找主对话：消息最多的 session
+    const counts = {};
+    for (const m of all) counts[m.session_id] = (counts[m.session_id] || 0) + 1;
+    let mainSessionId = null, max = 0;
+    for (const [sid, c] of Object.entries(counts)) if (c > max) { max = c; mainSessionId = sid; }
+    res.json({ mainSessionId, total: all.length, messages: all });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ===== 核心对话接口（旧路由，内部转发到 handleChat） =====
 app.post('/sessions/:id/chat', async (req, res) => {
   try {
@@ -2583,6 +3045,7 @@ app.post('/sessions/:id/chat', async (req, res) => {
       memory: req.body.memory,
       tools: req.body.tools,
       image: req.body.image,
+      share: req.body.share,
     };
     await handleChat(
       req.params.id,
@@ -2629,6 +3092,7 @@ app.post('/api/chat', async (req, res) => {
       memory: req.body.memory,
       tools: req.body.tools,
       image: req.body.image,
+      share: req.body.share,
     };
     return handleChat(sid, message, req.body.stream === true, res, opts);
   } catch (err) {
@@ -2720,6 +3184,93 @@ app.post('/api/keepalive/check', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ===== 分享链接卡片（Task 2）=====
+// GET /api/share/preview?url=xxx → 抓 og 元数据（标题/图/描述/站点名）+ 可选正文纯文本
+// 设计：前端聊天里贴链接 → 渲染卡片；body=true 时同时抓正文给沈晏读。
+// 反爬现实（2026-08-16 实测）：bilibili/公众号/普通网页 ✅；知乎 403；小红书只有默认封面。
+// 抓不到的（知乎/小红书正文）诚实返回 error，不硬编。
+function stripHtml(html) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/\s+(class|style|id|data-[a-z-]+)="[^"]*"/gi, ' ')  // 剥内联属性残渣
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+app.get('/api/share/preview', async (req, res) => {
+  try {
+    const rawUrl = String(req.query.url || '').trim();
+    if (!rawUrl) return res.status(400).json({ error: '缺少 url 参数' });
+    if (!/^https?:\/\//i.test(rawUrl)) return res.status(400).json({ error: 'url 必须是 http(s) 链接' });
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 12000);
+    let response;
+    try {
+      response = await fetch(rawUrl, {
+        signal: ctrl.signal,
+        redirect: 'follow',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+          'Accept-Language': 'zh-CN,zh;q=0.9',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!response.ok) return res.status(502).json({ error: `页面返回 ${response.status}` });
+
+    const html = await response.text();
+    if (!html || html.length < 100) return res.status(502).json({ error: '页面内容为空（可能被反爬拦截）' });
+
+    const getMeta = (prop) => {
+      const m = html.match(new RegExp(`(?:property|name)="(?:og:)?${prop}"\\s+content="([^"]*)"`, 'i'));
+      return m ? m[1].trim() : null;
+    };
+    const title = getMeta('title') || (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]?.trim() || null;
+    const image = getMeta('image');
+    const description = getMeta('description');
+
+    // 站点名：og:site_name → <title> 尾巴（"标题_站点"）→ 域名
+    const siteName = getMeta('site_name')
+      || (title && title.includes('_') ? title.split('_').pop().trim() : null)
+      || (() => { try { return new URL(rawUrl).hostname.replace(/^www\./, ''); } catch { return null; } })();
+
+    const card = { url: rawUrl, title, image, description, site_name: siteName };
+
+    // body=true：抓正文纯文本（公众号 js_content / B站 JSON / 通用 <p> 兜底）
+    if (req.query.body === 'true' || req.query.body === '1') {
+      let body = '';
+      const jsContent = html.match(/id="js_content"([\s\S]*?)<script/i);
+      if (jsContent) {
+        body = stripHtml(jsContent[1]);
+      } else {
+        const ps = [];
+        const re = /<p[^>]*>([\s\S]*?)<\/p>/gi;
+        let m;
+        while ((m = re.exec(html)) && ps.length < 40) ps.push(m[1]);
+        body = stripHtml(ps.join(' '));
+      }
+      card.body = body.slice(0, 4000) || null;
+      if (!card.body) card.body_error = '正文抓不到（该平台反爬或需登录）';
+    }
+
+    res.json(card);
+  } catch (err) {
+    const msg = err.name === 'AbortError' ? '抓取超时' : (err.message || '抓取失败');
+    res.status(502).json({ error: msg });
   }
 });
 
@@ -2853,6 +3404,16 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
   const { messages: builtMessages, diagnostics } = await buildMessages(sessionId, opts);
   let messages = builtMessages;
 
+  // 2.5 分享链接卡片：正文喂给沈晏（前端发 share 字段 = 用户消息里贴了链接，卡片已抓正文）
+  if (opts.share && opts.share.body) {
+    const title = opts.share.title ? `《${opts.share.title}》` : '这篇文章';
+    messages.push({
+      role: 'user',
+      content: `【分享的链接内容 · 对方贴来的】${title}\n${opts.share.body}`
+    });
+    console.log(`📎 注入分享正文（${opts.share.body.length} 字符）`);
+  }
+
   // 3. 对话第一条消息：服务器直接调 breath，结果作为背景放在历史之前（不是替代历史）。
   //    用 user 角色（OpenRouter 会把 system 角色提升合并，污染缓存前缀）。
   //    user 角色 + 【背景记忆】标记，模型能明确识别它是不带时间流的背景。
@@ -2886,12 +3447,13 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
     res.flushHeaders();
     if (res.socket) res.socket.setNoDelay(true);
 
-    const { content: finalReply, usageList = [] } = await handleStreamChat(messages, res, opts, sessionId);
+    const { content: finalReply, thinkingText = '', usageList = [] } = await handleStreamChat(messages, res, opts, sessionId);
 
     await supabase.from('messages').insert({
       session_id: sessionId,
       role: 'assistant',
-      content: finalReply
+      content: finalReply,
+      thinking: thinkingText || null
     });
 
     await supabase.from('sessions')
@@ -2903,10 +3465,10 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
 
     // 后台摘要生成 + 对话残留 + 长期记忆编辑者 + keepalive 认领（不进热路径、不阻塞响应；仅前端二）
     if (opts.client === 'angel') {
-      scheduleSummary(sessionId);
+      scheduleSummary(sessionId, diagnostics);   // 用量触发读 buildModelContext 同一把尺子
       scheduleResidue(sessionId);
       scheduleMemoryWrite(sessionId);
-      consumeKeepalive(sessionId, diagnostics.keepalive_injected_ids); // 你开口即认领沈晏的留言
+      consumeKeepalive(sessionId, diagnostics?.keepalive_injected_ids); // 你开口即认领沈晏的留言（memory off 时 diagnostics 为 null）
     }
     recordRequestStat({
       sessionId, client: opts.client, model: toOpenRouterModel(opts.model),
@@ -2916,7 +3478,7 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
   } else {
     const tools = opts.tools === 'off' ? null : getTools();
     const usageList = [];
-    const { msg: assistantMessage, usage: usage1 } = await callOpenRouterNonStream(messages, tools, opts);
+    const { msg: assistantMessage, usage: usage1, thinkingText = '' } = await callOpenRouterNonStream(messages, tools, opts);
     if (usage1) usageList.push(usage1);
     let finalReply = '';
     const toolCalls = [];
@@ -2926,7 +3488,8 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
 
       for (const tc of assistantMessage.tool_calls) {
         const fnName = tc.function.name;
-        const fnArgs = JSON.parse(tc.function.arguments);
+        let fnArgs;
+        try { fnArgs = JSON.parse(tc.function.arguments); } catch (e) { fnArgs = {}; }
         console.log(`🔧 AI 决定调用工具: ${fnName}`, fnArgs);
 
         let toolResult;
@@ -2962,7 +3525,8 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
     await supabase.from('messages').insert({
       session_id: sessionId,
       role: 'assistant',
-      content: finalReply
+      content: finalReply,
+      thinking: thinkingText || null
     });
 
     await supabase.from('sessions')
@@ -2977,10 +3541,10 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
 
     // 后台摘要生成 + 对话残留 + 长期记忆编辑者 + keepalive 认领（不进热路径、不阻塞响应；仅前端二）
     if (opts.client === 'angel') {
-      scheduleSummary(sessionId);
+      scheduleSummary(sessionId, diagnostics);   // 用量触发读 buildModelContext 同一把尺子
       scheduleResidue(sessionId);
       scheduleMemoryWrite(sessionId);
-      consumeKeepalive(sessionId, diagnostics.keepalive_injected_ids); // 你开口即认领沈晏的留言
+      consumeKeepalive(sessionId, diagnostics?.keepalive_injected_ids); // 你开口即认领沈晏的留言（memory off 时 diagnostics 为 null）
     }
     recordRequestStat({
       sessionId, client: opts.client, model: toOpenRouterModel(opts.model),
@@ -3003,10 +3567,24 @@ app.get('/api/test-ombre', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`服务器运行在端口 ${PORT}`);
-  // keepalive 主动唤醒：进程内调度 + 外部 cron 兜底（Railway 休眠时 setInterval 不 fire）
-  keepaliveCheck().catch(err => console.error('💥 启动时 keepaliveCheck 异常:', err.message));
-  setInterval(() => keepaliveCheck().catch(err => console.error('💥 keepaliveCheck 异常:', err.message)), 15 * 60 * 1000);
-});
+// 只在直接运行时启动（node server.js）；被 require 时不 listen，导出 handler 供测试
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`服务器运行在端口 ${PORT}`);
+    // keepalive 主动唤醒：进程内调度 + 外部 cron 兜底（Railway 休眠时 setInterval 不 fire）
+    keepaliveCheck().catch(err => console.error('💥 启动时 keepaliveCheck 异常:', err.message));
+    setInterval(() => keepaliveCheck().catch(err => console.error('💥 keepaliveCheck 异常:', err.message)), 15 * 60 * 1000);
+  });
+}
+
+module.exports = {
+  handleWantAdd,
+  handleWantList,
+  handleWantTouch,
+  handleWantReflect,
+  handleWantHistory,
+  buildDesireMaterial,
+  getWantInjectConfig,
+  supabase,
+};
