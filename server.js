@@ -4387,53 +4387,97 @@ app.get('/api/music/url', async (req, res) => {
 
 // 音频反代：CDN 直链是 http://，https 生产页直接 <audio src> 会被浏览器当混合内容拦掉。
 // 这里由后端抓 CDN 字节流回传（同源 https），并透传 Range 支持进度拖动。
+// 两个坑（都是实测踩过）：
+//  1. 浏览器初始请求是 Range: bytes=0-，若直接转发，CDN 可能只回一段 206 部分数据，
+//     Content-Length 和实际不符 → 浏览器 ERR_CONTENT_LENGTH_MISMATCH → 播到一半停。
+//     → 初始请求不带 Range，让 CDN 返回完整 200；只有真正的拖动跳转（bytes=123456-）才透传。
+//  2. 酷狗 CDN 跨区域链路不稳，上游可能中途断流。
+//     → 断流后按「已发字节」用 bytes=N- 续抓，最多重试 5 次，浏览器感知不到中断。
 // 只放行酷狗 CDN 域名，防止被滥用成任意代理。
 app.get('/api/music/stream', async (req, res) => {
   try {
     const url = String(req.query.url || '').trim();
-    // 只放行酷狗 CDN 音频域（fs.*.kugou.com），防滥用
     if (!/^https?:\/\/fs\.[a-z0-9.-]*kugou\.com\//i.test(url)) {
       return res.status(403).json({ error: '仅允许酷狗 CDN 域名' });
     }
-    // Range 头透传：浏览器 <audio> 拖动进度会带 Range: bytes=...
-    const headers = { 'User-Agent': KUGOU_UA };
-    if (req.headers.range) headers['Range'] = req.headers.range;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 30000);
-    let upstream;
-    try {
-      upstream = await fetch(url, { signal: ctrl.signal, headers, redirect: 'follow' });
-    } catch {
-      clearTimeout(timer);
-      return res.status(502).json({ error: '上游不可达' });
-    }
-    clearTimeout(timer);
-    res.status(upstream.status);
-    // 透传内容类型和 Range 响应（206 时带 Content-Range）
-    const ct = upstream.headers.get('content-type');
-    if (ct) res.set('Content-Type', ct);
-    const cr = upstream.headers.get('content-range');
-    if (cr) res.set('Content-Range', cr);
-    res.set('Accept-Ranges', 'bytes');
-    const length = upstream.headers.get('content-length');
-    if (length) res.set('Content-Length', length);
-    // 以流式回传，不缓冲进内存（歌曲 ~10MB）
-    const reader = upstream.body?.getReader();
-    if (reader) {
-      res.on('close', () => reader.cancel().catch(() => {}));
+
+    // 只有真正的跳转 Range（起始字节 > 0）才透传给上游；bytes=0- 视为初始请求，不转发
+    const clientRange = req.headers.range;
+    const seekRange = /^bytes=[1-9]\d*-/.test(clientRange || '') ? clientRange : null;
+
+    let clientClosed = false;
+    res.on('close', () => { clientClosed = true; });
+
+    // 抓上游一段；range 为 null 时不带 Range（期待完整 200）
+    const fetchUpstream = async (range) => {
+      const headers = { 'User-Agent': KUGOU_UA };
+      if (range) headers['Range'] = range;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 20000); // 只保护「等响应头」，拿到头就作废
       try {
-        while (true) {
+        return await fetch(url, { signal: ctrl.signal, headers, redirect: 'follow' });
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    let bytesSent = 0;
+    let expected = null; // 整段响应的目标总长（初始请求用）
+
+    // 把上游字节流泵给浏览器；上游断流（error / 提前 EOF / 没发够）返回 false，由外层续传
+    const pump = async (upstream) => {
+      const reader = upstream.body?.getReader();
+      if (!reader) return false;
+      const declared = Number(upstream.headers.get('content-length') || 0);
+      let got = 0;
+      while (true) {
+        let chunk;
+        try {
           const { done, value } = await reader.read();
           if (done) break;
-          if (!res.writableEnded) res.write(value);
+          chunk = value;
+        } catch {
+          return false; // 上游连接被掐（CDN 跨区域常见）→ 续传
         }
-        if (!res.writableEnded) res.end();
-      } catch {
-        if (!res.writableEnded) res.end();
+        got += chunk.byteLength;
+        bytesSent += chunk.byteLength;
+        if (!res.writableEnded) res.write(chunk);
       }
-    } else {
-      res.end();
+      // 单段没发够、或累计还没到整曲长度 → 视为断流，需要续传
+      if ((declared && got < declared) || (expected && bytesSent < expected)) return false;
+      return true;
+    };
+
+    const first = await fetchUpstream(seekRange);
+    if (!first.ok) {
+      return res.status(first.status || 502).json({ error: '上游错误 ' + (first.status || '') });
     }
+    // 写响应头
+    res.status(first.status);
+    const ct = first.headers.get('content-type');
+    if (ct) res.set('Content-Type', ct);
+    const cr = first.headers.get('content-range');
+    if (cr) res.set('Content-Range', cr);
+    res.set('Accept-Ranges', 'bytes');
+    const total = cr && cr.includes('/') ? Number(cr.split('/')[1]) : null;
+    const fl = first.headers.get('content-length');
+    if (!seekRange && total) {
+      expected = total;
+      res.set('Content-Length', String(total)); // 初始请求：目标是整曲
+    } else if (fl) {
+      res.set('Content-Length', fl); // 拖动跳转：单段即完整
+    }
+
+    let ok = await pump(first);
+    // 断流续传：从已发字节接着抓，最多 5 次
+    let retries = 0;
+    while (!ok && !clientClosed && retries < 5) {
+      retries++;
+      const again = await fetchUpstream(`bytes=${bytesSent}-`);
+      if (!again.ok) break;
+      ok = await pump(again);
+    }
+    if (!res.writableEnded) res.end();
   } catch (err) {
     if (!res.headersSent) res.status(500).json({ error: err.message });
     else res.end();
@@ -4582,6 +4626,20 @@ app.get('/api/music/playlist', async (req, res) => {
         };
       });
     res.json({ songs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 6. 退出登录：清掉 settings 里的酷狗 token/userid（不留本地，只清后端）
+app.get('/api/music/login/logout', async (req, res) => {
+  try {
+    const { error } = await supabase
+      .from('settings')
+      .update({ kugou_token: null, kugou_userid: null })
+      .eq('session_id', 'global');
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
