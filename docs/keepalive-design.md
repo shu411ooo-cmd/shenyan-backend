@@ -187,6 +187,8 @@ if pending.length:
 
 ## 7. 信箱（前端）
 
+> **2026-08-17 已废弃**：信箱 UI 方案取消，改为**对话直发**——message 留言直接合并进 messages 对话流（role=assistant, source='keepalive'），她打开对话直接看到。实现见 `2026-08-17-keepalive-merge.sql` 迁移与 runKeepalive。本节保留作历史设计记录。
+
 ### 接口
 ```
 GET /api/keepalive/messages?session_id=<id>
