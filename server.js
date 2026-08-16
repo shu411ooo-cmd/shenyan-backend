@@ -4300,6 +4300,146 @@ app.get('/api/test-ombre', async (req, res) => {
   }
 });
 
+// ===== 音乐室 · 酷狗接入 =====
+// 架构：前端只连本后端；本后端做薄转发——搜索直连 songsearch（免签），
+// 播放转发到独立部署的 KuGouMusicApi 代理（签名 + 设备模拟都藏在代理里）。
+// dfid 由本后端懒注册并缓存内存（服务重启重新拿，无状态）。
+const KUGOU_PROXY = process.env.KUGOU_PROXY_URL || 'http://localhost:3001';
+const KUGOU_UA = 'Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi';
+let cachedDfid = null;
+let dfidPromise = null;
+
+// 拿酷狗设备指纹（dfid）。只注册一次，失败可重试。返回 dfid 字符串。
+async function ensureDfid() {
+  if (cachedDfid) return cachedDfid;
+  if (dfidPromise) return dfidPromise;
+  dfidPromise = (async () => {
+    const resp = await fetch(`${KUGOU_PROXY}/register/dev`, { timeout: 15000 });
+    const body = await resp.json();
+    const dfid = body?.data?.dfid;
+    if (!dfid) throw new Error('酷狗 register/dev 未返回 dfid');
+    cachedDfid = dfid;
+    return dfid;
+  })().finally(() => { dfidPromise = null; });
+  return dfidPromise;
+}
+
+// 搜索：songsearch 免签接口，返回可直接播放的条目（FileHash + MixSongID 配对）。
+app.get('/api/music/search', async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (!q) return res.status(400).json({ error: '缺少 q 参数' });
+    const url = 'https://songsearch.kugou.com/song_search_v2'
+      + `?keyword=${encodeURIComponent(q)}&page=1&pagesize=8`
+      + '&platform=AndroidFilter&tag=em&filter=2&iscorrection=1&privilege_filter=0';
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    let resp;
+    try {
+      resp = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': KUGOU_UA } });
+    } finally { clearTimeout(timer); }
+    if (!resp.ok) return res.status(502).json({ error: 'songsearch 请求失败' });
+    const data = await resp.json();
+    const lists = data?.data?.lists || [];
+    const songs = lists
+      .filter((l) => l.FileHash && l.MixSongID) // 只保留能直接出播放链接的
+      .map((l) => ({
+        title: (l.fileName || l.SongName || '').replace(/<[^>]+>/g, ''),
+        artist: Array.isArray(l.Singers) ? l.Singers.map((s) => s.name).join(' / ') : (l.SingerName || ''),
+        album: l.AlbumName || '',
+        duration: l.Duration || 0,
+        hash: l.FileHash,
+        mixId: String(l.MixSongID),
+        cover: l.AudioCdn || '',
+      }));
+    res.json({ songs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 播放：转发酷狗代理 /song/url/new，返回 CDN 直链。
+app.get('/api/music/url', async (req, res) => {
+  try {
+    const hash = String(req.query.hash || '').trim();
+    const mixId = String(req.query.mixId || '').trim();
+    if (!hash || !mixId) return res.status(400).json({ error: '缺少 hash/mixId 参数' });
+    const dfid = await ensureDfid();
+    const url = `${KUGOU_PROXY}/song/url/new?hash=${encodeURIComponent(hash)}&album_audio_id=${encodeURIComponent(mixId)}&dfid=${encodeURIComponent(dfid)}`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    let resp;
+    try {
+      resp = await fetch(url, { signal: ctrl.signal });
+    } finally { clearTimeout(timer); }
+    const body = await resp.json();
+    const item = body?.data?.[0];
+    const playUrl = item?.info?.tracker_url?.[0];
+    if (!playUrl) {
+      // tracker 可能拒绝（未注册/翻唱无资源），带错误码方便前端提示
+      return res.status(502).json({ error: item?._msg || '酷狗未返回播放链接', code: item?._errno });
+    }
+    res.json({ url: playUrl, duration: item.info.duration || 0, bitrate: item.info.bitrate || 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 音频反代：CDN 直链是 http://，https 生产页直接 <audio src> 会被浏览器当混合内容拦掉。
+// 这里由后端抓 CDN 字节流回传（同源 https），并透传 Range 支持进度拖动。
+// 只放行酷狗 CDN 域名，防止被滥用成任意代理。
+app.get('/api/music/stream', async (req, res) => {
+  try {
+    const url = String(req.query.url || '').trim();
+    // 只放行酷狗 CDN 音频域（fs.*.kugou.com），防滥用
+    if (!/^https?:\/\/fs\.[a-z0-9.-]*kugou\.com\//i.test(url)) {
+      return res.status(403).json({ error: '仅允许酷狗 CDN 域名' });
+    }
+    // Range 头透传：浏览器 <audio> 拖动进度会带 Range: bytes=...
+    const headers = { 'User-Agent': KUGOU_UA };
+    if (req.headers.range) headers['Range'] = req.headers.range;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 30000);
+    let upstream;
+    try {
+      upstream = await fetch(url, { signal: ctrl.signal, headers, redirect: 'follow' });
+    } catch {
+      clearTimeout(timer);
+      return res.status(502).json({ error: '上游不可达' });
+    }
+    clearTimeout(timer);
+    res.status(upstream.status);
+    // 透传内容类型和 Range 响应（206 时带 Content-Range）
+    const ct = upstream.headers.get('content-type');
+    if (ct) res.set('Content-Type', ct);
+    const cr = upstream.headers.get('content-range');
+    if (cr) res.set('Content-Range', cr);
+    res.set('Accept-Ranges', 'bytes');
+    const length = upstream.headers.get('content-length');
+    if (length) res.set('Content-Length', length);
+    // 以流式回传，不缓冲进内存（歌曲 ~10MB）
+    const reader = upstream.body?.getReader();
+    if (reader) {
+      res.on('close', () => reader.cancel().catch(() => {}));
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!res.writableEnded) res.write(value);
+        }
+        if (!res.writableEnded) res.end();
+      } catch {
+        if (!res.writableEnded) res.end();
+      }
+    } else {
+      res.end();
+    }
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+    else res.end();
+  }
+});
+
 // 只在直接运行时启动（node server.js）；被 require 时不 listen，导出 handler 供测试
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
