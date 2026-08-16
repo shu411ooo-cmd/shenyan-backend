@@ -4458,25 +4458,41 @@ async function getKugouAuth() {
 }
 
 async function saveKugouAuth(token, userid) {
-  const { error } = await supabase
-    .from('settings')
-    .upsert({ session_id: 'global', kugou_token: token, kugou_userid: String(userid) }, { onConflict: 'session_id' });
-  return !error;
+  // settings 表 session_id 没有唯一约束（迁移里才加），不能用 upsert onConflict。
+  // 先查 global 行是否存在：有则 update，无则 insert。
+  try {
+    const { data, error } = await supabase
+      .from('settings')
+      .select('id')
+      .eq('session_id', 'global')
+      .maybeSingle();
+    if (error) return false;
+    if (data) {
+      const { error: uerr } = await supabase
+        .from('settings')
+        .update({ kugou_token: token, kugou_userid: String(userid) })
+        .eq('session_id', 'global');
+      return !uerr;
+    } else {
+      const { error: ierr } = await supabase
+        .from('settings')
+        .insert({ session_id: 'global', kugou_token: token, kugou_userid: String(userid) });
+      return !ierr;
+    }
+  } catch { return false; }
 }
 
-// 1. 生成登录二维码：先拿 key，再拼成扫码 URL（返回 base64 二维码图，前端直接 <img>）
+// 1. 生成登录二维码：login/qr/key 直接返回官方二维码图（qrcode_img）+ key（qrcode）。
+//    前端显示 qrcode_img 给用户扫，轮询时用 qrcode 作 key 调 check。
 app.get('/api/music/login/qr', async (req, res) => {
   try {
     const keyResp = await fetch(`${KUGOU_PROXY}/login/qr/key`, { timeout: 15000 });
     const keyBody = await keyResp.json();
-    const key = keyBody?.data?.key || keyBody?.qrcode || keyBody?.data?.qrcode;
-    if (!key) return res.status(502).json({ error: '酷狗未返回二维码 key' });
-    // qrimg=1 让代理返回 base64 二维码图
-    const qrResp = await fetch(`${KUGOU_PROXY}/login/qr/create?key=${encodeURIComponent(key)}&qrimg=1`, { timeout: 15000 });
-    const qrBody = await qrResp.json();
-    const base64 = qrBody?.data?.base64;
-    if (!base64) return res.status(502).json({ error: '酷狗未返回二维码图' });
-    res.json({ key, qrImage: base64 });
+    const data = keyBody?.data || {};
+    const key = data.qrcode || keyBody?.qrcode;
+    const qrImage = data.qrcode_img;
+    if (!key || !qrImage) return res.status(502).json({ error: '酷狗未返回二维码' });
+    res.json({ key, qrImage });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -4491,14 +4507,17 @@ app.get('/api/music/login/check', async (req, res) => {
     const body = await resp.json();
     const data = body?.data || body || {};
     const status = data.status;
+    console.log(`[login/check] key=${key} status=${status} hasToken=${!!data.token} raw=${JSON.stringify(body).slice(0, 200)}`);
     if (status === 4 && data.token) {
-      await saveKugouAuth(data.token, data.userid);
+      const saved = await saveKugouAuth(data.token, data.userid);
+      console.log(`[login/check] 扫码成功，token 已存=${saved} userid=${data.userid}`);
       res.json({ status: 'ok', userid: data.userid });
     } else {
       // 0=过期 1=等待扫码 2=待确认 其它=还没扫
       res.json({ status: status === 1 ? 'wait' : status === 2 ? 'confirm' : status === 0 ? 'expired' : 'wait' });
     }
   } catch (err) {
+    console.log('[login/check] 异常:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -4519,11 +4538,11 @@ app.get('/api/music/playlists', async (req, res) => {
       { timeout: 15000 }
     );
     const body = await resp.json();
-    // 结构：data.my_playlist[]（type=2 自建）/data.favorite_playlist（我喜欢）之类，容错展开
+    // 真实结构（实测）：data.info[] 每条 { listid, name, count, type, is_mine, create_time }
     const raw = body?.data || body || {};
-    const mine = (raw.my_playlist || raw.playlist || []).map((p) => ({
-      listid: String(p.specialid || p.listid || ''),
-      name: p.specialname || p.listname || p.name || '未命名歌单',
+    const mine = (raw.info || []).map((p) => ({
+      listid: String(p.listid || ''),
+      name: p.name || p.specialname || '未命名歌单',
       count: p.count || p.songcount || 0,
     }));
     res.json({ playlists: mine.filter((p) => p.listid) });
@@ -4544,17 +4563,24 @@ app.get('/api/music/playlist', async (req, res) => {
       { timeout: 20000 }
     );
     const body = await resp.json();
+    // 真实结构（实测）：data.info[]，每条 { hash, audio_id, name: '歌手 - 歌名.mp3', timelen(ms) }
     const raw = body?.data || body || {};
     const lists = raw.info || raw.songs || raw.list || [];
     const songs = lists
       .filter((s) => s.hash || s.FileHash)
-      .map((s) => ({
-        title: s.filename || s.songname || s.name || '未命名',
-        artist: (s.filename || s.songname || '').split(' - ')[0] || '',
-        duration: s.duration || 0,
-        hash: s.hash || s.FileHash,
-        mixId: String(s.audio_id || s.album_audio_id || s.MixSongID || ''),
-      }));
+      .map((s) => {
+        const full = s.name || s.filename || s.songname || '';
+        const dash = full.replace(/\.mp3$/i, '').split(' - ');
+        const title = dash.length > 1 ? dash.slice(1).join(' - ') : (full || '未命名');
+        const artist = dash.length > 1 ? dash[0] : '';
+        return {
+          title,
+          artist,
+          duration: s.timelen || s.duration || 0,
+          hash: s.hash || s.FileHash,
+          mixId: String(s.mixsongid || s.audio_id || s.album_audio_id || s.MixSongID || ''),
+        };
+      });
     res.json({ songs });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -19,6 +19,12 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS keepalive_model         text;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS kugou_token   text;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS kugou_userid  text;
 
+-- session_id 加唯一约束：saveKugouAuth 的 upsert onConflict 依赖它
+-- （若已有重复 global 行会失败，先删重再建）
+DELETE FROM settings a USING settings b
+  WHERE a.session_id = b.session_id AND a.id > b.id;
+ALTER TABLE settings ADD CONSTRAINT settings_session_id_unique UNIQUE (session_id);
+
 -- 降频：每天主动唤醒 6 → 3（程芥拍板，留言/日记同一个沈晏，人格一致）
 UPDATE settings SET keepalive_daily_wake_cap = 3 WHERE session_id = 'global' AND keepalive_daily_wake_cap IS NOT NULL;
 
