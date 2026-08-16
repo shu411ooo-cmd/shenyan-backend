@@ -1598,6 +1598,129 @@ ${base}
 
 const summaryLocks = new Set(); // 单实例内存锁：同一 session 同时只允许一个后台摘要任务
 
+// ===== 第④b阶段：注意力分配（每轮按话题唤起记忆 · 设计见 docs/want-phase4b-attention.md） =====
+// 宪法第五条落地：Context Assembly 拥有「这一次让他想起什么」的决定权——包括决定「不」想起什么。
+// 两窄闸（已拍板）：提及闸（topic 命中 = 她在聊旧话题）+ 牵挂闸（高牵挂线头 + 当前消息共享词）。
+// 只搬记忆原文 + grounding，零解读句；不找冲突证据（第⑤）；身份层不进注意力。
+const ATTENTION_DEFAULTS = { k: 2, budget_chars: 700, concern_threshold: 0.5 };
+const ATTENTION_ITEM_MAX = 220; // 单条截断（与 recall 同尺）
+
+async function getAttentionConfig() {
+  try {
+    const { data, error } = await supabase
+      .from('settings')
+      .select('attention_k, attention_budget_chars, attention_concern_threshold')
+      .eq('session_id', 'global')
+      .maybeSingle();
+    if (error || !data) return ATTENTION_DEFAULTS;
+    return {
+      k: Number.isInteger(data.attention_k) ? data.attention_k : ATTENTION_DEFAULTS.k,
+      budget_chars: Number.isInteger(data.attention_budget_chars) ? data.attention_budget_chars : ATTENTION_DEFAULTS.budget_chars,
+      concern_threshold: typeof data.attention_concern_threshold === 'number' ? data.attention_concern_threshold : ATTENTION_DEFAULTS.concern_threshold,
+    };
+  } catch (e) { return ATTENTION_DEFAULTS; }
+}
+
+/* 主题命中：topic 的 ≥2 字子串出现在消息里（中文短语直接 substring 最稳，不折腾分词）。
+   短主题（≤4 字，如"搬家/猫"）整词命中；长主题滑窗取 2~4 字子串碰。 */
+function topicHits(userMessage, topic) {
+  if (!userMessage || !topic) return false;
+  const msg = String(userMessage);
+  const t = String(topic).trim();
+  if (!t) return false;
+  if (t.length <= 4) {
+    // 短短语整词命中优先；整词不中时取 2 字片段再碰——
+    // 中文口语常把四字短语拆开说（"熬夜习惯"→"上次说我熬夜，现在习惯了"），整词会漏。
+    if (msg.includes(t)) return true;
+    if (t.length === 4) return msg.includes(t.slice(0, 2)) || msg.includes(t.slice(2, 4));
+    if (t.length === 3) return msg.includes(t.slice(0, 2)) || msg.includes(t.slice(1, 3));
+    return false;
+  }
+  for (let len = 4; len >= 2; len--) {
+    for (let i = 0; i + len <= t.length; i++) {
+      if (msg.includes(t.slice(i, i + len))) return true;
+    }
+  }
+  return false;
+}
+
+/* 提取文本的 2~4 字 n-gram（去掉标点），用于牵挂闸的「共享词」判断 */
+function extractNgrams(text) {
+  const s = String(text || '').replace(/[^一-龥a-zA-Z0-9]/g, '');
+  const set = new Set();
+  for (let len = 2; len <= 4; len++) {
+    for (let i = 0; i + len <= s.length; i++) set.add(s.slice(i, i + len));
+  }
+  return set;
+}
+
+/* 注意力组装：返回 { text, hits }，两个闸都不触发或命中不足时返回 null。
+   排序 = importance × 时间衰减（30 天半衰），牵挂线头相关记忆排前面。 */
+async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
+  if (opts.memory === false || !userMessage) return null;
+  const cfg = await getAttentionConfig();
+  const msg = String(userMessage);
+
+  const { data: topics, error } = await supabase
+    .from('memory_topics')
+    .select('topic, last_content, grounding, importance, updated_at')
+    .limit(60);
+  if (error || !topics?.length) return null;
+
+  // —— 提及闸：topic 命中（她在聊旧话题）。回忆词不是必须——"今天看到一只猫"就该想起关于猫的旧事 ——
+  let matched = topics.filter(t => topicHits(msg, t.topic));
+
+  // —— 牵挂闸：提及闸落空时，看有没有悬着的线头（concern ≥ 阈值）且当前消息和它有共同词 ——
+  let concernNote = null;
+  if (!matched.length) {
+    try {
+      const residue = await getLatestResidue(sessionId);
+      if (residue) {
+        const ageMs = Date.now() - (residue.created_at ? new Date(residue.created_at).getTime() : Date.now());
+        if (ageResidue(residue, ageMs).concern >= cfg.concern_threshold) {
+          const ev0 = Array.isArray(residue.evidence) ? String(residue.evidence[0] || '') : '';
+          const kw = extractNgrams(String(residue.unfinished || '') + ' ' + ev0);
+          if (kw.size) {
+            const msgNgrams = extractNgrams(msg);
+            let shared = false;
+            for (const w of kw) if (msgNgrams.has(w)) { shared = true; break; }
+            if (shared) {
+              matched = topics.filter(t => [...kw].some(w => topicHits(w, t.topic)));
+              concernNote = String(residue.unfinished || ev0 || '').slice(0, 120);
+            }
+          }
+        }
+      }
+    } catch (e) { /* 牵挂读取失败不阻断注意力（可能只是残留没生成） */ }
+  }
+
+  if (!matched.length) return null;
+
+  const nowMs = Date.now();
+  const scored = matched
+    .map(t => {
+      const ageDays = Math.max(0, (nowMs - new Date(t.updated_at).getTime()) / 86400000);
+      const decay = Math.exp(-ageDays / 30);
+      return { t, score: (Number(t.importance) || 0.5) * decay };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const hits = [];
+  let chars = 0;
+  for (const { t } of scored) {
+    if (hits.length >= cfg.k) break;
+    const body = String(t.last_content || '').trim().slice(0, ATTENTION_ITEM_MAX);
+    if (!body) continue;
+    const g = ['实', '悬', '空'].includes(t.grounding) ? t.grounding : '悬';
+    const line = concernNote && hits.length === 0 ? `（还有没说完的：${concernNote}）\n「${body}」【${g}】` : `「${body}」【${g}】`;
+    if (chars + line.length > cfg.budget_chars) break;
+    hits.push(line);
+    chars += line.length;
+  }
+  if (!hits.length) return null;
+  return { text: hits.join('\n'), hits: hits.length };
+}
+
 // —— 配置：settings 表（SQL 未跑时回落默认值，防御式） ——
 async function getContextConfig() {
   const defaults = { frozen_rounds: 10, live_rounds: 15, max_context_tokens: 8000 };
@@ -1793,6 +1916,8 @@ async function recordRequestStat({ sessionId, client, model, stream, usageList =
       resume_gap_min: d.resume_gap_min ?? null,
       residue_injected: d.residue_injected ?? null,
       residue_text: d.residue_text ?? null,
+      attention_injected: d.attention_injected ?? null,
+      attention_hits: d.attention_hits ?? null,
       keepalive_action,
       keepalive_meta,
       memory_degraded,
@@ -1998,6 +2123,25 @@ async function buildModelContext(sessionId, opts = {}) {
     }
   }
 
+  // —— 第④b 注意力：按当前话题唤起记忆（提及闸/牵挂闸命中才注入；与时间叙事独立） ——
+  let attentionInjected = false;
+  let attentionHits = 0;
+  if (opts.userMessage && !opts.keepalive && opts.memory !== false) {
+    try {
+      const attention = await getAttentionMaterial(sessionId, opts.userMessage, opts);
+      if (attention && attention.text) {
+        const attMsg = { role: 'user', content: `【想起】\n${attention.text}` };
+        if (liveSection.length > 0) liveSection.splice(liveSection.length - 1, 0, attMsg);
+        else liveSection.push(attMsg);
+        attentionInjected = true;
+        attentionHits = attention.hits;
+        console.log(`🔔 [注意力] session=${sessionId} hits=${attention.hits} · ${attention.text.replace(/\n/g, ' ⏎ ').slice(0, 180)}`);
+      }
+    } catch (e) {
+      console.warn('⚠️ 注意力注入异常:', e.message);
+    }
+  }
+
   // —— 跨 session 流水（默认关：实测命中率掉得离谱 + 挤占 8k 预算，用户 08-16 决定关）——
   // 想开：Railway 设置环境变量 CROSS_SESSION_FLOW=on 后重新部署即可。
   if (process.env.CROSS_SESSION_FLOW === 'on') {
@@ -2041,6 +2185,8 @@ async function buildModelContext(sessionId, opts = {}) {
     residue_injected: residueInjected,
     residue_text: residueText,
     keepalive_injected_ids: keepaliveInjectedIds,
+    attention_injected: attentionInjected,
+    attention_hits: attentionHits,
   };
 
   console.log(`[ContextAssembly] ${JSON.stringify({ session: sessionId, ...diagnostics })}`);
@@ -3728,7 +3874,7 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
   });
 
   // 2. 构建消息数组 + 附图片（Context Assembly 已替代旧的 compressHistory 热路径压缩）
-  const { messages: builtMessages, diagnostics } = await buildMessages(sessionId, opts);
+  const { messages: builtMessages, diagnostics } = await buildMessages(sessionId, { ...opts, userMessage });
   let messages = builtMessages;
 
   // 2.5 分享链接卡片：正文喂给沈晏（前端发 share 字段 = 用户消息里贴了链接，卡片已抓正文）
@@ -3919,5 +4065,7 @@ module.exports = {
   collectMirrorHistory,
   handleRetreat,
   handleVerdict,
+  getAttentionMaterial,
+  topicHits,
   supabase,
 };
