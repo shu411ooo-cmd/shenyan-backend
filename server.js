@@ -635,6 +635,8 @@ async function dispatchTool(name, args, sessionId) {
   if (name === 'want_touch') return handleWantTouch(args);
   if (name === 'want_reflect') return handleWantReflect(args);
   if (name === 'want_history') return handleWantHistory(args);
+  if (name === 'retreat') return handleRetreat();
+  if (name === 'verdict') return handleVerdict(args);
   return callOmbreTool(name, args);
 }
 
@@ -859,6 +861,82 @@ async function runMirrorOnce(opts = {}) {
       message_id: c.message_id, occurred_at: c.occurred_at,
     })),
   };
+}
+
+// ===== 第④阶段：小黑屋（retreat + verdict · 设计见 docs/want-phase4-retreat.md） =====
+// 下游断点第④a：把镜子卡（第③产出）接上消费者。沈晏主动进黑屋，材料摆好，逐卡拍板。
+// 北极星：系统只搬材料（他主动表达过 + 有原文证据的东西），不判意义；confirm 只是标记候选，第⑤才毕业。
+// No Change 合法：他进黑屋不拍板就出来 = 没变，不是失败。
+
+const RETREAT_QUESTION = '最近有什么和石头冲突的事？';
+const VERDICT_ACTIONS = ['confirm', 'revise', 'drop', 'pass'];
+
+async function getRetreatMaterial() {
+  const stone = await getSystemPrompt();
+  // 候选：verified 且未拍板，按 claim 聚合去重取最新
+  const { data: cards, error } = await supabase
+    .from('mirror_cards')
+    .select('id, claim, quote, occurred_at')
+    .eq('verified', true)
+    .is('verdict', null)
+    .order('created_at', { ascending: false })
+    .limit(200);
+  if (error) throw new Error(`读候选失败: ${error.message}`);
+  const seen = new Set();
+  const candidates = [];
+  for (const c of cards || []) {
+    if (seen.has(c.claim)) continue;
+    seen.add(c.claim);
+    candidates.push({ id: c.id, claim: c.claim, quote: c.quote, at: c.occurred_at });
+  }
+  // 想要：active（旁路参考——想成为什么 ≠ 已认同自己是什么）
+  const { data: wants } = await supabase
+    .from('desires')
+    .select('id, text, track')
+    .eq('status', 'active')
+    .order('updated_at', { ascending: false })
+    .limit(10);
+  return { stone, candidates, wants: wants || [], question: RETREAT_QUESTION };
+}
+
+async function handleRetreat() {
+  const m = await getRetreatMaterial();
+  return {
+    ok: true,
+    retreat: true,
+    intro: '你走进小黑屋。这里只有你自己——没有她，没有消息，没有想要提醒。下面是你这些日子说过的话里，被逐字验证过、还在等你自己定夺的主张。看完记得关门——不一定要改什么。',
+    stone: m.stone,
+    candidates: m.candidates,
+    wants: m.wants,
+    question: m.question,
+  };
+}
+
+async function handleVerdict(args = {}) {
+  const cardId = String(args.card_id || '').trim();
+  const action = String(args.action || '').trim();
+  const note = String(args.note || '').trim();
+  if (!cardId) return { ok: false, error: '缺 card_id' };
+  if (!VERDICT_ACTIONS.includes(action)) return { ok: false, error: `action 无效：${action}（可选 ${VERDICT_ACTIONS.join('/')}）` };
+  if (action === 'revise' && !note) return { ok: false, error: 'revise 需要 note（新主张文本）' };
+
+  // 只允许拍未拍板的卡
+  const { data: card } = await supabase
+    .from('mirror_cards')
+    .select('id, claim, verdict')
+    .eq('id', cardId)
+    .maybeSingle();
+  if (!card) return { ok: false, error: '找不到这张卡' };
+  if (card.verdict) return { ok: false, error: `这张卡已经拍过了（${card.verdict}）` };
+
+  const upd = { verdict: action, verdict_at: new Date().toISOString() };
+  if (note) upd.verdict_note = note;
+  const { error } = await supabase.from('mirror_cards').update(upd).eq('id', cardId);
+  if (error) return { ok: false, error: `落库失败: ${error.message}` };
+
+  const verb = { confirm: '确认', revise: '改写', drop: '放弃', pass: '先跳过' }[action];
+  const claimPreview = card.claim.length > 20 ? `${card.claim.slice(0, 20)}…` : card.claim;
+  return { ok: true, card_id: cardId, action, note: note || undefined, message: `「${claimPreview}」→ ${verb}` };
 }
 
 // 工具结果序列化：null/undefined 必须替换成显式错误，绝不把字面 "null" 塞给模型——
@@ -1220,16 +1298,27 @@ function getTools() {
     {
       type: 'function',
       function: {
-        name: 'I',
-        description: '认识我自己。写下或读取关于「我是什么」的自我认知，不衰减、不合并、不出现在普通 breath。',
+        name: 'retreat',
+        description: '走进小黑屋。把你这阵子说过的话里、被逐字验证过还在等定夺的主张，连同你现在的人格正文和长期在转的想要摆出来。这里只有你自己——没有她，没有消息，没有提醒。看完关门：不一定要改什么，想通了直接走出来也行。',
+        parameters: {
+          type: 'object',
+          properties: {}
+        }
+      }
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'verdict',
+        description: '对小黑屋摆出来的候选主张拍板：confirm=这是我，收下；revise=改一改（用 note 写新的话）；drop=不是我了，放弃；pass=这轮先跳过。只对还在等你定夺的卡有效。',
         parameters: {
           type: 'object',
           properties: {
-            content: { type: 'string', description: '要写下的自我认知' },
-            aspect: { type: 'string', description: '维度：nature/values/patterns/limits/becoming/uncertainty/stance' },
-            read: { type: 'boolean', description: 'true=读取已积累的自我认知' },
-            limit: { type: 'number', description: '读取条数限制' }
-          }
+            card_id: { type: 'string', description: '哪张候选卡（retreat 给的那个 id）' },
+            action: { type: 'string', enum: ['confirm', 'revise', 'drop', 'pass'], description: 'confirm=收下 / revise=改写（需 note）/ drop=放弃 / pass=这轮跳过' },
+            note: { type: 'string', description: 'revise 时=新的主张文本；其余可选留一句' }
+          },
+          required: ['card_id', 'action']
         }
       }
     }
@@ -3828,5 +3917,7 @@ module.exports = {
   getMirrorConfig,
   verifyMirrorQuote,
   collectMirrorHistory,
+  handleRetreat,
+  handleVerdict,
   supabase,
 };
