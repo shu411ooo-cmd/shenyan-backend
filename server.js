@@ -638,6 +638,229 @@ async function dispatchTool(name, args, sessionId) {
   return callOmbreTool(name, args);
 }
 
+// ===== 第③阶段：镜子卡（外部模型提卡 + 代码 exact match 验证 · 设计见 docs/want-phase3-mirror.md） =====
+// 审稿 P0-3：引用生成（DeepSeek 解释）与引用验证（代码裁决）拆开。查无即弃，绝不下结论。
+// 镜子是锚不是流：只过证据的形状，不决定证据的意义；run 全程零改动 system_prompt。
+
+const MIRROR_DEFAULTS = { mirror_days: 90, mirror_max_sessions: 20 };
+
+async function getMirrorConfig() {
+  try {
+    const { data, error } = await supabase
+      .from('settings')
+      .select('mirror_days, mirror_max_sessions')
+      .eq('session_id', 'global')
+      .maybeSingle();
+    if (error || !data) return MIRROR_DEFAULTS;
+    return {
+      mirror_days: Number.isInteger(data.mirror_days) ? data.mirror_days : MIRROR_DEFAULTS.mirror_days,
+      mirror_max_sessions: Number.isInteger(data.mirror_max_sessions) ? data.mirror_max_sessions : MIRROR_DEFAULTS.mirror_max_sessions,
+    };
+  } catch (e) { return MIRROR_DEFAULTS; }
+}
+
+const MIRROR_SYSTEM_PROMPT = `你是沈晏的「证据对账器」。你的任务只有一个：为沈晏的人格主张，从对话原文里提「逐字引语」候选。你不做任何分析、不评价、不下结论。
+
+输入三块：
+1. 【石头】沈晏当前的人格文件（SYSTEM_PROMPT）。里面每一句"我是谁/我怎样"的判断。
+2. 【河】沈晏长期在转的想要（账本条目 + 足迹）。
+3. 【对话原文】近期对话，分 session，行首标「她:」或「沈晏:」。
+
+输出严格 JSON：{"cards":[{"claim":"一句候选人格判断","quote":"从原文逐字抄的一句引语"}]}
+
+硬纪律：
+- quote 必须逐字存在于原文。抄不出来就不要提这张卡——宁缺毋滥；查无即弃是下游代码做，你只负责别拿幻觉凑数。
+- claim 必须来自：石头里已有的判断，或原文里沈晏亲口主动表达的主张。禁止你替沈晏造主张（北极星：只有他主动表达的才配当候选）。
+- 只提证据，不判"重要"。不要让"这句很感人"影响你——被感动不是证据。
+- 优先：石头里的判断在原文里有出处的；原文里沈晏主动、反复表达的主张（同一主张跨 ≥2 个时间点更好）。
+- 最多 8 张卡，宁少勿凑。`;
+
+/* normalize 只做机械归一（引号/空白），不做语义改写——验证的裁决权全在代码 */
+function normalizeMirrorText(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/[‘’]/g, "'")           // 弯单引号 → 直单引号
+    .replace(/[“”＂]/g, '"')     // 弯/全角双引号 → 直双引号
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/* 河：active 想要 + 最近足迹（外部模型看形状，不看情绪） */
+async function collectMirrorRiver() {
+  try {
+    const { data, error } = await supabase
+      .from('desires')
+      .select('id, text, track, status')
+      .eq('status', 'active')
+      .order('updated_at', { ascending: false })
+      .limit(15);
+    if (error || !data?.length) return '';
+    const lines = [];
+    for (const w of data) {
+      const { data: ns } = await supabase
+        .from('desire_notes')
+        .select('note')
+        .eq('desire_id', w.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      const last = ns?.[0]?.note ? ` · 最近足迹：${ns[0].note}` : '';
+      lines.push(`- ${w.text}（${w.track}${last}）`);
+    }
+    return lines.join('\n');
+  } catch (e) { return ''; }
+}
+
+/* 近 N 天可见消息：分 session 取尾部 60 条、session 数 ≤ maxSessions（最近优先），控 token */
+async function collectMirrorHistory(days, maxSessions) {
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+  const { data, error } = await supabase
+    .from('messages')
+    .select('id, session_id, created_at, content, role')
+    .eq('visible', true)
+    .gte('created_at', since)
+    .order('created_at', { ascending: true });
+  if (error || !data?.length) return [];
+  const bySession = {};
+  for (const m of data) (bySession[m.session_id] = bySession[m.session_id] || []).push(m);
+  const sessions = Object.values(bySession)
+    .sort((a, b) => new Date(b[b.length - 1].created_at) - new Date(a[a.length - 1].created_at))
+    .slice(0, maxSessions)
+    .map(list => list.slice(-60));
+  return sessions.flat().map(m => {
+    const content = Array.isArray(m.content)
+      ? (m.content.find(c => c.type === 'text')?.text || '')
+      : (typeof m.content === 'string' ? m.content : '');
+    return {
+      id: m.id,
+      session_id: m.session_id,
+      created_at: m.created_at,
+      role: m.role,
+      content,
+      normalized: normalizeMirrorText(content),
+    };
+  });
+}
+
+/* 代码验证（唯一裁决方）：normalize 后 substring match，命中首条即记，找不到 → DROP */
+function verifyMirrorQuote(quote, history) {
+  const nq = normalizeMirrorText(quote);
+  if (!nq) return null;
+  const hit = history.find(m => m.normalized && m.normalized.includes(nq));
+  return hit ? { message_id: hit.id, session_id: hit.session_id, occurred_at: hit.created_at } : null;
+}
+
+function buildMirrorPrompt(stone, riverText, history) {
+  const lines = [];
+  lines.push('【石头·当前人格文件】');
+  lines.push(stone || '（空）');
+  lines.push('');
+  lines.push('【河·沈晏长期在转的想要】');
+  lines.push(riverText || '（暂无账本条目）');
+  lines.push('');
+  lines.push('【近期对话原文】');
+  const bySession = {};
+  for (const m of history) (bySession[m.session_id] = bySession[m.session_id] || []).push(m);
+  let idx = 0;
+  for (const list of Object.values(bySession)) {
+    idx++;
+    lines.push(`--- session ${idx}（${list.length} 条）---`);
+    for (const m of list) lines.push(`${m.role === 'user' ? '她' : '沈晏'}: ${m.content}`);
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+/* 外部模型提卡（DeepSeek 直连，与摘要/残留同款；thinking 关闭省钱防空 content） */
+async function proposeMirrorCards(prompt) {
+  if (!process.env.DEEPSEEK_API_KEY) return null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'deepseek-v4-flash',
+          temperature: 0,
+          thinking: { type: 'disabled' }, // 关推理：对账不需要 thinking，还省钱防空 content
+          max_tokens: 2000,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: MIRROR_SYSTEM_PROMPT },
+            { role: 'user', content: prompt }
+          ]
+        }),
+        signal: AbortSignal.timeout(60000)
+      });
+      if (!res.ok) { console.warn('⚠️ 镜子提卡请求失败:', res.status); return null; }
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) { console.warn(`⚠️ 镜子提卡返回空内容（attempt ${attempt}/2，finish_reason=${data.choices?.[0]?.finish_reason}）`); continue; }
+      const parsed = JSON.parse(content);
+      if (!Array.isArray(parsed.cards)) { console.warn('⚠️ 镜子提卡 JSON 结构不对（缺 cards 数组）'); return null; }
+      return parsed.cards
+        .map(c => ({ claim: String(c.claim || '').trim(), quote: String(c.quote || '').trim() }))
+        .filter(c => c.claim && c.quote);
+    } catch (err) {
+      console.error('💥 镜子提卡异常:', err.message);
+      return null;
+    }
+  }
+  return null;
+}
+
+/* 编排：①采集 → ②提卡 → ③代码验证 → ④存卡（全量，含 DROP 的，可审计） → ⑤不动石头 */
+async function runMirrorOnce(opts = {}) {
+  const cfg = await getMirrorConfig();
+  const days = Math.min(parseInt(opts.days, 10) || cfg.mirror_days, 365);
+  const maxSessions = Math.min(parseInt(opts.max_sessions, 10) || cfg.mirror_max_sessions, 40);
+  const maxCards = Math.min(parseInt(opts.max_cards, 10) || 8, 20);
+
+  const stone = await getSystemPrompt();
+  const river = await collectMirrorRiver();
+  const history = await collectMirrorHistory(days, maxSessions);
+  if (!history.length) return { ok: false, reason: `近 ${days} 天没有可见消息` };
+
+  const prompt = buildMirrorPrompt(stone, river, history);
+  const cards = await proposeMirrorCards(prompt);
+  if (!cards?.length) return { ok: false, error: '外部模型未返回有效卡片（无 DEEPSEEK_API_KEY 或模型无响应）' };
+  cards.length = Math.min(cards.length, maxCards);
+
+  const runId = crypto.randomUUID();
+  const verified = cards.map(c => {
+    const hit = verifyMirrorQuote(c.quote, history);
+    return {
+      ...c,
+      verified: !!hit,
+      message_id: hit?.message_id || null,
+      session_id: hit?.session_id || null,
+      occurred_at: hit?.occurred_at || null,
+    };
+  });
+
+  const { error: insErr } = await supabase.from('mirror_cards').insert(
+    verified.map(c => ({
+      run_id: runId, claim: c.claim, quote: c.quote,
+      verified: c.verified, message_id: c.message_id,
+      session_id: c.session_id, occurred_at: c.occurred_at,
+    }))
+  );
+  if (insErr) throw new Error(`存卡失败: ${insErr.message}`);
+
+  return {
+    ok: true, run_id: runId, stone_unchanged: true,
+    proposed: verified.length,
+    verified: verified.filter(c => c.verified).length,
+    dropped: verified.filter(c => !c.verified).length,
+    cards: verified.map(c => ({
+      claim: c.claim, quote: c.quote, verified: c.verified,
+      message_id: c.message_id, occurred_at: c.occurred_at,
+    })),
+  };
+}
+
 // 工具结果序列化：null/undefined 必须替换成显式错误，绝不把字面 "null" 塞给模型——
 // 沈晏看到 "null" 会当成「工具没找到」，无法区分「真没有」和「后端挂」（最隐蔽的静默降级）。
 function serializeToolResult(name, result, degradedSet) {
@@ -3067,6 +3290,21 @@ app.post('/sessions/:id/chat', async (req, res) => {
 
 // ===== /api/ 命名空间（新版路由，前端统一走这里） =====
 
+// POST /api/mirror/run → 第③阶段镜子卡：跑一轮机械对账（外部模型提卡 + 代码 exact match + 查无即弃；不下结论，零改动石头）
+app.post('/api/mirror/run', async (req, res) => {
+  try {
+    const result = await runMirrorOnce(req.body || {});
+    if (result.ok === false && result.error) {
+      res.status(502).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    console.error('💥 /api/mirror/run 异常:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // POST /api/chat → { message, sessionId, model, thinking, memory, tools }
 app.post('/api/chat', async (req, res) => {
   try {
@@ -3586,5 +3824,9 @@ module.exports = {
   handleWantHistory,
   buildDesireMaterial,
   getWantInjectConfig,
+  runMirrorOnce,
+  getMirrorConfig,
+  verifyMirrorQuote,
+  collectMirrorHistory,
   supabase,
 };
