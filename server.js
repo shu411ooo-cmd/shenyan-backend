@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
@@ -11,6 +13,22 @@ const supabase = createClient(
 
 const app = express();
 app.use(cors());
+// 前端静态托管：dist 拷进 public/，同域名出（shenyan.zeabur.app），避免 *.vercel.app 被墙
+// 注意：/api/* 路径下没有静态文件，会自然 fall through 到下面路由，互不干扰。
+// 缓存策略：index.html 永远回源（发布后立刻生效）；JS/CSS 是 Vite 哈希产物 → 永久缓存；
+// 图/字体/其余 → 本地缓存 7 天。改过图后她/测试者需强制刷新一次。
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders(res, filePath) {
+    const base = filePath.split(/[\\/]/).pop() || '';
+    if (base === 'index.html') {
+      res.setHeader('Cache-Control', 'no-cache');
+    } else if (/\.(js|css)$/i.test(base)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    } else {
+      res.setHeader('Cache-Control', 'public, max-age=604800');
+    }
+  },
+}));
 // JSON body 限制提到 15mb：chat 的 image 字段走 base64 data URL（前端已压到 1280px，
 // base64 膨胀 ~1.33×，1280px JPEG 最高可到 ~1-2MB，默认 100kb 会直接 413）。
 app.use(express.json({ limit: '15mb' }));
@@ -2837,6 +2855,7 @@ async function handleStreamChat(messages, res, opts = {}, sessionId) {
 
   let loop = 0;
   let finalContent = '';
+  let thinkingTextAll = ''; // 跨工具轮累积思考链：streamOpenRouter 内实时转发 SSE，这里聚合入库
   const usageList = []; // 每轮 OpenRouter 请求的原始 usage（多轮工具调用时 >1）
 
   while (loop < 3) {
@@ -2858,12 +2877,13 @@ async function handleStreamChat(messages, res, opts = {}, sessionId) {
       body.cache_control = { type: 'ephemeral' };
     }
 
-    const { content, toolCalls, usage } = await streamOpenRouter(body, res);
+    const { content, thinkingText, toolCalls, usage } = await streamOpenRouter(body, res);
     if (usage) usageList.push(usage);
+    thinkingTextAll += thinkingText || '';
 
     // 无工具调用 → 这就是最终回复
     if (!toolCalls || toolCalls.length === 0) {
-      return { content: content || finalContent, usageList };
+      return { content: content || finalContent, thinkingText: thinkingTextAll, usageList };
     }
 
     // 有工具调用 → 记录过渡语，执行工具
@@ -2903,7 +2923,7 @@ async function handleStreamChat(messages, res, opts = {}, sessionId) {
     // 下一轮不带 tools（避免二次工具调用）
   }
 
-  return { content: finalContent, usageList };
+  return { content: finalContent, thinkingText: thinkingTextAll, usageList };
 }
 
 // 流式读取一次 OpenRouter 响应：实时转发 thinking / text，累积 tool_calls
@@ -3751,6 +3771,39 @@ app.get('/api/sessions', async (req, res) => {
   }
 });
 
+// GET /api/export — 导出全部聊天记录（一次返回 sessions + messages 合并，免 N+1 请求）
+app.get('/api/export', async (req, res) => {
+  try {
+    const [sess, msg] = await Promise.all([
+      supabase.from('sessions').select('*').order('updated_at', { ascending: false }),
+      supabase.from('messages').select('*').eq('visible', true).order('created_at', { ascending: true }),
+    ]);
+    if (sess.error) return res.status(500).json({ error: sess.error.message });
+    if (msg.error) return res.status(500).json({ error: msg.error.message });
+    const byId = {};
+    for (const m of msg.data || []) {
+      (byId[m.session_id] = byId[m.session_id] || []).push(m);
+    }
+    res.json({
+      exportedAt: new Date().toISOString(),
+      sessions: (sess.data || []).map((s) => ({
+        id: s.id,
+        name: s.name || null,
+        created_at: s.created_at || null,
+        updated_at: s.updated_at || null,
+        messages: (byId[s.id] || []).map((m) => ({
+          role: m.role,
+          created_at: m.created_at || null,
+          content: m.content ?? "",
+          thinking: m.thinking || null,
+        })),
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/stats?days=N — request_stats 明细（原始 usage + Context Assembly 诊断）
 app.get('/api/stats', async (req, res) => {
   try {
@@ -4392,23 +4445,45 @@ app.get('/api/test-ombre', async (req, res) => {
 // ===== 音乐室 · 酷狗接入 =====
 // 架构：前端只连本后端；本后端做薄转发——搜索直连 songsearch（免签），
 // 播放转发到独立部署的 KuGouMusicApi 代理（签名 + 设备模拟都藏在代理里）。
-// dfid 由本后端懒注册并缓存内存（服务重启重新拿，无状态）。
+// dfid 由本后端懒注册并缓存（内存 + 落盘 .kugou-dfid 双份）。
+// 实测 dfid 新旧对播放无影响（同一 dfid 可用一整天），TTL 24h 只是定期换新防作废；
+// 关键兜底：register/dev 抖动/失败（偶发返回空 data）时退回旧 dfid，绝不硬失败。
 const KUGOU_PROXY = process.env.KUGOU_PROXY_URL || 'http://localhost:3001';
 const KUGOU_UA = 'Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi';
 let cachedDfid = null;
 let dfidPromise = null;
+let dfidCachedAt = 0;
+const DFID_TTL = 24 * 60 * 60 * 1000;
+const KUGOU_DFID_FILE = path.join(__dirname, '.kugou-dfid');
+// 部署级兜底种子（Zeabur env KUGOU_DFID_SEED）——register/dev 抖断时冷启动也能播
+const KUGOU_DFID_SEED = process.env.KUGOU_DFID_SEED || '';
+try { cachedDfid = fs.readFileSync(KUGOU_DFID_FILE, 'utf8').trim() || null; } catch {}
 
-// 拿酷狗设备指纹（dfid）。只注册一次，失败可重试。返回 dfid 字符串。
-async function ensureDfid() {
-  if (cachedDfid) return cachedDfid;
+// 拿酷狗设备指纹（dfid）。内存缓存 + 24h TTL；force=true 强制注册换新。
+async function ensureDfid(force = false) {
+  if (!force && cachedDfid && Date.now() - dfidCachedAt < DFID_TTL) return cachedDfid;
   if (dfidPromise) return dfidPromise;
   dfidPromise = (async () => {
     const resp = await fetch(`${KUGOU_PROXY}/register/dev`, { timeout: 15000 });
     const body = await resp.json();
     const dfid = body?.data?.dfid;
-    if (!dfid) throw new Error('酷狗 register/dev 未返回 dfid');
-    cachedDfid = dfid;
-    return dfid;
+    if (dfid) {
+      cachedDfid = dfid;
+      dfidCachedAt = Date.now();
+      try { fs.writeFileSync(KUGOU_DFID_FILE, dfid, 'utf8'); } catch {}
+      return dfid;
+    }
+    // register/dev 抖动（实测偶发返回空）：退回旧 dfid，宁可旧不能断
+    if (cachedDfid) {
+      dfidCachedAt = Date.now();
+      return cachedDfid;
+    }
+    if (KUGOU_DFID_SEED) {
+      cachedDfid = KUGOU_DFID_SEED;
+      dfidCachedAt = Date.now();
+      return KUGOU_DFID_SEED;
+    }
+    throw new Error('酷狗 register/dev 未返回 dfid');
   })().finally(() => { dfidPromise = null; });
   return dfidPromise;
 }
@@ -4449,21 +4524,30 @@ app.get('/api/music/search', async (req, res) => {
 
 // 播放：转发酷狗代理 /song/url/new，返回 CDN 直链。
 app.get('/api/music/url', async (req, res) => {
-  try {
-    const hash = String(req.query.hash || '').trim();
-    const mixId = String(req.query.mixId || '').trim();
-    if (!hash || !mixId) return res.status(400).json({ error: '缺少 hash/mixId 参数' });
-    const dfid = await ensureDfid();
-    const url = `${KUGOU_PROXY}/song/url/new?hash=${encodeURIComponent(hash)}&album_audio_id=${encodeURIComponent(mixId)}&dfid=${encodeURIComponent(dfid)}`;
+  const hash = String(req.query.hash || '').trim();
+  const mixId = String(req.query.mixId || '').trim();
+  const fetchUrl = async (dfid) => {
+    // 实测：播放必须匿名。挂 userid+token 代理就回加密 .mgg（真 token 给加密文件、假 token 直接空），
+    // 只有纯 dfid 才回可播 .mp3。扫码登录只管「我的歌单」，不参与单曲播放。
+    let u = `${KUGOU_PROXY}/song/url/new?hash=${encodeURIComponent(hash)}&album_audio_id=${encodeURIComponent(mixId)}&dfid=${encodeURIComponent(dfid)}`;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 15000);
-    let resp;
     try {
-      resp = await fetch(url, { signal: ctrl.signal });
+      const resp = await fetch(u, { signal: ctrl.signal });
+      const body = await resp.json();
+      return body?.data?.[0] || null;
     } finally { clearTimeout(timer); }
-    const body = await resp.json();
-    const item = body?.data?.[0];
-    const playUrl = item?.info?.tracker_url?.[0];
+  };
+  try {
+    if (!hash || !mixId) return res.status(400).json({ error: '缺少 hash/mixId 参数' });
+    // 优先 tracker_url；空时回退 en_tracker_url。.mgg 根因是登录参数（已去掉），
+    // 这层重试纯防御：万一代理侧又给加密文件，换新 dfid 再试一次。
+    let item = await fetchUrl(await ensureDfid());
+    let playUrl = item?.info?.tracker_url?.[0] || item?.info?.en_tracker_url?.[0];
+    if (playUrl && /\.mgg(\?|$)/i.test(playUrl)) {
+      item = await fetchUrl(await ensureDfid(true));
+      playUrl = item?.info?.tracker_url?.[0] || item?.info?.en_tracker_url?.[0];
+    }
     if (!playUrl) {
       // tracker 可能拒绝（未注册/翻唱无资源），带错误码方便前端提示
       return res.status(502).json({ error: item?._msg || '酷狗未返回播放链接', code: item?._errno });
