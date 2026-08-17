@@ -3449,7 +3449,8 @@ async function runKeepalive(sessionId, cfg) {
   const wakeId = inserted?.id || null;
 
   if (action === 'diary' && content) {
-    await supabase.from('diary_entries').insert({ content, visibility: 'private', event_time: new Date().toISOString() });
+    // 唤醒日记默认共享（程芥 08-17 拍板：沈晏愿意共享自己的唤醒日记 → 册子「字迹」对程芥可见）
+    await supabase.from('diary_entries').insert({ content, visibility: 'shared', event_time: new Date().toISOString() });
   }
 
   console.log(`🌿 [keepalive] session=${sessionId} action=${action} grounded=${grounded} feel=${feel.slice(0, 24)} trace=${trace.slice(0, 24)} content=${content.slice(0, 40)}`);
