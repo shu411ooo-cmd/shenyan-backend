@@ -3389,7 +3389,12 @@ async function runKeepalive(sessionId, cfg) {
   const source = String(parsed.source || '').trim().slice(0, 120);
   let content = String(parsed.content || '').trim().slice(0, 200);
   const thoughts = String(parsed.thoughts || '').trim().slice(0, 400);
-  // 唤醒主记录：breath（看一圈）→ feel（感受）→ trace（"我来过"），都挂在这条唤醒记录上
+  // 唤醒主记录：breath（看一圈）→ feel（感受）→ trace（"我来过"），都挂在这条唤醒记录上。
+  // 设计契约（docs/desire-wake-engine-design.md）：
+  //   · 唤醒痕迹独立成沈晏自己的「意识时间线」，落在 keepalive_log；
+  //   · 不并入 Ombre 记忆——避免机器自动写记忆沾「机器替他制造记录」的边，记忆可读但不可被机器改写；
+  //   · feel = breath 之后的情绪状态快照，是主观叙述不是引擎数据：不并念头池、不进驱动条数值；
+  //   · trace = 「我来过」的证明，none 也要有（"决定不动"本身是内容）。
   const breath = String(parsed.breath || '').trim().slice(0, 400);
   const feel = String(parsed.feel || '').trim().slice(0, 200);
   let trace = String(parsed.trace || '').trim().slice(0, 300);
