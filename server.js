@@ -3313,7 +3313,47 @@ async function buildWakeMessages(sessionId, lastUserMs) {
   return { messages, diagnostics };
 }
 
-/* 执行一次唤醒：调模型 → JSON 解析 → 真 grounded 门控 → 写库 → 可选的 diary。 */
+/* 容错解析唤醒模型的 JSON（旧代码 JSON.parse 一次失败就全丢 → 三次唤醒输出全被静默吃掉）。
+   模型输出可能有四种不干净：① content 是数组（Claude 内容块）② 包了 ```json 围栏
+   ③ 被 max_tokens 截断成残缺 JSON ④ 前后带杂话。按顺序降级救，全失败才返回 {}。 */
+function parseWakeJson(raw) {
+  if (raw == null) return {};
+  let text = raw;
+  if (Array.isArray(text)) {                              // ① 内容块数组
+    text = text.map((b) => (b && (b.text || b.content)) || '').join('\n');
+  }
+  text = String(text).trim();
+  if (!text) return {};
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);   // ② 剥围栏
+  if (fence) text = fence[1].trim();
+  try {
+    const p = JSON.parse(text);                           // 干净 JSON 直接过
+    return (p && typeof p === 'object') ? p : {};
+  } catch (e) { /* 继续降级 */ }
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start !== -1 && end > start) {                      // ③④ 提取第一个 {...}
+    try {
+      const p = JSON.parse(text.slice(start, end + 1));
+      return (p && typeof p === 'object') ? p : {};
+    } catch (e2) { /* 可能截断，按字段逐个提取 */ }
+    // 被 max_tokens 切断时：逐字段正则提取（字段在 prompt 模板里按 thoughts/action/source/content 顺序）
+    const grab = (key) => {
+      const m = text.slice(start).match(new RegExp(`"${key}"\\s*:\\s*"(.*?)"`, 's'));
+      return m ? m[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\') : undefined;
+    };
+    const action = /"action"\s*:\s*"(none|message|diary)"/.exec(text.slice(start));
+    return {
+      thoughts: grab('thoughts'),
+      action: action ? action[1] : undefined,
+      source: grab('source'),
+      content: grab('content'),
+    };
+  }
+  return {};
+}
+
+/* 执行一次唤醒：调模型 → 容错 JSON 解析 → 真 grounded 门控 → 写库 → 可选的 diary。 */
 async function runKeepalive(sessionId, cfg) {
   const lastUserMs = await getLastUserMsgTime(sessionId);
   const { messages, diagnostics } = await buildWakeMessages(sessionId, lastUserMs);
@@ -3321,11 +3361,13 @@ async function runKeepalive(sessionId, cfg) {
   let parsed = {};
   // 网络/HTTP 错误 → 抛出 → keepaliveCheck 回滚锁，下轮 cron 可重试
   const { msg, usage } = await callOpenRouterNonStream(messages, null, {
-    model: cfg.model, thinking: 'off', max_tokens: 500, responseFormat: 'json_object'
+    model: cfg.model, thinking: 'off', max_tokens: 800, responseFormat: 'json_object'
   });
-  try {
-    parsed = JSON.parse(msg.content || '{}');   // 解析失败 → {} → 走 none（不重试）
-  } catch (e) { /* 解析失败不重试（一次唤醒最多一次 API），本次记 none */ }
+  // 抓原始输出（诊断）：之前输出全被静默丢掉，这次留证据，钉死到底是谁的锅
+  const rawContent = msg.content;
+  if (typeof rawContent === 'string') console.log('📦 [keepalive] 原始输出:', rawContent.slice(0, 800));
+  else console.log('📦 [keepalive] 原始输出(非字符串):', JSON.stringify(rawContent).slice(0, 800));
+  parsed = parseWakeJson(rawContent);   // 容错解析：数组/围栏/截断都能救，全失败才记 none
 
   let action = ['message', 'diary', 'none'].includes(parsed.action) ? parsed.action : 'none';
   const source = String(parsed.source || '').trim().slice(0, 120);
