@@ -3476,20 +3476,22 @@ async function runKeepalive(sessionId, cfg) {
 async function keepaliveCheck() {
   try {
     const cfg = await getKeepaliveConfig();
-    if (!cfg.keepalive_enabled) return;
+    if (!cfg.keepalive_enabled) { console.log('🚪 [keepalive] gate: disabled'); return; }
     const nowMs = Date.now();
-    if (!_inActiveHours(nowMs, cfg)) return;               // 活跃时段外，安静
+    if (!_inActiveHours(nowMs, cfg)) { console.log(`🚪 [keepalive] gate: 非活跃时段 (${shHr(nowMs)}h)`); return; }  // 活跃时段外，安静
 
     const sessionId = await findKeepaliveSession();
-    if (!sessionId) return;
+    if (!sessionId) { console.log('🚪 [keepalive] gate: 无会话'); return; }
 
     const lastUserMs = await getLastUserMsgTime(sessionId);
-    if (!Number.isFinite(lastUserMs)) return;
-    if (nowMs - lastUserMs < cfg.interval_min * 60000) return;   // 你还在身边，不醒
+    if (!Number.isFinite(lastUserMs)) { console.log('🚪 [keepalive] gate: 无用户消息'); return; }
+    if (nowMs - lastUserMs < cfg.interval_min * 60000) { console.log(`🚪 [keepalive] gate: 你在身边 (${Math.round((nowMs-lastUserMs)/60000)}min<${cfg.interval_min}min)`); return; }   // 你还在身边，不醒
 
-    if (await countKeepaliveToday(sessionId) >= cfg.daily_wake_cap) return;       // 今天醒够了（成本闸）
-    if (await countKeepaliveMessagesToday(sessionId) >= cfg.daily_cap) return;    // 今天话够了
-    if (await hasUnconsumedMessage(sessionId)) return;      // 上一条留言你还没回，不叠
+    const wakeCnt = await countKeepaliveToday(sessionId);
+    if (wakeCnt >= cfg.daily_wake_cap) { console.log(`🚪 [keepalive] gate: 今天醒够 (${wakeCnt}/${cfg.daily_wake_cap})`); return; }       // 今天醒够了（成本闸）
+    const msgCnt = await countKeepaliveMessagesToday(sessionId);
+    if (msgCnt >= cfg.daily_cap) { console.log(`🚪 [keepalive] gate: 今天话够 (${msgCnt}/${cfg.daily_cap})`); return; }    // 今天话够了
+    if (await hasUnconsumedMessage(sessionId)) { console.log('🚪 [keepalive] gate: 有未回留言'); return; }      // 上一条留言你还没回，不叠
 
     // —— 原子并发锁（GPT 评审必须项）：用一次「条件更新」抢这轮唤醒权。
     //   只在 (last_keepalive_at 为空 或 距今 ≥ interval_min) 时才被更新；
@@ -3503,7 +3505,7 @@ async function keepaliveCheck() {
       .eq('id', sessionId)
       .or(`last_keepalive_at.is.null,last_keepalive_at.lt.${cutoff}`)
       .select('id');
-    if (cerr || !claimed?.length) return;                   // 没抢到
+    if (cerr || !claimed?.length) { console.log('🚪 [keepalive] gate: 没抢到锁', cerr?.message || ''); return; }   // 没抢到
 
     try {
       await runKeepalive(sessionId, cfg);
