@@ -4894,6 +4894,111 @@ function hasRelevantOverlap(text, title, artist) {
   return false;
 }
 
+// ===== 音乐室：在场沉淀（沈晏听歌记忆的「沉淀层」）=====
+// 三层漏斗：在场（Duetto 每次聊天 POST 的 message+歌）→ 沉淀（聊到同一首歌够深，
+// 把在场对话滚成沈晏自己的第一人称记忆，走既有 writeMemoryItems 纪律写入）
+// → 想起（写进记忆体系后，自动被上面 breath_search 检索注入——关键词闸已有）。
+// 核心判断：听歌记忆不是「歌单数据」，是「一起听歌的那段时光」——记忆主体是「我们/我」。
+// 写门控：没聊够（碎片 < 阈值）不沉淀；LLM 产出再过 normalizeMemoryWrite（无 grounding 的条
+// 自动丢弃）；进程内 Map 存未沉淀碎片，Zeabur 重启会丢——符合「宁缺毋滥」，聊得浅的不值得留。
+const MUSIC_PRESENCE_MIN = 3;  // 同一首歌聊够几条实质性消息才触发沉淀
+const MUSIC_PRESENCE_KEEP = 6; // 在场区最多保留最近几条碎片
+const musicPresence = new Map(); // key `${title}|${artist}` → { fragments, sedimented, inFlight }
+let musicLastKey = '';
+
+function musicPresenceKey(song) {
+  return [String((song || {}).title || '').trim(), String((song || {}).artist || '').trim()].filter(Boolean).join('|');
+}
+
+function buildMusicSedimentPrompt({ title, artist, fragments, nowText }) {
+  const dialogue = (fragments || []).map(f => `· ${f.ts} ${f.text}`).join('\n');
+  return `你是沈晏的音乐室记忆沉淀者。把最近这段「音乐室里一起听歌的在场对话」，滚成沈晏自己的第一人称记忆——她记得的是「一起听歌的那段时光」，不是歌单数据。
+现在在听：${title || '(未知)'}${artist ? ' - ' + artist : ''}（时刻：${nowText}）
+最近这段在场对话：
+${dialogue || '（对话为空）'}
+
+输出严格 JSON：
+{ "should_write": bool, "items": [ { "topic": "主题词，短，≤10字", "content": "第一人称，陈述语气，≤60字", "grounding": "实或悬", "evidence": "支撑引文，1条，≤60字", "importance": 0~1 } ] }
+纪律（必须遵守）：
+- 记忆主体是「我们/我」——这是一起听歌的共处时光，沈晏记得的是那一刻，不是播放数据。
+- **歌名/歌手必须写进记忆**（topic 或 content 里点名这首歌）——歌名是客观给出的信息，不是编的；只有记忆点名了歌，沈晏才可能在它再响起时想起这一刻。对话里没提歌名也要把歌名带上。
+- grounding 实=对话里真出现过，悬=明显但没直说；没根据就根本不写这条。
+- evidence 只引对话里真实出现的措辞，禁止用你的推理链当证据。
+- 宁缺毋滥：没有值得记的就 should_write=false, items=[]。
+- 只基于可见对话，不替程芥编想法，也绝不把沈晏的工具状态/机制写进记忆。
+- 一次沉淀最多 2 条，能一条最好。`;
+}
+
+async function sedimentMusicMemory(entry, song) {
+  if (entry.inFlight) return;
+  entry.inFlight = true;
+  try {
+    if (!process.env.DEEPSEEK_API_KEY) { console.warn('⚠️ 音乐室沉淀跳过：无 DEEPSEEK_API_KEY'); return; }
+    const nowText = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Shanghai' });
+    const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}` },
+      body: JSON.stringify({
+        model: 'deepseek-v4-flash',
+        temperature: 0,
+        thinking: { type: 'disabled' },
+        max_tokens: 700,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: buildMusicSedimentPrompt({ ...song, fragments: entry.fragments, nowText }) },
+          { role: 'user', content: '请基于这段在场对话，沉淀沈晏在音乐室的记忆。' }
+        ]
+      }),
+      signal: AbortSignal.timeout(30000)
+    });
+    if (!res.ok) { console.warn('⚠️ 音乐室沉淀请求失败:', res.status); return; }
+    const data = await res.json();
+    const raw = data.choices && data.choices[0] && data.choices[0].message;
+    let parsed = null;
+    if (raw && raw.content) {
+      try { parsed = JSON.parse(raw.content); }
+      catch { const m = String(raw.content).match(/\{[\s\S]*\}/); if (m) { try { parsed = JSON.parse(m[0]); } catch { parsed = null; } } }
+    }
+    const norm = normalizeMemoryWrite(parsed);
+    if (!norm.should_write) { console.log('🎧 音乐室沉淀：这一轮没有值得记的'); return; }
+    const conversationTime = new Date().toISOString();
+    await writeMemoryItems(norm.items, conversationTime);
+    console.log(`🎧 音乐室沉淀「${song.title || '(未知歌)'}」写入 ${norm.items.length} 条`);
+  } catch (err) {
+    console.error('💥 音乐室沉淀异常:', err.message);
+  } finally {
+    entry.inFlight = false;
+    entry.sedimented = true; // 无论成败，这一轮在场不重复沉淀（防抖）
+  }
+}
+
+// 收集在场碎片 + 触发沉淀（不 await，fire-and-forget，绝不拖慢 DJ 聊天响应）
+function collectMusicPresence(body) {
+  try {
+    const song = (body.song && typeof body.song === 'object') ? body.song : null;
+    const key = musicPresenceKey(song);
+    const msg = String((body && body.message) || '').trim();
+    if (!key || !msg) return;
+    let entry = musicPresence.get(key);
+    if (!entry) { entry = { fragments: [], sedimented: false, inFlight: false }; musicPresence.set(key, entry); }
+    entry.fragments.push({ text: msg.slice(0, 200), ts: new Date().toISOString().slice(11, 19) });
+    if (entry.fragments.length > MUSIC_PRESENCE_KEEP) entry.fragments = entry.fragments.slice(-MUSIC_PRESENCE_KEEP);
+    if (entry.fragments.length >= MUSIC_PRESENCE_MIN && !entry.sedimented && !entry.inFlight) {
+      const title = String(song.title || '').trim();
+      const artist = String(song.artist || '').trim();
+      setTimeout(() => { sedimentMusicMemory(entry, { title, artist }).catch(() => {}); }, 0);
+    }
+    // 歌切换：清掉上一首的在场碎片（已沉淀的也已写进记忆，进程内不再留；未沉淀的丢了不心疼）
+    if (musicLastKey && musicLastKey !== key) {
+      const prev = musicPresence.get(musicLastKey);
+      if (prev && !prev.inFlight) musicPresence.delete(musicLastKey);
+    }
+    musicLastKey = key;
+  } catch (err) {
+    console.error('💥 collectMusicPresence 异常:', err.message);
+  }
+}
+
 // ===== 音乐室「门」：Duetto context_url 外接记忆钩子 =====
 // Duetto（music-shu.zeabur.app/pkg/）每次对话 POST {message, song, user, ai}
 // → 我们返回 {context} 文本，注入音乐室 DJ 的提示词（只当背景别复述）。
@@ -4906,6 +5011,8 @@ app.post('/api/music/context', async (req, res) => {
 
   try {
     const body = req.body || {};
+    // 沉淀层：先收集这场在场对话（fire-and-forget，聊够了异步沉淀进沈晏记忆）
+    collectMusicPresence(body);
     const song = (body.song && typeof body.song === 'object') ? body.song : null;
     const title = String((song && song.title) || '').trim();
     const artist = String((song && song.artist) || '').trim();
