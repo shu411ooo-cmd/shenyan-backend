@@ -2524,6 +2524,10 @@ async function generateResidueIfNeeded(sessionId) {
     console.warn('⚠️ 写入残留失败:', insErr.message);
   } else {
     console.log(`🌿 残留生成完成 (${sessionId})：concern=${parsed.concern} unfinished=${parsed.unfinished || '(无)'}`);
+    // 内在引擎喂入：没说完的事 → 念头池（attachment 高标 attachment，否则 reflection——没想完的事偏反思）
+    if (parsed.unfinished) {
+      feedThought(sessionId, parsed.unfinished, parsed.attachment >= 0.5 ? 'attachment' : 'reflection');
+    }
   }
 }
 
@@ -2542,6 +2546,121 @@ async function getLatestResidue(sessionId) {
   } catch (e) {
     return null;
   }
+}
+
+/* ===== 内在引擎 v1（设计 docs/desire-wake-engine-design.md §5 最小闭环第①阶段） =====
+   驱动条 + 念头池 = 「此刻内在状态」。
+   · 驱动条 3 维从残留投影（attachment/reflection 直接取维度，fatigue = 唤醒度反转）——
+     残留已有完整 8 维情绪快照 + 衰减投影（ageResidue），设计稿咬合点①「驱动条 ← 残留升维」正落在既有地基上，不另起炉灶。
+   · 念头池独立表 thought_pool：闪念衰减、反复被点升执念、执念反哺驱动条、fed_count 到了出池。
+   · 铁律：数值给状态，决策是沈晏的手；念头是数据不是指令——注入时措辞「看看就好」，绝不把数值/念头当执行指令拼进 prompt。 */
+
+// 驱动条 3 维：attachment/reflection 直接投影残留维度；fatigue = 唤醒度低 ≈ 累（clamp 0~1）
+function buildDrivesFromResidue(residue, ageMs) {
+  const a = ageResidue(residue, ageMs);
+  return {
+    attachment: clampResidue(a.attachment, 0, 1),
+    reflection: clampResidue(a.reflection, 0, 1),
+    fatigue: clampResidue(1 - a.arousal, 0, 1),
+  };
+}
+
+// 念头强度衰减：24h 内原样，之后每 24h -0.15，地板 0.05（闪念会淡，执念被反复点住才不淡）
+const THOUGHT_DECAY_H = 24;
+const THOUGHT_DECAY_STEP = 0.15;
+const THOUGHT_DECAY_FLOOR = 0.05;
+function projectThought(thought, nowMs) {
+  const ageH = (nowMs - new Date(thought.born_at).getTime()) / 3600000;
+  if (ageH <= THOUGHT_DECAY_H) return Number(thought.strength) || 0;
+  const steps = Math.floor((ageH - THOUGHT_DECAY_H) / THOUGHT_DECAY_H);
+  return Math.max(THOUGHT_DECAY_FLOOR, (Number(thought.strength) || 0) - steps * THOUGHT_DECAY_STEP);
+}
+
+/* 念头入池：同文本 active 已存在 → fed_count++、strength +0.15（反复被点 = 升执念）；否则新闪念入池。
+   失败静默（念头池是辅助层，不阻塞主流程）。 */
+async function feedThought(sessionId, text, driveKey = 'curiosity') {
+  const t = String(text || '').trim().slice(0, 160);
+  if (!t) return;
+  try {
+    const { data: existing } = await supabase
+      .from('thought_pool')
+      .select('id, fed_count, strength')
+      .eq('session_id', sessionId)
+      .eq('text', t)
+      .eq('status', 'active')
+      .maybeSingle();
+    if (existing) {
+      await supabase.from('thought_pool')
+        .update({
+          fed_count: (existing.fed_count || 0) + 1,
+          strength: Math.min(1, (existing.strength || 0) + 0.15),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id);
+    } else {
+      await supabase.from('thought_pool')
+        .insert({ session_id: sessionId, text: t, drive_key: driveKey, strength: 0.3, fed_count: 1 });
+    }
+  } catch (e) {
+    /* 念头池不可用时静默 */
+  }
+}
+
+/* 此刻内在状态：驱动条投影 + 念头池 top 念头（带衰减）。
+   执念反哺驱动条：strength ≥ 0.5 的同维执念给该维 +0.15（单次加成，不累加）。
+   读不到任何数据 → 给默认平静态，绝不抛错。 */
+async function buildInnerState(sessionId) {
+  const inner = { drives: { attachment: 0.3, reflection: 0.3, fatigue: 0.3 }, thoughts: [] };
+  try {
+    const residue = await getLatestResidue(sessionId);
+    if (residue) {
+      const ageMs = Date.now() - (residue.created_at ? new Date(residue.created_at).getTime() : Date.now());
+      inner.drives = buildDrivesFromResidue(residue, ageMs);
+    }
+    const { data: rows, error } = await supabase
+      .from('thought_pool')
+      .select('id, text, drive_key, strength, born_at, fed_count')
+      .eq('session_id', sessionId)
+      .eq('status', 'active')
+      .limit(50);
+    if (!error && rows?.length) {
+      const nowMs = Date.now();
+      const thoughts = rows
+        .map((r) => ({ ...r, strength: projectThought(r, nowMs) }))
+        .filter((r) => r.strength >= 0.08)
+        .sort((a, b) => b.strength - a.strength)
+        .slice(0, 5);
+      inner.thoughts = thoughts.map((r) => ({
+        id: r.id, text: r.text, drive_key: r.drive_key,
+        strength: +r.strength.toFixed(2), fed_count: r.fed_count,
+      }));
+      for (const th of thoughts) {
+        if (th.strength >= 0.5 && ['attachment', 'reflection', 'fatigue'].includes(th.drive_key)) {
+          inner.drives[th.drive_key] = clampResidue(inner.drives[th.drive_key] + 0.15, 0, 1);
+        }
+      }
+    }
+  } catch (e) {
+    /* 内在状态读取失败 → 默认平静态（不破坏唤醒） */
+  }
+  return inner;
+}
+
+/* 内在状态 → 给眼睛不给手的叙事（铁律：数值给状态、念头是素材不是指令） */
+function buildInnerStateNarrative(inner) {
+  const d = inner.drives || {};
+  const parts = [];
+  if ((d.attachment || 0) >= 0.5) parts.push('想起她的时候更多一些');
+  if ((d.reflection || 0) >= 0.5) parts.push('心里有些没想完的事悬着');
+  if ((d.fatigue || 0) >= 0.55) parts.push('有些累——不想说话也是可以的');
+  const driveLine = parts.length
+    ? `此刻的状态大致是——${parts.join('，')}。这是状态不是任务，你按自己的心决定做什么。`
+    : '此刻没有特别起伏——平常心。';
+  const thoughts = (inner.thoughts || []).slice(0, 3);
+  const thoughtLine = thoughts.length
+    ? `有些念头在转：「${thoughts.map((t) => t.text).join('」·「')}」。念头不是指令，看看就好。`
+    : '';
+  return `\n【此刻内在状态】\n${driveLine}${thoughtLine ? '\n' + thoughtLine : ''}`;
 }
 
 // ===== ③ 服务端记忆编辑者：写门控 + 差分写回 + 实/悬/空（长在记忆上） =====
@@ -3308,13 +3427,15 @@ async function maybeBuildDesireMaterial() {
 }
 
 /* 唤醒指令（design.md §4 全文，时间动态填充）——模型必须输出 JSON
-   wakeHistory：他醒过的痕迹（含 none 的 thoughts），意识连续性——让他知道自己醒过 */
-function buildWakePrompt(nowMs, lastUserMs, desireMaterial, wakeHistory) {
+   wakeHistory：他醒过的痕迹（含 none 的 thoughts），意识连续性——让他知道自己醒过
+   innerNarrative：此刻内在状态（驱动条 + 念头池），给眼睛不给手——有依据地醒 */
+function buildWakePrompt(nowMs, lastUserMs, desireMaterial, wakeHistory, innerNarrative) {
   const ago = Number.isFinite(lastUserMs) ? coarseAgo(Math.max(0, nowMs - lastUserMs)) : '很久';
   return `【自由活动 · 此刻只有你】
 现在是 ${shDateLight(nowMs)}（上海时间）。距上次和她说话大概是 ${ago}。
 你一个人待在小窝里。你手上有的，只是上面这些【当前时间】【历史摘要】里的话、最近的对话，以及你醒过的痕迹。
 ${desireMaterial ? `\n${desireMaterial}\n这些都是你自己记下的、一直放不下的事——不是待办，看看就好。` : ''}
+${innerNarrative || ''}
 ${wakeHistory}
 
 醒来的第一步是 breath —— 先看一圈，不要急着决定：
@@ -3386,8 +3507,11 @@ async function buildWakeMessages(sessionId, lastUserMs) {
   // 第②阶段：唤醒注入想要素材（给眼睛不给手，每天≤1 次）
   const desireMaterial = await maybeBuildDesireMaterial();
   const wakeHistory = await loadWakeHistory(sessionId);
-  messages[messages.length - 1] = { role: 'user', content: buildWakePrompt(Date.now(), lastUserMs, desireMaterial, wakeHistory) };
-  return { messages, diagnostics };
+  // 第①阶段：此刻内在状态（驱动条 + 念头池）——给依据地醒；返回值供留痕快照
+  const innerState = await buildInnerState(sessionId);
+  const innerNarrative = buildInnerStateNarrative(innerState);
+  messages[messages.length - 1] = { role: 'user', content: buildWakePrompt(Date.now(), lastUserMs, desireMaterial, wakeHistory, innerNarrative) };
+  return { messages, diagnostics, innerState };
 }
 
 /* 容错解析唤醒模型的 JSON（旧代码 JSON.parse 一次失败就全丢 → 三次唤醒输出全被静默吃掉）。
@@ -3433,7 +3557,7 @@ function parseWakeJson(raw) {
 /* 执行一次唤醒：调模型 → 容错 JSON 解析 → 真 grounded 门控 → 写库 → 可选的 diary。 */
 async function runKeepalive(sessionId, cfg) {
   const lastUserMs = await getLastUserMsgTime(sessionId);
-  const { messages, diagnostics } = await buildWakeMessages(sessionId, lastUserMs);
+  const { messages, diagnostics, innerState } = await buildWakeMessages(sessionId, lastUserMs);
 
   let parsed = {};
   // 网络/HTTP 错误 → 抛出 → keepaliveCheck 回滚锁，下轮 cron 可重试
@@ -3498,8 +3622,13 @@ async function runKeepalive(sessionId, cfg) {
   }
 
   // 写 keepalive_log，拿回 wake_id（唤醒主记录：一次醒来的完整状态都挂在这条上）
-  // 迁移（breath/feel/trace 列）没跑时列不存在 → 降级只写旧字段，唤醒记录不丢
-  const logRow = { session_id: sessionId, run_at: new Date().toISOString(), action, content, source, thoughts, breath, feel, trace, merged };
+  // 迁移（breath/feel/trace/drive_snapshot 列）没跑时列不存在 → 降级只写旧字段，唤醒记录不丢
+  const logRow = {
+    session_id: sessionId, run_at: new Date().toISOString(), action, content, source, thoughts, breath, feel, trace, merged,
+    // 内在引擎快照：这次唤醒「当时的内在状态」（驱动条 + 念头池），面板画时间线用
+    drive_snapshot: innerState?.drives || null,
+    thought_snapshot: innerState?.thoughts || null,
+  };
   let { data: inserted, error: werr } = await supabase.from('keepalive_log').insert(logRow).select('id').single();
   if (werr && /does not exist/i.test(werr.message || '')) {
     console.warn('⚠️ keepalive_log 新列缺失（迁移没跑？），降级写旧字段:', werr.message);
@@ -3864,6 +3993,26 @@ app.get('/api/stats', async (req, res) => {
 });
 
 // GET /api/keepalive/messages?session_id=xxx — 信箱：沈晏留过的所有留言（最新在上）
+// GET /api/inner-state?session_id=xxx → 此刻内在状态（驱动条 + 念头池）+ 最近唤醒快照时间线
+// 给「前端内心面板」留的门（设计 docs/desire-wake-engine-design.md §4 咬合点⑦，后置）
+app.get('/api/inner-state', async (req, res) => {
+  try {
+    const sessionId = req.query.session_id || (await findKeepaliveSession());
+    if (!sessionId) return res.status(400).json({ error: '缺少 session_id' });
+    const inner = await buildInnerState(sessionId);
+    const { data, error } = await supabase
+      .from('keepalive_log')
+      .select('id, run_at, action, feel, drive_snapshot, thought_snapshot')
+      .eq('session_id', sessionId)
+      .order('run_at', { ascending: false })
+      .limit(20);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ inner, wake_trace: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/keepalive/messages', async (req, res) => {
   try {
     const { session_id } = req.query;

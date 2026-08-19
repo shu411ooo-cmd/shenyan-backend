@@ -15,5 +15,6 @@ ALTER TABLE public.dialogue_residue ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.memory_topics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.summary_segments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.diary_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.keepalive_log ENABLE ROW LEVEL SECURITY;
 
 -- 验证：跑完后拿旧的 publishable key 直接 curl PostgREST，应返回 401/空；service_role 正常。
