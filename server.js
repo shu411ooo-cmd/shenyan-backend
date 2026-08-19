@@ -4206,6 +4206,36 @@ app.post('/api/sessions', async (req, res) => {
   }
 });
 
+// ===== Duetto 人格同步：Me 里改灵魂（system_prompt）→ 推给音乐室 DJ（ai.persona）=====
+// Duetto 的 sysPrompt 用 settings.ai.persona 作核心人设，context_url 返回的只当「记忆背景」——
+// 所以人格同步走 settings 通道：login（PIN 1006，可用 env DUETTO_PIN 覆盖）→ POST /api/settings { ai:{ persona } }。
+// 失败不阻塞主流程（fire-and-forget，音乐室照常用旧人格）；Zeabur redeploy 后 Duetto 配置重置，用恢复脚本重配。
+async function syncDuettoPersona(persona) {
+  const url = (process.env.DUETTO_URL || 'https://music-shu.zeabur.app').replace(/\/+$/, '');
+  const pin = process.env.DUETTO_PIN || '1006';
+  try {
+    const login = await fetch(`${url}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin }),
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!login.ok) throw new Error(`login ${login.status}`);
+    const token = (await login.json()).token;
+    if (!token) throw new Error('no token');
+    const res = await fetch(`${url}/api/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ ai: { persona: String(persona || '').slice(0, 6000) } }),
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) throw new Error(`settings ${res.status}`);
+    console.log('🔄 灵魂已同步给音乐室 DJ（ai.persona 更新）');
+  } catch (err) {
+    console.warn('⚠️ 同步灵魂给音乐室失败（不阻塞主流程）：', err.message);
+  }
+}
+
 // GET /api/system-prompt → 当前 system_prompt（数据库 → env → 默认）
 app.get('/api/system-prompt', async (req, res) => {
   try {
@@ -4224,6 +4254,7 @@ app.post('/api/system-prompt', async (req, res) => {
       return res.status(400).json({ error: '缺少 system_prompt 字段' });
     }
     await setSystemPrompt(content);
+    syncDuettoPersona(content); // fire-and-forget：Me 里改灵魂 → 音乐室 DJ persona 一起换
     res.json({ ok: true, system_prompt: content });
   } catch (err) {
     res.status(500).json({ error: err.message });
