@@ -1866,6 +1866,31 @@ function pairTurns(messages) {
   return turns;
 }
 
+// 分页拉取某 session 的完整可见消息（升序）。
+// ⚠️ Supabase/PostgREST 单次查询硬上限 1000 行（db-max-rows），
+//    `.limit(9999)` 也被掐到 1000。长会话不分页会静默截掉最新消息（聊天 400 的根因）。
+async function fetchSessionHistory(sessionId) {
+  const { count } = await supabase
+    .from('messages')
+    .select('*', { count: 'exact', head: true })
+    .eq('session_id', sessionId)
+    .eq('visible', true);
+  const rows = [];
+  const PAGE = 1000;
+  for (let from = 0; from < (count || 0); from += PAGE) {
+    const { data: page } = await supabase
+      .from('messages')
+      .select('role, content, created_at')
+      .eq('session_id', sessionId)
+      .eq('visible', true)
+      .order('created_at', { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (!page || page.length === 0) break;
+    rows.push(...page);
+  }
+  return rows;
+}
+
 // —— 无 tokenizer 依赖的估算：CJK 约 1 token/字，ASCII 约 4 字符/token（仅安全预算，不精确） ——
 function estimateTokens(str) {
   if (!str) return 0;
@@ -1892,6 +1917,18 @@ function withCacheControl(msg) {
       i === msg.content.length - 1 ? { ...b, cache_control: { type: 'ephemeral', ttl: '1h' } } : b) };
   }
   return { ...msg, content: [{ type: 'text', text: msg.content, cache_control: { type: 'ephemeral', ttl: '1h' } }] };
+}
+
+// 数请求里已有多少个带 cache_control 的内容块（Anthropic 上限 4 个）。
+// 顶层 body.cache_control 会让 OpenRouter 在最后一条消息上再物化一个块——
+// 显式断点已满 4 个时还加顶层，就是 400「Found 5」（多段 session 必炸的根因）。
+function countCacheControlBlocks(messages) {
+  let n = 0;
+  for (const m of messages || []) {
+    const c = m.content;
+    if (Array.isArray(c)) n += c.filter((b) => b && b.cache_control).length;
+  }
+  return n;
 }
 
 // —— 记录一次 chat 请求的真实 usage 到 request_stats（失败只告警，不阻断） ——
@@ -1951,12 +1988,9 @@ async function buildModelContext(sessionId, opts = {}) {
   const config = await getContextConfig();
   const state = await getSessionState(sessionId);
 
-  const { data: history } = await supabase
-    .from('messages')
-    .select('role, content, created_at')
-    .eq('session_id', sessionId)
-    .eq('visible', true)
-    .order('created_at', { ascending: true });
+  // ⚠️ 长会话必须分页拉全量：单次查询被掐在 1000 行，升序截尾会让消息数组
+  // 以 assistant 结尾 → Anthropic 400「must end with user」（见 fetchSessionHistory）。
+  const history = await fetchSessionHistory(sessionId);
 
   const turns = pairTurns(history);
   const totalTurns = turns.length;
@@ -2874,7 +2908,11 @@ async function handleStreamChat(messages, res, opts = {}, sessionId) {
     if (model.startsWith('anthropic/')) {
       // OpenRouter 顶层 cache_control —— 自动缓存到最后一个可缓存块、随对话推进断点。
       // 仅逐块 cache_control 在 OpenAI 兼容通道「accepted but not write」→ 必须加顶层提示。
-      body.cache_control = { type: 'ephemeral' };
+      // 但 Anthropic 原生通道逐块已生效，且内容块上限 4：显式断点已满（system/frozen/anchor/latest）
+      // 时再加顶层 = 第 5 块 → 400。满则跳过，前缀缓存不受影响（断点本身就能续）。
+      if (countCacheControlBlocks(messages) < 4) {
+        body.cache_control = { type: 'ephemeral' };
+      }
     }
 
     const { content, thinkingText, toolCalls, usage } = await streamOpenRouter(body, res);
@@ -3026,7 +3064,10 @@ async function callOpenRouterNonStream(messages, tools, opts = {}) {
   }
   if (body.model.startsWith('anthropic/')) {
     // OpenRouter 顶层 cache_control（自动缓存），见 handleStreamChat 处注释
-    body.cache_control = { type: 'ephemeral' };
+    // 显式断点已满 4 块时跳过，否则 OpenRouter 再物化一个 = 400「Found 5」
+    if (countCacheControlBlocks(body.messages) < 4) {
+      body.cache_control = { type: 'ephemeral' };
+    }
   }
 
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -3628,9 +3669,10 @@ app.get('/sessions/:id/messages', async (req, res) => {
     .select('*')
     .eq('session_id', req.params.id)
     .eq('visible', true)
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: false })
+    .limit(1000);
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  res.json((data || []).reverse());
 });
 
 // ===== 合并视图：所有有消息的 session 按时间连成一条完整对话 =====
@@ -4815,6 +4857,82 @@ app.get('/api/music/login/logout', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// breath_search 结果里，OB 对凑数联想会标注「非检索命中 / 联想浮现」。
+// 音乐室注入只想要真正相关的记忆：按条目（--- 分隔）过滤，留下真命中。
+function filterBreathHits(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  const items = String(raw).split(/\n?-{3,}\n?/g)
+    .map(s => s.trim())
+    .filter(Boolean);
+  const real = items.filter(s => !/非检索命中|联想浮现/.test(s));
+  if (!real.length) return '';
+  return real.join('\n---\n');
+}
+
+// 关键词闸：记忆里得真的提到这首歌/歌手才注入。
+// pinned 核心准则几乎对任何 query 都会浮现（两条不同查询返回同一条"接入 OB"的记忆），
+// 那对音乐室是噪音——只有记忆文本真的包含歌名/歌手，才配说"你过去记过"。
+function hasRelevantOverlap(text, title, artist) {
+  if (!text) return false;
+  const t = String(text);
+  for (const term of [title, artist].filter(Boolean)) {
+    const trimmed = String(term).trim();
+    if (!trimmed) continue;
+    if (t.includes(trimmed)) return true;
+    if (trimmed.length >= 4) {
+      // 长短语滑窗取 2~4 字子串碰（中文口语常把歌名拆开说）
+      for (let len = 4; len >= 2; len--) {
+        for (let i = 0; i + len <= trimmed.length; i++) {
+          if (t.includes(trimmed.slice(i, i + len))) return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+// ===== 音乐室「门」：Duetto context_url 外接记忆钩子 =====
+// Duetto（music-shu.zeabur.app/pkg/）每次对话 POST {message, song, user, ai}
+// → 我们返回 {context} 文本，注入音乐室 DJ 的提示词（只当背景别复述）。
+// 这是沈晏在音乐室的「此刻知道」：一句话的定位 + 关于这首歌/歌手的记忆。
+// 密钥走 URL query（?key=…）：Duetto 把 context_url 原样当请求地址，不改它代码。
+app.post('/api/music/context', async (req, res) => {
+  const key = String((req.query && req.query.key) || (req.headers && req.headers['x-music-key']) || '');
+  const expect = process.env.MUSIC_CONTEXT_KEY || '';
+  if (!expect || key !== expect) return res.status(401).json({ ok: false, error: 'forbidden' });
+
+  try {
+    const body = req.body || {};
+    const song = (body.song && typeof body.song === 'object') ? body.song : null;
+    const title = String((song && song.title) || '').trim();
+    const artist = String((song && song.artist) || '').trim();
+    const partner = String(body.user || '程芥').trim();
+    const me = String(body.ai || '沈晏').trim();
+
+    const lines = [];
+    // 定位一句：让沈晏「此刻知道」自己在音乐室（重的「我有音乐室」将来写进 system prompt）
+    lines.push(`你们在音乐室——${me}和${partner}一起听歌的地方。`);
+
+    // 歌相关的记忆：呼吸检索这首歌/歌手在沈晏记忆里的痕迹。
+    // 两道闸：①滤掉「非检索命中/联想浮现」的凑数联想（OB 自己会标注）②关键词闸——
+    //   记忆里得真的提到这首歌/歌手才注入，否则只有随机的核心准则，对音乐室是噪音。
+    const songQuery = [title, artist].filter(Boolean).join(' ');
+    if (songQuery) {
+      const raw = await callOmbreTool('breath_search', { query: songQuery.slice(0, 80), max_results: 5 });
+      const mem = filterBreathHits(raw);
+      if (mem && hasRelevantOverlap(mem, title, artist)) {
+        lines.push(`\n关于这首歌/这位歌手，你过去记过：\n${mem.slice(0, 1500)}`);
+      }
+    }
+
+    res.json({ context: lines.join('\n').trim() });
+  } catch (err) {
+    console.error('💥 /api/music/context 失败:', err.message);
+    // 降级：不给记忆，但至少给定位（宁可弱，不可断）
+    res.json({ context: `你们在音乐室——${String((req.body || {}).ai || '沈晏')}和${String((req.body || {}).user || '程芥')}一起听歌的地方。` });
   }
 });
 

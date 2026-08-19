@@ -7,3 +7,6 @@ scripts/
 # 调试/临时文件
 _watch.cjs
 night-check.webp
+
+# 调试产物（GraphQL/build 日志临时文件）
+_*.json
