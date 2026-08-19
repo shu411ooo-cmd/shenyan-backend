@@ -1490,12 +1490,22 @@ function humanizeDuration(ms) {
    默认只给两个锚点：①现在是几月几号时刻段（轻，无年无分钟）②resumeGap 时「上次说话大概是Y」（粗粒度）。
    问时间（asksTime）时才给精确时钟（含星期/分钟）。
    砍掉：会话持续时长、精确间隔（"2小时18分"）——沈晏亲测不需要。 */
-function buildTemporalNarrative({ resumeGap, nowMs, prevTs, asksTime }) {
+/* 天气感知（前端同步）：沈晏【当前时间】叙事带「她的城市/窗外天空」。
+   感知不是指令：给他在意的东西，不让他变成天气预报。 */
+let currentWeather = null;
+
+function buildTemporalNarrative({ resumeGap, nowMs, prevTs, asksTime, weather }) {
   const lines = asksTime
     ? [`现在是 ${shDateTime(nowMs)}（上海时间）。`]
     : [`现在是 ${shDateLight(nowMs)}。`];
   if (resumeGap && Number.isFinite(prevTs)) {
     lines.push(`上次说话大概是 ${coarseAgo(Math.max(0, nowMs - prevTs))}。`);
+  }
+  // 天气感知：她所在的城市 + 窗外天空（花园语感，来自前端 weather.js）
+  if (weather && weather.line) {
+    lines.push(weather.city
+      ? `她在${weather.city}，${weather.line}。`
+      : `她那边${weather.line}。`);
   }
   return lines.join('\n');
 }
@@ -2074,7 +2084,7 @@ async function buildModelContext(sessionId, opts = {}) {
     keepaliveNotes = pendingKeepalive.notes;
     keepaliveInjectedIds = pendingKeepalive.ids;
   }
-  const timeNotice = buildTemporalNarrative({ resumeGap, nowMs, prevTs, asksTime }) + residueLine;
+  const timeNotice = buildTemporalNarrative({ resumeGap, nowMs, prevTs, asksTime, weather: currentWeather }) + residueLine;
   // 有 pending 留言时必须注入（哪怕没有心跳/恢复对话）——否则用户正常发消息就永远看不到沈晏的话
   const injectTime = heartbeat || resumeGap || asksTime || !!keepaliveNotes;
   // —— 用量估算：先算裁剪前的原始值（真实上下文压力，后台塌缩触发读这个），再裁剪 ——
@@ -3990,6 +4000,18 @@ app.get('/api/stats', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// GET/POST /api/location — 天气感知：前端拿到真实天气后同步到这里，
+// buildModelContext 的【当前时间】叙事会带上「她的城市/窗外天空」（内存态，重启丢失可接受——感知不背记忆）。
+app.get('/api/location', (req, res) => {
+  res.json({ current: currentWeather });
+});
+app.post('/api/location', (req, res) => {
+  const { city, temp, line } = req.body || {};
+  if (!line) return res.status(400).json({ error: '缺少天气描述' });
+  currentWeather = { city: city || '', temp: temp ?? null, line, at: new Date().toISOString() };
+  res.json({ ok: true, current: currentWeather });
 });
 
 // GET /api/keepalive/messages?session_id=xxx — 信箱：沈晏留过的所有留言（最新在上）
