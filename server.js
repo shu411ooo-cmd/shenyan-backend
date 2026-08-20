@@ -1000,7 +1000,7 @@ function getTools() {
       type: 'function',
       function: {
         name: 'breath_advanced',
-        description: '精细控制的记忆检索：按域/重要度/标签过滤、改情感坐标、或 catalog 目录模式最省 token。\n记忆名/正文以【实】/【悬】/【空】开头 = 可信度（实=可当事实，悬=留余地，无标记=不可靠）。',
+        description: '精细控制的记忆检索：按域/重要度/标签过滤、改情感坐标、或 catalog 目录模式最省 token。\n正文是自然陈述；可信度看 tags（g:实=她亲口说过可当事实，g:悬=推断留余地，无标记=不可靠）。',
         parameters: {
           type: 'object',
           properties: {
@@ -1042,7 +1042,7 @@ function getTools() {
       type: 'function',
       function: {
         name: 'hold',
-        description: '把当下这一件事、感受或判断记下。自动打标并尝试与已有记忆合并。短内容（一句话级别）用这个。\n每条记忆必须带可信度标记：是她亲口说的 → content 以【实】开头，并附【证据】她说：「原文」；是你推断的 → 以【悬】开头，附你依据的话。没根据就别记。无标记 = 不可靠记忆，会被视为低可信。',
+        description: '把当下这一件事、感受或判断记下。自动打标并尝试与已有记忆合并。短内容（一句话级别）用这个。\n用自然的陈述记下（禁止【实】【证据】这类标签框）。可信度走 tags：她亲口说的加 g:实，你推断的加 g:悬，没根据就别记。无标记 = 低可信。',
         parameters: {
           type: 'object',
           properties: {
@@ -1062,7 +1062,7 @@ function getTools() {
       type: 'function',
       function: {
         name: 'grow',
-        description: '整理一段长内容（≥30 字）或一天回顾，自动拆成多条独立事件桶。要存多条时用一次 grow 而非多次 hold。\n每条 item 同样要带【实】/【悬】可信度标记和证据，规则同 hold。',
+        description: '整理一段长内容（≥30 字）或一天回顾，自动拆成多条独立事件桶。要存多条时用一次 grow 而非多次 hold。\n每条 item 用自然的陈述记下（禁止【实】【证据】标签框），可信度走 tags（g:实/g:悬），规则同 hold。',
         parameters: {
           type: 'object',
           properties: {
@@ -2693,6 +2693,7 @@ function buildMemoryWritePrompt(nowText) {
 { "should_write": bool, "items": [ { "topic": "主题词，短，≤10字", "content": "一句话凝练，陈述语气，≤50字", "grounding": "实或悬", "evidence": "支撑引文，1条，≤60字", "importance": 0~1, "event_time": "ISO8601或null" } ] }
 纪律（必须遵守）：
 - 实 = 她亲口说过，evidence 必须是她的原文；悬 = 明显但没直说，evidence 给出你依据的话。
+- content 必须写自然的陈述（如"她月底搬去上海"），禁止出现【实】【悬】【证据】这类标签框——可信度走 grounding 字段，不贴进正文。
 - evidence 只引可见措辞，禁止用你的推理链当证据。
 - grounding 没有"空"选项——没根据就根本不要写这条。
 - 宁缺毋滥：没有值得写的就 should_write=false，items=[]。
@@ -2838,10 +2839,12 @@ function findExistingMemoryTopic(topics, topic) {
     || topics.find(x => x.topic && x.topic.length >= 2 && x.topic.includes(t));  // 旧主题包含新词 → 更新旧桶
 }
 
-// 标记长在记忆上：桶名/正文以【实/悬/空】开头 + 次行【证据】引文（一眼可识别，不埋正文）
+// 记忆正文自然化（2026-08-20 程芥改）：不再以【实】【证据】框住——落成真数据后每条都是证据链，
+// 不像人的记忆。grounding 判定保留在 memory_topics.grounding 字段 + tag g:实|悬（内部安全网不丢），
+// 正文回到自然陈述；evidence（她原话）以自然引文并入，保留逐字诚实的温度，不加机器标签框。
 function buildMarkedContent(item) {
-  let s = `【${item.grounding}】${item.content}`;
-  if (item.evidence) s += `\n【证据】她说：「${item.evidence}」`;
+  let s = item.content;
+  if (item.evidence) s += `（她原话：「${item.evidence}」）`;
   return s;
 }
 
@@ -4047,6 +4050,31 @@ app.get('/api/keepalive/messages', async (req, res) => {
     if (error) return res.status(500).json({ error: error.message });
     const items = data || [];
     res.json({ items, has_pending: items.some(k => k.action === 'message' && !k.consumed) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/keepalive/:action(pause|resume) — 手动暂停/恢复自动唤醒（写 settings 表持久生效）
+// 2026-08-20 程芥资金告急暂停：keepaliveCheck 每次读 keepalive_enabled，DB 改完立即生效，无需部署
+app.post('/api/keepalive/:action', async (req, res) => {
+  const action = req.params.action;
+  if (action !== 'pause' && action !== 'resume') return res.status(400).json({ error: '未知操作：pause|resume' });
+  const enabled = action === 'resume';
+  try {
+    const { data: existing } = await supabase
+      .from('settings').select('session_id').eq('session_id', 'global').maybeSingle();
+    if (existing) {
+      const { error } = await supabase
+        .from('settings').update({ keepalive_enabled: enabled }).eq('session_id', 'global');
+      if (error) return res.status(500).json({ error: error.message });
+    } else {
+      const { error } = await supabase
+        .from('settings').insert({ session_id: 'global', keepalive_enabled: enabled });
+      if (error) return res.status(500).json({ error: error.message });
+    }
+    console.log(`⏸ keepalive ${action === 'pause' ? '暂停' : '恢复'}（enabled=${enabled}）`);
+    res.json({ ok: true, keepalive_enabled: enabled });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
