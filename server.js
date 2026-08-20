@@ -1750,20 +1750,32 @@ async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
 }
 
 // —— 配置：settings 表（SQL 未跑时回落默认值，防御式） ——
-async function getContextConfig() {
+// 2026-08-20 小黑屋：会话级配置。settings 有自己行的 session（session_id != 'global'）= 特殊会话
+// （小黑屋长对话：live 60 轮 / 24k 预算 / 塌缩阈值拉高），long_talk 标记给调度用。其余回落 global。
+async function getContextConfig(sessionId) {
   const defaults = { frozen_rounds: 10, live_rounds: 15, max_context_tokens: 8000 };
+  const pick = (row) => row ? ({
+    frozen_rounds: Number.isInteger(row.frozen_rounds) ? row.frozen_rounds : defaults.frozen_rounds,
+    live_rounds: Number.isInteger(row.live_rounds) ? row.live_rounds : defaults.live_rounds,
+    max_context_tokens: Number.isInteger(row.max_context_tokens) ? row.max_context_tokens : defaults.max_context_tokens,
+  }) : defaults;
   try {
+    if (sessionId && sessionId !== 'global') {
+      const { data, error } = await supabase
+        .from('settings')
+        .select('frozen_rounds, live_rounds, max_context_tokens')
+        .eq('session_id', sessionId)
+        .maybeSingle();
+      if (error) return defaults;
+      if (data) return { ...pick(data), long_talk: true };
+    }
     const { data, error } = await supabase
       .from('settings')
       .select('frozen_rounds, live_rounds, max_context_tokens')
       .eq('session_id', 'global')
       .maybeSingle();
-    if (error || !data) return defaults;
-    return {
-      frozen_rounds: Number.isInteger(data.frozen_rounds) ? data.frozen_rounds : defaults.frozen_rounds,
-      live_rounds: Number.isInteger(data.live_rounds) ? data.live_rounds : defaults.live_rounds,
-      max_context_tokens: Number.isInteger(data.max_context_tokens) ? data.max_context_tokens : defaults.max_context_tokens,
-    };
+    if (error) return defaults;
+    return pick(data);
   } catch (e) {
     return defaults;
   }
@@ -1995,7 +2007,7 @@ async function recordRequestStat({ sessionId, client, model, stream, usageList =
 
 // —— 核心组装：System → Frozen → Summary → Live → 当前消息 ——
 async function buildModelContext(sessionId, opts = {}) {
-  const config = await getContextConfig();
+  const config = await getContextConfig(sessionId);
   const state = await getSessionState(sessionId);
 
   // ⚠️ 长会话必须分页拉全量：单次查询被掐在 1000 行，升序截尾会让消息数组
@@ -2284,7 +2296,7 @@ function scheduleSummary(sessionId, diagnostics = null) {
 }
 
 async function generateSummaryIfNeeded(sessionId, diagnostics = null) {
-  const config = await getContextConfig();
+  const config = await getContextConfig(sessionId);
 
   const { count } = await supabase
     .from('messages')
@@ -2314,7 +2326,8 @@ async function generateSummaryIfNeeded(sessionId, diagnostics = null) {
   const newTurnsCount = summaryEnd - watermark;
   if (newTurnsCount < COOLDOWN_TURNS) return; // 冷却中，攒着
 
-  const thresholdTokens = Math.round(config.max_context_tokens * 0.75);
+  // 小黑屋（long_talk）：塌缩阈值拉到 90%，尽量让长聊保持全原文；普通会话保持 75%
+  const thresholdTokens = Math.round(config.max_context_tokens * (config.long_talk ? 0.9 : 0.75));
   const usageHit = diagnostics?.raw_estimated_tokens != null && diagnostics.raw_estimated_tokens >= thresholdTokens;
   const turnsHit = newTurnsCount >= FALLBACK_TURNS;
   if (!usageHit && !turnsHit) return; // 都没触发，攒着
@@ -3861,15 +3874,25 @@ app.get('/sessions/:id/messages', async (req, res) => {
 // ===== 合并视图：所有有消息的 session 按时间连成一条完整对话 =====
 // 数据零改动（消息各归各 session），纯展示聚合。
 // mainSessionId = 消息最多的会话（主对话），新消息永远进这里。
+// 2026-08-20 小黑屋：有独立 settings 行的会话（如小黑屋）不进合并时间线——它在自己的房间里独立成线。
 app.get('/api/conversation', async (req, res) => {
   try {
+    // 特殊会话集合：settings 表里 session_id != 'global' 的行（小黑屋标记）
+    let specialSids = new Set();
+    try {
+      const { data: sp } = await supabase
+        .from('settings')
+        .select('session_id')
+        .neq('session_id', 'global');
+      for (const r of sp || []) specialSids.add(r.session_id);
+    } catch (e) { /* 拿不到特殊会话就退回全合并 */ }
     const { data: msgs, error } = await supabase
       .from('messages')
       .select('*')
       .eq('visible', true)
       .order('created_at', { ascending: true });
     if (error) return res.status(500).json({ error: error.message });
-    const all = msgs || [];
+    const all = (msgs || []).filter((m) => !specialSids.has(m.session_id));
     // 找主对话：消息最多的 session
     const counts = {};
     for (const m of all) counts[m.session_id] = (counts[m.session_id] || 0) + 1;
@@ -4471,12 +4494,28 @@ app.get('/api/share/preview', async (req, res) => {
 // POST /api/sessions
 app.post('/api/sessions', async (req, res) => {
   try {
+    const { name, long_talk } = req.body || {};
     const { data, error } = await supabase
       .from('sessions')
-      .insert({ name: req.body.name || '新对话' })
+      .insert({ name: name || '新对话' })
       .select()
       .single();
     if (error) return res.status(500).json({ error: error.message });
+    // 小黑屋长对话：给这个会话写专属配置（settings 非 global 行 = 特殊会话标记，
+    // getContextConfig 读到它 → live 60 轮 / 24k 预算 / 塌缩阈值 90%）
+    if (long_talk && data.id) {
+      try {
+        await supabase.from('settings').upsert({
+          session_id: data.id,
+          live_rounds: 60,
+          max_context_tokens: 24000,
+          frozen_rounds: 10,
+        }, { onConflict: 'session_id' });
+        console.log(`🏚 小黑屋建成 session=${data.id}：live 60 / 24k / 塌缩 90%`);
+      } catch (e) {
+        console.warn('⚠️ 小黑屋配置写入失败（不阻塞建房）:', e.message);
+      }
+    }
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
