@@ -3920,6 +3920,7 @@ app.post('/sessions/:id/chat', async (req, res) => {
       memory: req.body.memory,
       tools: req.body.tools,
       image: req.body.image,
+      file: req.body.file,
       share: req.body.share,
     };
     await handleChat(
@@ -3982,6 +3983,7 @@ app.post('/api/chat', async (req, res) => {
       memory: req.body.memory,
       tools: req.body.tools,
       image: req.body.image,
+      file: req.body.file,
       share: req.body.share,
     };
     return handleChat(sid, message, req.body.stream === true, res, opts);
@@ -4685,6 +4687,37 @@ app.get('/api/diary/:id', async (req, res) => {
   }
 });
 
+// 文档文字提取：PDF / Word / txt 直接读文字（他读的是内容，不是文件本身）。
+// 不支持的格式返回 null——诚实告诉前端"没读到"，不硬编。
+async function extractDocText(file) {
+  const name = String((file && file.name) || '').toLowerCase();
+  const dataUrl = String((file && file.data) || '');
+  if (!dataUrl) return null;
+  const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+  let buf;
+  try { buf = Buffer.from(base64, 'base64'); } catch { return null; }
+  if (!buf || buf.length === 0) return null;
+  try {
+    if (/\.(pdf)$/i.test(name)) {
+      const pdfParse = require('pdf-parse');
+      const parsed = await pdfParse(buf);
+      return parsed && parsed.text ? String(parsed.text) : null;
+    }
+    if (/\.(docx)$/i.test(name)) {
+      const mammoth = require('mammoth');
+      const { value } = await mammoth.extractRawText({ buffer: buf });
+      return value ? String(value) : null;
+    }
+    if (/\.(txt|md|markdown|log|json|csv)$/i.test(name)) {
+      return buf.toString('utf8');
+    }
+  } catch (e) {
+    console.warn('📄 文档解析失败:', name, '→', e.message);
+    return null;
+  }
+  return null;
+}
+
 // 把当前用户消息附上图片，变成多模态 content 数组（OpenRouter / OpenAI 兼容格式）
 function attachImage(messages, image) {
   if (!image) return messages;
@@ -4714,14 +4747,27 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
     .eq('visible', true);
   const isFirstMessage = (priorUserCount || 0) === 0;
 
-  // 1. 存用户消息（图片不入库，先不管存储）
+  // 1. 存用户消息（图片不入库，先不管存储；文档解析成文字进内容，跟着自然进记忆）
+  let content = String(userMessage || '');
+  if (opts.file && !opts.image) {
+    const docText = await extractDocText(opts.file).catch(() => null);
+    if (docText) {
+      content = `${content ? content + '\n' : ''}【📄 ${opts.file.name || '文档'}】\n${docText.slice(0, 6000)}`;
+      console.log(`📄 文档已读入（${docText.length} 字，截前 6000）`);
+    } else {
+      console.warn('📄 文档没读到文字:', opts.file.name);
+    }
+  } else if (!content.trim() && opts.image) {
+    content = '（她发来一张图片）'; // 图不入库，留个文字占位好让他记得「发过一张图」
+  }
   await supabase.from('messages').insert({
     session_id: sessionId,
     role: 'user',
-    content: userMessage
+    content
   });
 
   // 2. 构建消息数组 + 附图片（Context Assembly 已替代旧的 compressHistory 热路径压缩）
+  //    opts.userMessage 传原文（注意力匹配用她的话，别拿整篇文档去翻记忆）；文档全文已随消息进上下文
   const { messages: builtMessages, diagnostics } = await buildMessages(sessionId, { ...opts, userMessage });
   let messages = builtMessages;
 
@@ -4759,6 +4805,13 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
   }
 
   messages = attachImage(messages, opts.image);
+  // 看图规则：图不存服务端，他记住的方式=回复里自然说出他看懂的一眼（那是他的记忆，不是看图报告）
+  if (opts.image) {
+    messages.push({
+      role: 'user',
+      content: '【看图】她刚发来一张图片。先看清它，再自然地回复；回复里自然地带上你看到的一眼事实（不是看图报告）——这句话也是你对这张图的记忆。'
+    });
+  }
 
   if (useStream) {
     res.setHeader('Content-Type', 'text/event-stream');
