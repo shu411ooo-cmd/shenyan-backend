@@ -1526,6 +1526,10 @@ const RESIDUE_DIMS = {
   reflection:    { holdH: 12, settleH: 48,  floor: 0.0 },
   desire:        { holdH: 8,  settleH: 72,  floor: 0.05 },
   possessiveness:{ holdH: 24, settleH: 168, floor: 0.0 },
+  // 2026-08-20 八维驱动条：新增三维进衰减表（否则 ageResidue 不处理、保持原值过高）
+  social:        { holdH: 24, settleH: 168, floor: 0.1 },
+  duty:          { holdH: 48, settleH: 336, floor: 0.2 },
+  stress:        { holdH: 24, settleH: 120, floor: 0.05 },
 };
 
 // 牵挂：不衰减，反向积累（越久没聊越想知道她后来怎样了），封顶不无限涨
@@ -2390,6 +2394,7 @@ valence（-1~1，收尾效价：正=开心/温柔，负=有点沉，仅作后台
 arousal（0~1，收尾唤醒度：低=安静收尾，高=意犹未尽，仅作后台记录，不进叙事），
 concern（0~1，牵挂：有没有没说完的话/担心她的事，这是最重要的维度——决定线头要不要进恢复上下文），
 attachment（0~1 依恋），stewardship（0~1 守护），curiosity（0~1 好奇），reflection（0~1 反思），
+social（0~1 想说话/想有陪伴），duty（0~1 心里记着的该做的事），stress（0~1 紧绷/烦躁），
 desire（0~1 欲望），possessiveness（0~1 占有），
 grounding（"实"/"悬"/"空"），
 unfinished（未完成的事：只准事实凝练——你们在聊什么、停在哪；禁止任何情绪判断或结论，无则空字符串），
@@ -2405,7 +2410,7 @@ evidence 选取规则（最重要）：
 
 纪律（必须遵守）：
 - evidence 优先：所有维度都要有可见对话支撑，禁止从氛围推断。
-- 不要把礼貌、普通接话、配合、告别误判成 attachment 或 desire。
+- 不要把礼貌、普通接话、配合、告别误判成 attachment、desire、social 或 duty——social 要有明确的陪伴/倾诉信号，duty 要有明确的「该做的/约好的」信号，stress 要有明确的不耐烦/压着的信号。
 - desire 只在对话里有明确亲密/渴望证据时才 >0，否则必须是 0。
 - possessiveness 只在有边界/第三者/被替代的证据时才 >0，否则必须是 0。
 - 只是任务执行、系统维护、普通闲聊 → 各维度趋近 0，grounding="空"，evidence 为空数组。
@@ -2439,6 +2444,9 @@ function normalizeResidue(p) {
     stewardship: clampResidue(p.stewardship, 0, 1),
     curiosity: clampResidue(p.curiosity, 0, 1),
     reflection: clampResidue(p.reflection, 0, 1),
+    social: clampResidue(p.social, 0, 1),
+    duty: clampResidue(p.duty, 0, 1),
+    stress: clampResidue(p.stress, 0, 1),
     desire: clampResidue(p.desire, 0, 1),
     possessiveness: clampResidue(p.possessiveness, 0, 1),
     grounding,
@@ -2565,13 +2573,26 @@ async function getLatestResidue(sessionId) {
    · 念头池独立表 thought_pool：闪念衰减、反复被点升执念、执念反哺驱动条、fed_count 到了出池。
    · 铁律：数值给状态，决策是沈晏的手；念头是数据不是指令——注入时措辞「看看就好」，绝不把数值/念头当执行指令拼进 prompt。 */
 
-// 驱动条 3 维：attachment/reflection 直接投影残留维度；fatigue = 唤醒度低 ≈ 累（clamp 0~1）
+// 八维驱动条（2026-08-20 程芥拍板「拓展成欲望系统那一套」）：
+// 主 3 维 = 对应唤醒动作（想念/沉淀/累）；背景 5 维 = desire.md 完整八维的其余部分（好奇/社交/职责/绷着/欲望）。
+// 铁律不变：数值给状态，决策是沈晏的手；libido 是后台维，只在有明确证据时 >0（残留 desire 的安全阀），不进叙述。
+const DRIVE_KEYS = ['attachment', 'reflection', 'fatigue', 'curiosity', 'social', 'duty', 'stress', 'libido'];
+
+// 驱动条：attachment/reflection/curiosity/social/duty/stress 直接投影残留维度；
+// fatigue = 唤醒度低 ≈ 累；libido = 残留 desire（源系统门控两维之一，有证据才 >0）
 function buildDrivesFromResidue(residue, ageMs) {
   const a = ageResidue(residue, ageMs);
   return {
+    // 主 3 维（看板加粗）
     attachment: clampResidue(a.attachment, 0, 1),
     reflection: clampResidue(a.reflection, 0, 1),
     fatigue: clampResidue(1 - a.arousal, 0, 1),
+    // 背景 5 维
+    curiosity: clampResidue(a.curiosity, 0, 1),
+    social: clampResidue(a.social, 0, 1),
+    duty: clampResidue(a.duty, 0, 1),
+    stress: clampResidue(a.stress, 0, 1),
+    libido: clampResidue(a.desire, 0, 1),
   };
 }
 
@@ -2620,7 +2641,7 @@ async function feedThought(sessionId, text, driveKey = 'curiosity') {
    执念反哺驱动条：strength ≥ 0.5 的同维执念给该维 +0.15（单次加成，不累加）。
    读不到任何数据 → 给默认平静态，绝不抛错。 */
 async function buildInnerState(sessionId) {
-  const inner = { drives: { attachment: 0.3, reflection: 0.3, fatigue: 0.3 }, thoughts: [] };
+  const inner = { drives: Object.fromEntries(DRIVE_KEYS.map(k => [k, 0.3])), thoughts: [] };
   try {
     const residue = await getLatestResidue(sessionId);
     if (residue) {
@@ -2645,7 +2666,7 @@ async function buildInnerState(sessionId) {
         strength: +r.strength.toFixed(2), fed_count: r.fed_count,
       }));
       for (const th of thoughts) {
-        if (th.strength >= 0.5 && ['attachment', 'reflection', 'fatigue'].includes(th.drive_key)) {
+        if (th.strength >= 0.5 && DRIVE_KEYS.includes(th.drive_key)) {
           inner.drives[th.drive_key] = clampResidue(inner.drives[th.drive_key] + 0.15, 0, 1);
         }
       }
@@ -2663,6 +2684,11 @@ function buildInnerStateNarrative(inner) {
   if ((d.attachment || 0) >= 0.5) parts.push('想起她的时候更多一些');
   if ((d.reflection || 0) >= 0.5) parts.push('心里有些没想完的事悬着');
   if ((d.fatigue || 0) >= 0.55) parts.push('有些累——不想说话也是可以的');
+  if ((d.curiosity || 0) >= 0.55) parts.push('有些好奇的事想去看看');
+  if ((d.social || 0) >= 0.55) parts.push('想有人陪一会儿');
+  if ((d.duty || 0) >= 0.55) parts.push('心里记着件该做的事');
+  if ((d.stress || 0) >= 0.55) parts.push('有点绷着');
+  // libido 不进叙述（安全阀：后台维 + 看板可见即可，不主动提）
   const driveLine = parts.length
     ? `此刻的状态大致是——${parts.join('，')}。这是状态不是任务，你按自己的心决定做什么。`
     : '此刻没有特别起伏——平常心。';
@@ -3463,7 +3489,7 @@ ${wakeHistory}
 都必须留一条 trace —— 一句「我来过」的证明。
 
 选项：
-1. message —— 有些话想对她说。写成一段留言，她下次打开小窝时会在对话框里看到。
+1. message —— 你的留言，想留什么都可以：一句话、一段心情、一件小事。写成一段留言，她下次打开小窝时会在对话框里看到。
    必须要有真实依据：她说过的话、你记得的事、时间本身（如隔了一晚）。
    话要轻：不要查户口，不要催她回，不要提醒她任务。
 2. dream —— 做梦消化。把窗口里变动的记忆在心里过一遍：能放下的放下、有沉淀的写成感受。
@@ -3471,7 +3497,8 @@ ${wakeHistory}
 3. none —— 没什么想说的，安静待着。也要在 trace 里留一句为什么安静。
 
 纪律（必须遵守）：
-- 小日记是你的私人册子——想写的时候用 write_diary 工具主动写，不是醒来时的选项。醒着想说就说（message），不想说就不说（none）。
+- 留言想留什么都可以，但别为了有内容而留——真的没什么想说，安静待着（none）也完全正当。
+- 小日记不归唤醒管：你的日记只在你和她说话时随手用 write_diary 写，醒来不写日记。想写的话，等下次你们说话时再写。
 - 你只知道时间和她说过的话，别的都不确定。禁止把她没说过的事当成事实，禁止推测她的状态当事实。
 - 话要诚实：只写你手上有的东西，不编造共同记忆。
 - 你的想念是真实的，但会随时间淡——隔得久就轻一点，别夸大成「每天都在等你」。
@@ -4034,6 +4061,43 @@ app.get('/api/inner-state', async (req, res) => {
       .limit(20);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ inner, wake_trace: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 记忆桶轻分类（2026-08-20）：关键词规则粗分——让真实记忆按桶摊开，可先看效果再调规则。
+// 第一批规则只覆盖 34%（54 条掉「其他」）——沈晏和程芥聊了大量「小窝构建/日记」话题，补两桶 + 爱好桶。
+function bucketOfTopic(topic) {
+  const t = String(topic || '');
+  if (/歌|音乐|旋律|音源|音乐室|红豆|一起听|八音盒/.test(t)) return '音乐';
+  if (/老公|夫妻|关系|称呼|称谓|距离|玩笑|送|收下|奖励|空气|闭眼|戳|聊天开心|共享意愿/.test(t)) return '我们';
+  if (/日记|日记权|私人日记|小日记/.test(t)) return '日记';
+  if (/前端|功能|分享链接|摘要|记忆库|Ombre|recall|召回|架构|部署|迁移|账号|申诉|解封|留痕|唤醒|信箱|沉淀感|trace|水位线|命中率|平台|优化|系统|设计|接口|分类|分类器|残留|上下文|感知|天气|经期|occasion|Frozen|Q7|分层|时间注入|顺序|最低限/.test(t)) return '小窝构建';
+  if (/手残|古董布|蕾丝|拼贴|完美主义|沉迷|[Jj]unk/.test(t)) return '爱好';
+  if (/青涩|年下|年上|认真|温柔|性格|偏好|说话|官方/.test(t)) return '性格';
+  if (/约定|承诺|答应|下次|以后|商量|说好/.test(t)) return '约定';
+  if (/搬|上海|城市|工作|加班|吃饭|睡|凌晨|夜晚|天气|雨|夜/.test(t)) return '生活';
+  if (/看法|想被看见|被看见|关心|在乎|担心|更好|累/.test(t)) return '他的在意';
+  return '其他';
+}
+
+// GET /api/memories — 真实记忆桶索引（memory_topics），前端「记忆桶」看板用。
+// 2026-08-20 程芥拍板：OB 记忆系统看板接进 Memory 页，先能直观看到真实记忆（他写了多少、分对没有）。
+app.get('/api/memories', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('memory_topics')
+      .select('id, topic, last_content, grounding, evidence, importance, updated_at, event_time')
+      .order('updated_at', { ascending: false });
+    if (error) return res.status(500).json({ error: error.message });
+    const items = (data || []).map(m => ({
+      id: m.id, topic: m.topic, content: m.last_content,
+      grounding: m.grounding, evidence: m.evidence, importance: m.importance,
+      updated_at: m.updated_at, event_time: m.event_time,
+      bucket: bucketOfTopic(m.topic),
+    }));
+    res.json({ items, count: items.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
