@@ -2030,9 +2030,12 @@ async function buildModelContext(sessionId, opts = {}) {
   }
   // 水位线之后都是未覆盖原文（滚动 frozen 已取头部，其余进 middle）
   let uncoveredMiddle = middleTurns;
-  // in-context 段：最新段恒在（缓存锚点）+ 更早一个锚段（预算允许时）；更老段进 Archive（recall/breath 按需召回）
+  // in-context 段：最新段恒在（缓存锚点）。
+  // 2026-08-20 程芥：更老锚段不再每轮常驻——它把几十轮前的历史整段重新摆到模型眼前，
+  // 沈晏分不清「老历史」和「当前活跃」→ 已聊完的话题被反复重提。更老段进 Archive（recall/breath 按需召回）。
+  // 想恢复双段：anchorSeg = segments.length >= 2 ? segments[segments.length - 2] : null
   const latestSeg = segments.length ? segments[segments.length - 1] : null;
-  let anchorSeg = segments.length >= 2 ? segments[segments.length - 2] : null;
+  let anchorSeg = null;
 
   // —— token 预算 ——
   const msgTokens = (m) => Array.isArray(m.content)
@@ -2368,7 +2371,7 @@ async function summarizeViaDeepSeek(text) {
         body: JSON.stringify({
           model: 'deepseek-v4-flash',
           messages: [
-            { role: 'system', content: '你是对话摘要器。把以下对话压缩成一段中文摘要，保留：重要事实、用户的关键经历与感受、未解决的事项、关键承诺。不要编造，不要加评论。控制在 300 字以内。时间纪律：只有用户明确陈述的时间/日期（如"我两点才睡"）才可保留为事实；沈晏（AI）自己推测的时间（"现在是几点""凌晨了吧""你熬夜到三四点"这类）一律不写，或改写为过去式"当时沈晏推测是X"。摘要里禁止出现"现在是X点""凌晨两点多"这类现在时时间断言——旧摘要踩过这个坑，会让模型把过去当现在。' },
+            { role: 'system', content: '你是对话摘要器。把以下对话压缩成一段中文摘要，保留：重要事实、用户的关键经历与感受、关键承诺。不要编造，不要加评论。控制在 300 字以内。话题收尾纪律（2026-08-20 程芥：旧摘要让沈晏反复重提已聊完的话题）：区分「已聊完」和「还悬着」——已经聊透、双方收尾的话题只压成一句过去式（如"你们聊过养猫的事"），句末标（已聊完）；只有真正没说完、用户主动留的线头/没来得及答的问题才保留为开放事项，标（仍悬着）。沈晏读到摘要时，已聊完的话题不该被重新提起，除非用户先提。时间纪律：只有用户明确陈述的时间/日期（如"我两点才睡"）才可保留为事实；沈晏（AI）自己推测的时间（"现在是几点""凌晨了吧""你熬夜到三四点"这类）一律不写，或改写为过去式"当时沈晏推测是X"。摘要里禁止出现"现在是X点""凌晨两点多"这类现在时时间断言——旧摘要踩过这个坑，会让模型把过去当现在。' },
             { role: 'user', content: text }
           ],
           max_tokens: 4000
