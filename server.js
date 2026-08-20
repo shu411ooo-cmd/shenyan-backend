@@ -4497,7 +4497,7 @@ app.post('/api/sessions', async (req, res) => {
     const { name, long_talk } = req.body || {};
     const { data, error } = await supabase
       .from('sessions')
-      .insert({ name: name || '新对话' })
+      .insert({ name: name || (long_talk ? '永无岛' : '新对话') })
       .select()
       .single();
     if (error) return res.status(500).json({ error: error.message });
@@ -4519,6 +4519,58 @@ app.post('/api/sessions', async (req, res) => {
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/neverland — 永无岛的岛群列表（长对话的独立会话）
+// 岛 = 有专属 settings 行的会话（POST /api/sessions long_talk 建房时写的那行）。
+// 名字派生：建房时是占位「永无岛」，有首条用户消息后用它当岛名，更有人味。
+app.get('/api/neverland', async (req, res) => {
+  try {
+    const { data: sp } = await supabase
+      .from('settings')
+      .select('session_id')
+      .neq('session_id', 'global');
+    const ids = (sp || []).map((r) => r.session_id);
+    if (!ids.length) return res.json({ islands: [] });
+
+    const { data: sessions, error } = await supabase
+      .from('sessions')
+      .select('id, name, created_at, updated_at')
+      .in('id', ids)
+      .order('updated_at', { ascending: false });
+    if (error) return res.status(500).json({ error: error.message });
+
+    // 每座岛的消息预览 + 条数（一次拿全，避免 N+1）
+    const { data: msgs } = await supabase
+      .from('messages')
+      .select('session_id, role, content')
+      .in('session_id', ids)
+      .eq('visible', true)
+      .order('created_at', { ascending: true });
+    const byId = {};
+    for (const m of msgs || []) { (byId[m.session_id] = byId[m.session_id] || []).push(m); }
+
+    const islands = (sessions || []).map((s) => {
+      const ms = byId[s.id] || [];
+      const firstUser = ms.find((m) => m.role === 'user');
+      const isPlaceholder = !s.name || ['新对话', '永无岛', 'Neverland', '小黑屋'].includes(s.name);
+      const last = ms[ms.length - 1];
+      return {
+        id: s.id,
+        name: isPlaceholder
+          ? (firstUser ? firstUser.content.replace(/\s+/g, ' ').slice(0, 18) : '永无岛')
+          : s.name,
+        created_at: s.created_at,
+        updated_at: s.updated_at,
+        messages: ms.length,
+        last: last ? (last.role === 'user' ? `你说：${last.content}` : last.content) : '',
+      };
+    });
+
+    res.json({ islands });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
