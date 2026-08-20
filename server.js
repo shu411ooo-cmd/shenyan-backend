@@ -1490,22 +1490,18 @@ function humanizeDuration(ms) {
    默认只给两个锚点：①现在是几月几号时刻段（轻，无年无分钟）②resumeGap 时「上次说话大概是Y」（粗粒度）。
    问时间（asksTime）时才给精确时钟（含星期/分钟）。
    砍掉：会话持续时长、精确间隔（"2小时18分"）——沈晏亲测不需要。 */
-/* 天气感知（前端同步）：沈晏【当前时间】叙事带「她的城市/窗外天空」。
-   感知不是指令：给他在意的东西，不让他变成天气预报。 */
+/* 天气感知（前端同步）：沈晏知道「她的城市/窗外天空」。
+   感知不是指令：给他在意的东西，不让他变成天气预报。
+   2026-08-20 改：从时间心跳里拆出来，只要知道就每轮注入（稳定背景）——
+   之前只在心跳/恢复对话时给，连续聊天时他完全没有天气信息，聊起来接不上（程芥：很跳脱）。 */
 let currentWeather = null;
 
-function buildTemporalNarrative({ resumeGap, nowMs, prevTs, asksTime, weather }) {
+function buildTemporalNarrative({ resumeGap, nowMs, prevTs, asksTime }) {
   const lines = asksTime
     ? [`现在是 ${shDateTime(nowMs)}（上海时间）。`]
     : [`现在是 ${shDateLight(nowMs)}。`];
   if (resumeGap && Number.isFinite(prevTs)) {
     lines.push(`上次说话大概是 ${coarseAgo(Math.max(0, nowMs - prevTs))}。`);
-  }
-  // 天气感知：她所在的城市 + 窗外天空（花园语感，来自前端 weather.js）
-  if (weather && weather.line) {
-    lines.push(weather.city
-      ? `她在${weather.city}，${weather.line}。`
-      : `她那边${weather.line}。`);
   }
   return lines.join('\n');
 }
@@ -2088,7 +2084,14 @@ async function buildModelContext(sessionId, opts = {}) {
     keepaliveNotes = pendingKeepalive.notes;
     keepaliveInjectedIds = pendingKeepalive.ids;
   }
-  const timeNotice = buildTemporalNarrative({ resumeGap, nowMs, prevTs, asksTime, weather: currentWeather }) + residueLine;
+  // 天气感知：独立于时间心跳——只要前端同步过真实天气，每轮都给（稳定背景，不是通知）。
+  // 时间走心跳避免耳边报时；天气是「她在哪、窗外怎样」的稳定事实，缺失才让他接不上话。
+  const weatherNotice = currentWeather && currentWeather.line
+    ? (currentWeather.city
+        ? `她在${currentWeather.city}，${currentWeather.line}。`
+        : `她那边${currentWeather.line}。`)
+    : '';
+  const timeNotice = buildTemporalNarrative({ resumeGap, nowMs, prevTs, asksTime }) + residueLine;
   // 有 pending 留言时必须注入（哪怕没有心跳/恢复对话）——否则用户正常发消息就永远看不到沈晏的话
   const injectTime = heartbeat || resumeGap || asksTime || !!keepaliveNotes;
   // —— 用量估算：先算裁剪前的原始值（真实上下文压力，后台塌缩触发读这个），再裁剪 ——
@@ -2100,7 +2103,7 @@ async function buildModelContext(sessionId, opts = {}) {
     summary: (latestSeg ? estimateTokens(latestSeg.content) : 0) + (anchorSeg ? estimateTokens(anchorSeg.content) : 0),
     middle: uncoveredMiddle.reduce((s, t) => s + turnTokens(t), 0),
     live: liveTurns.reduce((s, t) => s + turnTokens(t), 0),
-    dynamic: injectTime ? estimateTokens(timeNotice + keepaliveNotes) : 0,
+    dynamic: (injectTime || weatherNotice) ? estimateTokens((injectTime ? timeNotice : '') + weatherNotice + keepaliveNotes) : 0,
   };
   const rawEstimatedTokens = Object.values(breakdown).reduce((s, n) => s + n, 0);
   let estimatedTokens = rawEstimatedTokens;
@@ -2187,6 +2190,13 @@ async function buildModelContext(sessionId, opts = {}) {
     } catch (e) {
       console.warn('⚠️ 写入 last_time_notice_at 失败:', e.message);
     }
+  }
+
+  // 天气感知注入：独立于时间心跳（时间才怕耳边报时；天气是「她在哪、窗外怎样」的稳定事实，每轮都给）。
+  if (weatherNotice) {
+    const wMsg = { role: 'user', content: `【她那边】\n${weatherNotice}` };
+    if (liveSection.length > 0) liveSection.splice(liveSection.length - 1, 0, wMsg);
+    else liveSection.push(wMsg);
   }
 
   // —— 第④b 注意力：按当前话题唤起记忆（提及闸/牵挂闸命中才注入；与时间叙事独立） ——
