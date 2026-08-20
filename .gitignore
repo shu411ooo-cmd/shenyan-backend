@@ -10,3 +10,6 @@ night-check.webp
 
 # 调试产物（GraphQL/build 日志临时文件）
 _*.json
+
+# 记忆清洗前备份（一次性清洗产物，不进 git）
+backup_memories_before_clean.json
