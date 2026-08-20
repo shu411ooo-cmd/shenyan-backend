@@ -3029,7 +3029,8 @@ async function handleStreamChat(messages, res, opts = {}, sessionId) {
     const body = {
       model,
       messages,
-      max_tokens: 2000,
+      // 2026-08-20：长回复截断修复——2000 token（≈中文1500字）不够沈晏长篇，升 8000
+      max_tokens: 8000,
       stream: true
     };
     if (hasReasoning) body.reasoning = { effort };
@@ -4531,6 +4532,7 @@ function attachImage(messages, image) {
 // 抽为独立函数，/sessions/:id/chat 和 /api/chat 共用
 async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
   opts.degraded = new Set(); // 本次请求的降级标记，随 recordRequestStat 落 memory_degraded
+  opts.max_tokens = 8000; // 长回复截断修复（2026-08-20）：非流式路径也放长，与流式一致；keepalive 等显式传参的不受影响
   // 判断是否对话第一条消息：决定是否注入 breath 背景记忆（只在第一条，后续不调）
   const { count: priorUserCount } = await supabase
     .from('messages')
