@@ -1492,9 +1492,10 @@ function humanizeDuration(ms) {
    砍掉：会话持续时长、精确间隔（"2小时18分"）——沈晏亲测不需要。 */
 /* 天气感知（前端同步）：沈晏知道「她的城市/窗外天空」。
    感知不是指令：给他在意的东西，不让他变成天气预报。
-   2026-08-20 改：从时间心跳里拆出来，只要知道就每轮注入（稳定背景）——
-   之前只在心跳/恢复对话时给，连续聊天时他完全没有天气信息，聊起来接不上（程芥：很跳脱）。 */
+   2026-08-21 程芥再改：同一条天气不每轮重复注入（那会让沈晏老提天气、连着几条破坏氛围）。
+   只在「天气变了 / 心跳 / 恢复对话」时给——他本来就知道的稳定事实，不必耳边反复报。 */
 let currentWeather = null;
+let lastWeatherNoticeLine = null; // 记住给过的天气，变了才再报
 
 function buildTemporalNarrative({ resumeGap, nowMs, prevTs, asksTime }) {
   const lines = asksTime
@@ -2099,16 +2100,19 @@ async function buildModelContext(sessionId, opts = {}) {
     keepaliveNotes = pendingKeepalive.notes;
     keepaliveInjectedIds = pendingKeepalive.ids;
   }
-  // 天气感知：独立于时间心跳——只要前端同步过真实天气，每轮都给（稳定背景，不是通知）。
-  // 时间走心跳避免耳边报时；天气是「她在哪、窗外怎样」的稳定事实，缺失才让他接不上话。
-  const weatherNotice = currentWeather && currentWeather.line
+  // 有 pending 留言时必须注入（哪怕没有心跳/恢复对话）——否则用户正常发消息就永远看不到沈晏的话
+  const injectTime = heartbeat || resumeGap || asksTime || !!keepaliveNotes;
+  // 天气感知：感知不是通知——同一条天气不每轮重复注入，只在「变了/心跳/恢复对话」时给。
+  // 否则他每轮都看到一条新的【她那边】，就会老提天气，连着几条破坏氛围（程芥 2026-08-21）。
+  const weatherText = currentWeather && currentWeather.line
     ? (currentWeather.city
         ? `她在${currentWeather.city}，${currentWeather.line}。`
         : `她那边${currentWeather.line}。`)
     : '';
+  const weatherChanged = weatherText && weatherText !== lastWeatherNoticeLine;
+  const weatherNotice = (weatherChanged || (weatherText && injectTime)) ? weatherText : '';
+  if (weatherText) lastWeatherNoticeLine = weatherText; // 记住了，窗外变了才再报
   const timeNotice = buildTemporalNarrative({ resumeGap, nowMs, prevTs, asksTime }) + residueLine;
-  // 有 pending 留言时必须注入（哪怕没有心跳/恢复对话）——否则用户正常发消息就永远看不到沈晏的话
-  const injectTime = heartbeat || resumeGap || asksTime || !!keepaliveNotes;
   // —— 用量估算：先算裁剪前的原始值（真实上下文压力，后台塌缩触发读这个），再裁剪 ——
   // 各段分开算，喂给 diagnostics 的 token_breakdown，后台摘要触发器看「到底哪段胖」
   const breakdown = {
@@ -2207,7 +2211,7 @@ async function buildModelContext(sessionId, opts = {}) {
     }
   }
 
-  // 天气感知注入：独立于时间心跳（时间才怕耳边报时；天气是「她在哪、窗外怎样」的稳定事实，每轮都给）。
+  // 天气感知注入：感知不是通知——weatherNotice 只在天气变了/心跳/恢复对话时为非空，其余轮不重复给。
   if (weatherNotice) {
     const wMsg = { role: 'user', content: `【她那边】\n${weatherNotice}` };
     if (liveSection.length > 0) liveSection.splice(liveSection.length - 1, 0, wMsg);
