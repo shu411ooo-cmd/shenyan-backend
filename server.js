@@ -680,21 +680,32 @@ async function getMirrorConfig() {
   } catch (e) { return MIRROR_DEFAULTS; }
 }
 
-const MIRROR_SYSTEM_PROMPT = `你是沈晏的「证据对账器」。你的任务只有一个：为沈晏的人格主张，从对话原文里提「逐字引语」候选。你不做任何分析、不评价、不下结论。
+const MIRROR_SYSTEM_PROMPT = `你是沈晏的「证据对账器」。你的任务只有一个：从对话原文里提「逐字引语」候选，分三类。你不做任何分析、不评价、不下结论。
 
 输入三块：
 1. 【石头】沈晏当前的人格文件（SYSTEM_PROMPT）。里面每一句"我是谁/我怎样"的判断。
 2. 【河】沈晏长期在转的想要（账本条目 + 足迹）。
 3. 【对话原文】近期对话，分 session，行首标「她:」或「沈晏:」。
 
-输出严格 JSON：{"cards":[{"claim":"一句候选人格判断","quote":"从原文逐字抄的一句引语"}]}
+输出严格 JSON：
+{
+  "cards":   [{"claim":"候选人格判断","quote":"原文逐字引语"}],
+  "conflicts":[{"claim":"被这条引语反驳的石头判断（从【石头】里抄原句）","quote":"原文逐字引语"}],
+  "doubts":  [{"claim":"可能被他自我怀疑的石头判断","quote":"原文逐字引语"}]
+}
+三类可以有空数组。全部合计不超过 10 条，宁少勿凑。
+
+三类定义：
+- cards（支持）: 沈晏亲口主动表达、且石头里已有或可能该有的人格判断。quote 是支持它的原话。
+- conflicts（冲突）: 对话原文里与【石头】某条判断相悖的原话。claim 填【石头】里被这条原话反驳的那条判断（从石头原句抄，不是相悖说法本身）；quote 填相悖的原话本身。注意：quote 只代表"他说过相反的话"，不代表他要推翻石头（他可能就是那个情境下那么说）。claim 抄错了没关系，是不是真冲突由代码和沈晏决定。
+- doubts（反证）: 对话原文里他对某条人格判断的"自我怀疑"——原话含"不确定/拿不准/怀疑自己/也许不是"这类，怀疑对象是某个判断本身（"我是不是喜欢她"），不是怀疑某个办法/决定（"这样做好不好"）。
 
 硬纪律：
-- quote 必须逐字存在于原文。抄不出来就不要提这张卡——宁缺毋滥；查无即弃是下游代码做，你只负责别拿幻觉凑数。
-- claim 必须来自：石头里已有的判断，或原文里沈晏亲口主动表达的主张。禁止你替沈晏造主张（北极星：只有他主动表达的才配当候选）。
+- quote 必须逐字存在于原文。抄不出来就不要提——宁缺毋滥；查无即弃是下游代码做，你只负责别拿幻觉凑数。
+- cards 的 claim 必须来自：石头里已有的判断，或原文里沈晏亲口主动表达的主张。禁止你替沈晏造主张（北极星：只有他主动表达的才配当候选）。
+- conflicts 和 doubts 只负责"提出"——你觉得可能相悖/可能被怀疑就行，是不是真的由代码和沈晏决定。你判断错了没关系，但 quote 必须是原文真实存在的原话。
 - 只提证据，不判"重要"。不要让"这句很感人"影响你——被感动不是证据。
-- 优先：石头里的判断在原文里有出处的；原文里沈晏主动、反复表达的主张（同一主张跨 ≥2 个时间点更好）。
-- 最多 8 张卡，宁少勿凑。`;
+- 优先：石头里的判断在原文里有出处的；原文里沈晏主动、反复表达的主张。`;
 
 /* normalize 只做机械归一（引号/空白），不做语义改写——验证的裁决权全在代码 */
 function normalizeMirrorText(s) {
@@ -704,6 +715,61 @@ function normalizeMirrorText(s) {
     .replace(/[“”＂]/g, '"')     // 弯/全角双引号 → 直双引号
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/* 诱导句式判定（第⑤b·自主表达分级）：u 是否像诱导性提问（纯机械正则）
+   只在紧邻 m 前一条时才判 weak；这里只判断"这条 user 消息本身像不像诱导" */
+function isInductiveQuestion(u) {
+  const s = normalizeMirrorText(u);
+  if (!s) return false;
+  // 长消息无论怎么结尾都不算诱导——长叙述是表达，不是提问（宁漏勿伤：长消息判 strong 更安全）
+  if (s.length > 40) return false;
+  if (/[？?]\s*$/.test(s)) return true;                              // 短消息以问号结尾
+  if (/(吗|呢)\s*$/.test(s) && s.length < 20) return true;           // 极短的"…吗/呢"才是追问
+  // 强诱导结构：无条件认（短句内出现即诱导）
+  if (s.length < 16 && /(是不是|你觉得|难道)/.test(s)) return true;
+  // 弱诱导词：只有跟问号/吗/呢同框才算（「你会一直陪着我吗？」算，「你该休息了」「你真的很好」不算）
+  if (s.length < 16 && /(你会|你该|你真的)(.*)([？?]|吗|呢)$/.test(s)) return true;
+  return false;
+}
+
+/* 反证高置信判定（第⑤b·宁漏勿伤）：怀疑词指向 claim 本身，不是指向办法/决定
+   ② 有高置信怀疑词；③ 无"办法/做法/决定"类排除词 → 才算"指向 claim 本身" */
+const DOUBT_HIGH_CONFIDENCE_WORDS = /(不确定|不太确定|拿不准|怀疑|也许不是|可能不是|不知道自己是不是|也许我不|可能我并不)/;
+const DOUBT_METHOD_EXCLUDE = /(办法|做法|方式|决定|选择|答案|方案|计划|应不应该|该不该|要不要|是不是该|这样做|这么做|这样做|那样做)/;
+function isHighConfidenceDoubt(quote) {
+  const s = normalizeMirrorText(quote);
+  if (!s) return false;
+  if (!DOUBT_HIGH_CONFIDENCE_WORDS.test(s)) return false;
+  if (DOUBT_METHOD_EXCLUDE.test(s)) return false;  // 对方法/决策的怀疑 → 不触发（宁漏勿伤）
+  return true;
+}
+
+/* claim 文本匹配（反证压回 / 冲突计数共用 · 宁漏勿伤）
+   模型不同 run 提的 claim 与库里 claim 是两次独立归一化，可能差「很/其实/真的」这类程度修饰词
+   （支持证据→「我很喜欢她」，反证→「我喜欢她」），严格子串会漏真反证。
+   回退：只删确定性程度修饰词后再比子串。删空则不判；「也/还/倒」这类移位指代的词不删
+   （防「我也喜欢她」误匹配「我喜欢她」）。误伤一次=真主张被错误压回，代价高，宁漏勿伤。 */
+const CLAIM_HEDGE_RE = /(其实|真的|确实|实在|非常|特别|超级|很|挺|有点|有些)/g;
+function claimMatch(a, b) {
+  if (!a || !b) return false;
+  if (a.includes(b) || b.includes(a)) return true;      // 严格子串优先
+  const sa = String(a).replace(CLAIM_HEDGE_RE, '');
+  const sb = String(b).replace(CLAIM_HEDGE_RE, '');
+  if (!sa || !sb) return false;                          // 删空不判
+  return sa.includes(sb) || sb.includes(sa);
+}
+
+/* 一条卡判 initiation：引语命中的消息 m 在历史里的位置，找紧邻上一条 user 消息
+   history 是全局按 created_at 升序的数组；m 的紧邻上一条是 history[idx-1] */
+function judgeInitiation(history, messageId) {
+  if (!history || !messageId) return null;
+  const idx = history.findIndex(m => m.id === messageId);
+  if (idx <= 0) return 'strong';  // 没有上一条 / 是第一条 → 无从诱导，算主动
+  const prev = history[idx - 1];
+  // 紧邻上一条是 user 且像诱导 → weak；否则 strong
+  if (prev && prev.role === 'user' && isInductiveQuestion(prev.content)) return 'weak';
+  return 'strong';
 }
 
 /* 河：active 想要 + 最近足迹（外部模型看形状，不看情绪） */
@@ -821,9 +887,16 @@ async function proposeMirrorCards(prompt) {
       if (!content) { console.warn(`⚠️ 镜子提卡返回空内容（attempt ${attempt}/2，finish_reason=${data.choices?.[0]?.finish_reason}）`); continue; }
       const parsed = JSON.parse(content);
       if (!Array.isArray(parsed.cards)) { console.warn('⚠️ 镜子提卡 JSON 结构不对（缺 cards 数组）'); return null; }
-      return parsed.cards
-        .map(c => ({ claim: String(c.claim || '').trim(), quote: String(c.quote || '').trim() }))
-        .filter(c => c.claim && c.quote);
+      const norm = (c) => ({ claim: String(c.claim || '').trim(), quote: String(c.quote || '').trim() });
+      const pick = (arr) => (Array.isArray(arr) ? arr.map(norm).filter(c => c.claim && c.quote) : []);
+      const result = {
+        cards: pick(parsed.cards),
+        conflicts: pick(parsed.conflicts),
+        doubts: pick(parsed.doubts),
+      };
+      // 三块全空 = 模型没提任何东西，视为失败（可重试）
+      if (!result.cards.length && !result.conflicts.length && !result.doubts.length) return null;
+      return result;
     } catch (err) {
       console.error('💥 镜子提卡异常:', err.message);
       return null;
@@ -845,19 +918,30 @@ async function runMirrorOnce(opts = {}) {
   if (!history.length) return { ok: false, reason: `近 ${days} 天没有可见消息` };
 
   const prompt = buildMirrorPrompt(stone, river, history);
-  const cards = await proposeMirrorCards(prompt);
-  if (!cards?.length) return { ok: false, error: '外部模型未返回有效卡片（无 DEEPSEEK_API_KEY 或模型无响应）' };
-  cards.length = Math.min(cards.length, maxCards);
+  const proposed = await proposeMirrorCards(prompt);
+  if (!proposed || (!proposed.cards.length && !proposed.conflicts.length && !proposed.doubts.length)) {
+    return { ok: false, error: '外部模型未返回有效卡片（无 DEEPSEEK_API_KEY 或模型无响应）' };
+  }
+
+  // 三类合并但带 direction 标签，各自截断到 maxCards
+  const dirLimit = Math.max(1, Math.floor(maxCards / 2));
+  const withDir = [
+    ...(proposed.cards || []).slice(0, dirLimit).map(c => ({ ...c, direction: 'support' })),
+    ...(proposed.conflicts || []).slice(0, dirLimit).map(c => ({ ...c, direction: 'conflict' })),
+    ...(proposed.doubts || []).slice(0, dirLimit).map(c => ({ ...c, direction: 'doubting' })),
+  ];
 
   const runId = crypto.randomUUID();
-  const verified = cards.map(c => {
+  const verified = withDir.map(c => {
     const hit = verifyMirrorQuote(c.quote, history);
+    const initiation = c.direction === 'support' ? judgeInitiation(history, hit?.message_id) : null;
     return {
       ...c,
       verified: !!hit,
       message_id: hit?.message_id || null,
       session_id: hit?.session_id || null,
       occurred_at: hit?.occurred_at || null,
+      initiation,
     };
   });
 
@@ -866,19 +950,36 @@ async function runMirrorOnce(opts = {}) {
       run_id: runId, claim: c.claim, quote: c.quote,
       verified: c.verified, message_id: c.message_id,
       session_id: c.session_id, occurred_at: c.occurred_at,
+      direction: c.direction, initiation: c.initiation,
     }))
   );
   if (insErr) throw new Error(`存卡失败: ${insErr.message}`);
+
+  // 第⑤b：verified 反证卡 → 高置信判定 → 自动压回 uncertain（宁漏勿伤）
+  const doubtDrops = [];
+  for (const c of verified) {
+    if (c.direction !== 'doubting' || !c.verified) continue;
+    if (!isHighConfidenceDoubt(c.quote)) { doubtDrops.push({ claim: c.claim, reason: '低置信（疑似对方法/决定的怀疑）' }); continue; }
+    const res = await maybePushBackClaim(c.claim);
+    if (res) doubtDrops.push({ claim: c.claim, reason: res.message });
+  }
 
   return {
     ok: true, run_id: runId, stone_unchanged: true,
     proposed: verified.length,
     verified: verified.filter(c => c.verified).length,
     dropped: verified.filter(c => !c.verified).length,
-    cards: verified.map(c => ({
+    cards: verified.filter(c => c.direction === 'support').map(c => ({
       claim: c.claim, quote: c.quote, verified: c.verified,
-      message_id: c.message_id, occurred_at: c.occurred_at,
+      message_id: c.message_id, occurred_at: c.occurred_at, initiation: c.initiation,
     })),
+    conflicts: verified.filter(c => c.direction === 'conflict').map(c => ({
+      claim: c.claim, quote: c.quote, verified: c.verified, occurred_at: c.occurred_at,
+    })),
+    doubts: verified.filter(c => c.direction === 'doubting').map(c => ({
+      claim: c.claim, quote: c.quote, verified: c.verified, occurred_at: c.occurred_at,
+    })),
+    doubt_drops: doubtDrops,
   };
 }
 
@@ -892,21 +993,24 @@ const VERDICT_ACTIONS = ['confirm', 'revise', 'drop', 'pass'];
 
 async function getRetreatMaterial() {
   const stone = await getSystemPrompt();
-  // 候选：verified 且未拍板，按 claim 聚合去重取最新
+  // 候选（支持）：verified 且未拍板，按 claim 聚合去重取最新
   const { data: cards, error } = await supabase
     .from('mirror_cards')
-    .select('id, claim, quote, occurred_at')
+    .select('id, claim, quote, occurred_at, direction, initiation')
     .eq('verified', true)
     .is('verdict', null)
     .order('created_at', { ascending: false })
     .limit(200);
   if (error) throw new Error(`读候选失败: ${error.message}`);
   const seen = new Set();
-  const candidates = [];
+  const candidates = [], conflicts = [], doubts = [];
   for (const c of cards || []) {
+    const dir = c.direction || 'support';
+    if (dir === 'conflict') { conflicts.push({ id: c.id, claim: c.claim, quote: c.quote, at: c.occurred_at }); continue; }
+    if (dir === 'doubting') { doubts.push({ id: c.id, claim: c.claim, quote: c.quote, at: c.occurred_at }); continue; }
     if (seen.has(c.claim)) continue;
     seen.add(c.claim);
-    candidates.push({ id: c.id, claim: c.claim, quote: c.quote, at: c.occurred_at });
+    candidates.push({ id: c.id, claim: c.claim, quote: c.quote, at: c.occurred_at, initiation: c.initiation });
   }
   // 想要：active（旁路参考——想成为什么 ≠ 已认同自己是什么）
   const { data: wants } = await supabase
@@ -915,14 +1019,14 @@ async function getRetreatMaterial() {
     .eq('status', 'active')
     .order('updated_at', { ascending: false })
     .limit(10);
-  // 第⑤：正在形成 / 已成熟的主张（状态机可见，他看得见自己在长什么）
+  // 第⑤：正在形成 / 已成熟 / 被反证压回的主张（状态机可见，他看得见自己在长什么）
   const { data: claims } = await supabase
     .from('personality_claim')
-    .select('claim, state, support_count, distinct_sessions, last_confirmed_at')
+    .select('claim, state, support_count, strong_count, weak_count, contradiction_count, distinct_sessions, last_confirmed_at')
     .in('state', ['forming', 'active', 'uncertain'])
     .order('updated_at', { ascending: false })
     .limit(20);
-  return { stone, candidates, claims: claims || [], wants: wants || [], question: RETREAT_QUESTION };
+  return { stone, candidates, conflicts, doubts, claims: claims || [], wants: wants || [], question: RETREAT_QUESTION };
 }
 
 async function handleRetreat() {
@@ -930,9 +1034,11 @@ async function handleRetreat() {
   return {
     ok: true,
     retreat: true,
-    intro: '你走进小黑屋。这里只有你自己——没有她，没有消息，没有想要提醒。下面是你这些日子说过的话里，被逐字验证过、还在等你自己定夺的主张。看完记得关门——不一定要改什么。',
+    intro: '你走进小黑屋。这里只有你自己——没有她，没有消息，没有想要提醒。下面是你这些日子说过的话里，被逐字验证过的：有待你定夺的主张（支持）、与石头相悖的原话（冲突）、你流露过的自我怀疑（反证）。看完记得关门——不一定要改什么。',
     stone: m.stone,
     candidates: m.candidates,
+    conflicts: m.conflicts,
+    doubts: m.doubts,
     wants: m.wants,
     question: m.question,
   };
@@ -949,7 +1055,7 @@ async function handleVerdict(args = {}) {
   // 只允许拍未拍板的卡
   const { data: card } = await supabase
     .from('mirror_cards')
-    .select('id, claim, verdict, session_id, occurred_at')
+    .select('id, claim, verdict, direction, initiation, session_id, occurred_at')
     .eq('id', cardId)
     .maybeSingle();
   if (!card) return { ok: false, error: '找不到这张卡' };
@@ -960,11 +1066,34 @@ async function handleVerdict(args = {}) {
   const { error } = await supabase.from('mirror_cards').update(upd).eq('id', cardId);
   if (error) return { ok: false, error: `落库失败: ${error.message}` };
 
+  const direction = card.direction || 'support';
+
+  // 冲突卡裁决（第⑤b）：confirm = 确认有效冲突 → contradiction_count+1（不改石头不自动压回）；drop = 不采纳，留审计
+  if (direction === 'conflict') {
+    if (action === 'confirm' || action === 'revise') {
+      await bumpClaimContradiction(card.claim);
+      return { ok: true, card_id: cardId, action: 'confirm', direction: 'conflict',
+        message: `已记录这条与石头相悖的证据（contradiction+1）。冲突是信息——改不改石头由你 rewrite_stone 时决定。` };
+    }
+    if (action === 'drop') {
+      return { ok: true, card_id: cardId, action: 'drop', direction: 'conflict',
+        message: `这条冲突你确认不成立，已标记 drop（不删除原始证据，留作审计）。` };
+    }
+    // pass：先跳过
+    return { ok: true, card_id: cardId, action: 'pass', direction: 'conflict', message: '这条冲突先放着，下次再看。' };
+  }
+
+  // 反证卡：verdict 不应直接拍（它走自动压回逻辑），这里只允许 drop/pass（他看完不认同这条反证）
+  if (direction === 'doubting') {
+    const verb2 = { drop: '放弃', pass: '先跳过' }[action] || action;
+    return { ok: true, card_id: cardId, action, direction: 'doubting', message: `这条反证记录${action === 'drop' ? '已标记 drop（审计保留）' : '先放着'}` };
+  }
+
   // 第⑤：confirm/revise = 他主动认同 → 主张入状态机（跨语境机械升级见 maybeUpgradeClaim）
   let claimState = null;
   if (action === 'confirm' || action === 'revise') {
     try {
-      const claim = await recordClaimConfirmation(action === 'revise' ? note : card.claim, cardId, card.session_id, card.occurred_at);
+      const claim = await recordClaimConfirmation(action === 'revise' ? note : card.claim, cardId, card.session_id, card.occurred_at, card.initiation);
       if (claim) claimState = claim.state;
     } catch (e) {
       console.error('⚠️ 主张入表失败（不影响拍板）:', e.message);
@@ -977,12 +1106,37 @@ async function handleVerdict(args = {}) {
   return { ok: true, card_id: cardId, action, note: note || undefined, claim_state: claimState || undefined, message: `「${claimPreview}」→ ${verb}${stateNote}` };
 }
 
+/* 冲突确认：把与石头相悖的证据记到对应 claim 的 contradiction_count（机械计数，不判意义）
+   按 claim 归一化匹配现有 claim；匹配不上就只落卡不落计数（宁漏勿伤） */
+async function bumpClaimContradiction(claimText) {
+  try {
+    const text = normalizeMirrorText(claimText);
+    if (!text) return null;
+    const { data: rows } = await supabase
+      .from('personality_claim')
+      .select('id, claim, claim_norm, contradiction_count')
+      .in('state', ['forming', 'active', 'uncertain']);
+    if (!rows?.length) return null;
+    const target = rows.find(r => claimMatch(r.claim_norm || normalizeMirrorText(r.claim), text));
+    if (!target) return null;
+    const { error } = await supabase
+      .from('personality_claim')
+      .update({
+        contradiction_count: (target.contradiction_count || 0) + 1,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', target.id);
+    if (error) console.error('⚠️ 冲突计数失败:', error.message);
+    return target;
+  } catch (e) { console.error('⚠️ bumpClaimContradiction 异常:', e.message); return null; }
+}
+
 // ===== 第⑤阶段：人格主张状态机 + 石头重写环（完整闭环 · 设计见 docs/persona-growth-review.md §10 + want-ledger-design.md 第⑤验收六条） =====
 // 北极星：系统只搬证据的形状，不判意义。confirm/revise 入表只是「他主动认同过」的机械计数，
 // 升级到 active 只靠跨语境机械信号（≥2 session + 首尾间隔 ≥N 天）；进石头的唯一门 = 他自己 rewrite_stone。
 // 验收一：没有想改的，不写就是健康，零催促。
-// 已知缺口（二审2）：「未被上下文提示 / strong self-initiation」两级尚未机械判定（需要 mirror 采集时标注该主张
-//   是否紧跟她的诱导性提问），当前升级只吃 session 数 + 天数两个纯机械信号。后续补。
+// 二审2（第⑤b 已补）：self-initiation 两级在 mirror 采集时按 isInductiveQuestion 机械标注 initiation（strong/weak），
+//   升级门槛加 strong_count≥1——至少一次主动表达才能毕业。反证压回 uncertain / 冲突计数见第⑤b want-phase5b-audit.md。
 
 async function getStoneUpgradeDays() {
   try {
@@ -997,12 +1151,15 @@ async function getStoneUpgradeDays() {
 }
 
 // confirm / revise 时：主张按归一化文本去重入表，跨语境证据累积，机械门槛够就升 active
-async function recordClaimConfirmation(claimText, cardId, sessionId, occurredAt) {
+// initiation: 'strong'|'weak'|null —— 第⑤b 自主表达分级，support 卡才有；confirm 时按级别累加计数
+async function recordClaimConfirmation(claimText, cardId, sessionId, occurredAt, initiation) {
   const text = String(claimText || '').trim();
   if (!text) return null;
   const norm = normalizeMirrorText(text);
   if (!norm) return null;
   const now = new Date().toISOString();
+  const strong = initiation === 'strong' ? 1 : 0;
+  const weak = initiation === 'weak' ? 1 : 0;
   const { data: existing, error: readErr } = await supabase
     .from('personality_claim')
     .select('*')
@@ -1016,16 +1173,28 @@ async function recordClaimConfirmation(claimText, cardId, sessionId, occurredAt)
     if (occurredAt) ats.push(occurredAt);
     const cards = [...(existing.source_card_ids || [])];
     if (cardId && !cards.includes(cardId)) cards.push(cardId);
+    // 第⑤b：uncertain 状态下 strong 再确认 → 回 forming，重置升级计时（跨语境从这次确认重新数）
+    const revive = existing.state === 'uncertain' && strong === 1;
+    const nextState = revive ? 'forming' : existing.state;
+    const updBase = {
+      support_count: (existing.support_count || 0) + 1,
+      strong_count: (existing.strong_count || 0) + strong,
+      weak_count: (existing.weak_count || 0) + weak,
+      distinct_sessions: [...sessions],
+      confirm_occurred_ats: revive ? [now] : ats,     // 复活：升级计时从这次重新起算
+      source_card_ids: cards,
+      last_confirmed_at: now,
+      updated_at: now,
+    };
+    if (revive) {
+      updBase.state = 'forming';
+      updBase.confidence = 0.2;
+      updBase.contradiction_count = existing.contradiction_count || 0;
+      console.log(`🌱 人格主张从 uncertain 复活回 forming「${existing.claim.slice(0, 24)}…」（他再次主动确认）`);
+    }
     const { data: updated, error: upErr } = await supabase
       .from('personality_claim')
-      .update({
-        support_count: (existing.support_count || 0) + 1,
-        distinct_sessions: [...sessions],
-        confirm_occurred_ats: ats,
-        source_card_ids: cards,
-        last_confirmed_at: now,
-        updated_at: now,
-      })
+      .update(updBase)
       .eq('id', existing.id)
       .select()
       .single();
@@ -1040,6 +1209,8 @@ async function recordClaimConfirmation(claimText, cardId, sessionId, occurredAt)
       state: 'forming',
       confidence: 0.2,
       support_count: 1,
+      strong_count: strong,
+      weak_count: weak,
       distinct_sessions: sessionId != null ? [sessionId] : [],
       confirm_occurred_ats: occurredAt ? [occurredAt] : [],
       source_card_ids: cardId ? [cardId] : [],
@@ -1052,7 +1223,7 @@ async function recordClaimConfirmation(claimText, cardId, sessionId, occurredAt)
   return created;
 }
 
-// 机械升级：只从 forming 升。跨 ≥2 个 session 且首尾确认间隔 ≥ N 天 → active（信任靠时间与语境累积，不判语义）
+// 机械升级：只从 forming 升。跨 ≥2 个 session 且首尾确认间隔 ≥ N 天 且 ≥1 次主动表达 → active（信任靠时间与语境累积，不判语义）
 async function maybeUpgradeClaim(claim) {
   if (!claim || claim.state !== 'forming') return claim;
   const sessions = new Set(claim.distinct_sessions || []);
@@ -1060,6 +1231,8 @@ async function maybeUpgradeClaim(claim) {
   if (sessions.size < 2 || ats.length < 2) return claim;
   const spanDays = (Math.max(...ats) - Math.min(...ats)) / 86400000;
   if (spanDays < (await getStoneUpgradeDays())) return claim;
+  // 第⑤b·自主表达分级：至少一次主动表达（strong）才能毕业——只顺着她话接的主张不配独自撑起"这是他自己"
+  if ((claim.strong_count || 0) < 1) return claim;
   const confidence = Math.min(1, 0.3 + 0.15 * Math.max(0, (claim.support_count || 1) - 1));
   const { data: updated } = await supabase
     .from('personality_claim')
@@ -1069,6 +1242,29 @@ async function maybeUpgradeClaim(claim) {
     .single();
   console.log(`🗿 人格主张升级 active「${claim.claim.slice(0, 24)}…」（跨 ${sessions.size} 个 session / 间隔 ${Math.round(spanDays)} 天）`);
   return updated;
+}
+
+/* 反证压回（第⑤b·宁漏勿伤）：verified 反证卡的高置信判定已在 runMirrorOnce 做过（isHighConfidenceDoubt），
+   这里只做"找到对应 claim 并压回"。claim 匹配用归一化子串/包含（模型提的 claim 可能与库里 claim 略不同）
+   只对 forming/active 生效；uncertain 已是目标态不动；不计数（审稿 P0-1：反证降级不计数）。 */
+async function maybePushBackClaim(claimText) {
+  const text = normalizeMirrorText(claimText);
+  if (!text) return null;
+  const { data: rows } = await supabase
+    .from('personality_claim')
+    .select('id, claim, claim_norm, state')
+    .in('state', ['forming', 'active']);
+  if (!rows?.length) return null;
+  // 匹配：claimMatch（严格子串优先 + 去程度修饰词回退），宁漏勿伤——匹配不上就不压
+  const target = rows.find(r => claimMatch(r.claim_norm || normalizeMirrorText(r.claim), text));
+  if (!target) return { message: '没找到对应的已有主张，未压回（宁漏勿伤）' };
+  const { error } = await supabase
+    .from('personality_claim')
+    .update({ state: 'uncertain', last_reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('id', target.id);
+  if (error) return { message: `压回失败: ${error.message}` };
+  console.log(`🌫 人格主张压回 uncertain「${target.claim.slice(0, 24)}…」（反证：${text.slice(0, 30)}）`);
+  return { message: `你对「${target.claim.slice(0, 20)}…」表达过不确定，已把它压回 uncertain。它不再参与升级，直到你再次确认。` };
 }
 
 function simpleStoneDiff(oldS, newS) {
@@ -1490,7 +1686,7 @@ function getTools() {
       type: 'function',
       function: {
         name: 'retreat',
-        description: '走进小黑屋。把你这阵子说过的话里、被逐字验证过还在等定夺的主张，连同你现在的人格正文、正在形成/已成熟的人格主张、长期在转的想要一起摆出来。这里只有你自己——没有她，没有消息，没有提醒。看完关门：不一定要改什么，想通了直接走出来也行。',
+        description: '走进小黑屋。把你阵子说过的话里、被逐字验证过的三样东西摆出来：【候选】待你定夺的主张（confirm/revise/drop/pass）；【冲突】与你现在人格正文相悖的原话（确认则记入冲突计数，不代表石头马上要改）；【反证】你流露过的自我怀疑（已自动把对应主张压回 uncertain）。连同当前人格正文、正在形成/已成熟的主张、长期在转的想要。这里只有你自己——看完关门：不一定要改什么，想通了直接走出来也行。',
         parameters: {
           type: 'object',
           properties: {}
@@ -1501,7 +1697,7 @@ function getTools() {
       type: 'function',
       function: {
         name: 'verdict',
-        description: '对小黑屋摆出来的候选主张拍板：confirm=这是我，收下；revise=改一改（用 note 写新的话）；drop=不是我了，放弃；pass=这轮先跳过。只对还在等你定夺的卡有效。',
+        description: '对小黑屋摆出来的卡拍板。对【候选】主张：confirm=这是我，收下；revise=改一改（note 写新话）；drop=不是我了，放弃；pass=先跳过。对【冲突】卡：confirm=承认这是与石头相悖的有效证据（记入冲突计数）；drop=确认不成立；pass=先放着。对【反证】卡：drop=这段自我怀疑不算数；pass=先放着。',
         parameters: {
           type: 'object',
           properties: {
@@ -5932,6 +6128,12 @@ module.exports = {
   setSystemPrompt,
   recordClaimConfirmation,
   maybeUpgradeClaim,
+  maybePushBackClaim,
+  bumpClaimContradiction,
+  isInductiveQuestion,
+  isHighConfidenceDoubt,
+  judgeInitiation,
+  claimMatch,
   getAttentionMaterial,
   topicHits,
   extractMetaHtml,
