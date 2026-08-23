@@ -12,19 +12,6 @@ const supabase = createClient(
 );
 
 const app = express();
-// 2026-08-23 安全补：站点访问控制（B 方案止血——外部 curl/脚本扫不动；前端同域 + 带 x-site-key）
-// 前端产物构建时用 VITE_SITE_KEY 注入（源码不躺明文），请求统一带 x-site-key 头；
-// 本中间件校验该头。本地 dev 用同一个 key（.env 的 SITE_KEY，前端 vite.config 读同名）。
-// 边界诚实：key 会在线上 JS 里（build 注入），防「路人乱扫」，不防「定向扒 JS 的攻击者」——那要 C 的登录门。
-app.use((req, res, next) => {
-  const SITE_KEY = process.env.SITE_KEY || '';
-  // 放行：健康检查、首页、静态资源、以及不带 key 时（未配置 = 先不锁，防把自己锁死）
-  if (!SITE_KEY) return next();
-  if (req.path === '/health' || req.path === '/' || req.path.startsWith('/assets/')) return next();
-  const supplied = req.headers['x-site-key'] || req.query.site_key || '';
-  if (supplied === SITE_KEY) return next();
-  return res.status(401).json({ error: 'unauthorized' });
-});
 // CORS：同源前端不需要跨域头，但保留宽松 cors 兼容（同源请求不受 CORS 影响）。
 app.use(cors());
 // 前端静态托管：dist 拷进 public/，同域名出（shenyan.zeabur.app），避免 *.vercel.app 被墙
@@ -46,6 +33,88 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // JSON body 限制提到 15mb：chat 的 image 字段走 base64 data URL（前端已压到 1280px，
 // base64 膨胀 ~1.33×，1280px JPEG 最高可到 ~1-2MB，默认 100kb 会直接 413）。
 app.use(express.json({ limit: '15mb' }));
+
+// ===== C 方案：登录门（2026-08-23）=====
+// 真正的门：密码登录 → HttpOnly cookie(sid) → 中间件校验 cookie。没密码谁都进不来。
+// session 存 DB（auth_sessions，多实例可共享）；token 随机，HttpOnly+SameSite=Strict 不进 JS。
+// 过渡：SITE_KEY 保留为「兜底」——cookie 有效或 x-site-key 对上都放行；C 稳定后可撤 SITE_KEY。
+const SITE_PASSWORD = process.env.SITE_PASSWORD || '';
+const SITE_KEY = process.env.SITE_KEY || '';
+const SESSION_TTL_MS = 7 * 24 * 3600 * 1000; // 7 天
+const SESSION_COOKIE = 'sid';
+
+function parseCookies(req) {
+  const out = {};
+  const h = req.headers.cookie || '';
+  for (const part of h.split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0) out[part.slice(0, i).trim()] = part.slice(i + 1).trim();
+  }
+  return out;
+}
+
+async function isValidSession(token) {
+  if (!token) return false;
+  try {
+    const { data, error } = await supabase
+      .from('auth_sessions')
+      .select('id, expires_at')
+      .eq('token', token)
+      .maybeSingle();
+    if (error || !data) return false;
+    return new Date(data.expires_at).getTime() > Date.now();
+  } catch { return false; }
+}
+
+// 登录：校验密码 → 种 HttpOnly cookie
+app.post('/api/auth/login', async (req, res) => {
+  const pwd = String(req.body?.password || '');
+  if (!SITE_PASSWORD || pwd !== SITE_PASSWORD) return res.status(401).json({ ok: false, error: '密码不对' });
+  const token = require('crypto').randomBytes(32).toString('hex');
+  const expires = new Date(Date.now() + SESSION_TTL_MS).toISOString();
+  try {
+    const { error } = await supabase.from('auth_sessions').insert({ token, expires_at: expires });
+    if (error) return res.status(500).json({ ok: false, error: error.message });
+  } catch (e) { return res.status(500).json({ ok: false, error: e.message }); }
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_MS / 1000}`);
+  res.json({ ok: true });
+});
+
+// 登出：删 session + 清 cookie
+app.post('/api/auth/logout', async (req, res) => {
+  const token = parseCookies(req)[SESSION_COOKIE];
+  if (token) {
+    try {
+      await supabase.from('auth_sessions').delete().eq('token', token);
+    } catch { /* 删不掉就算了，cookie 已清 */ }
+  }
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`);
+  res.json({ ok: true });
+});
+
+// 检查登录态（前端 AuthGate 用）：无 cookie → 401，前端显示密码页
+app.get('/api/auth/check', async (req, res) => {
+  const token = parseCookies(req)[SESSION_COOKIE];
+  const ok = await isValidSession(token);
+  if (ok) return res.json({ ok: true });
+  return res.status(401).json({ ok: false });
+});
+
+// 鉴权中间件：静态资源/首页/健康检查放行；API 一律要登录态（cookie 或 x-site-key 兜底）
+app.use(async (req, res, next) => {
+  if (req.path === '/health' || req.path === '/' || req.path.startsWith('/assets/')) return next();
+  // 兜底锁：SITE_PASSWORD 没配时先不锁（防把自己锁死）
+  if (!SITE_PASSWORD) return next();
+  // auth 相关接口本身放行（login/logout/check 已各自处理）
+  if (req.path.startsWith('/api/auth/')) return next();
+  // 主校验：cookie session（await——isValidSession 是异步查库）
+  const token = parseCookies(req)[SESSION_COOKIE];
+  if (token && (await isValidSession(token))) return next();
+  // 兜底：x-site-key（B 方案兼容，C 稳定后可撤）
+  const supplied = req.headers['x-site-key'] || req.query.site_key || '';
+  if (SITE_KEY && supplied === SITE_KEY) return next();
+  return res.status(401).json({ error: 'unauthorized' });
+});
 
 // ===== Ombre Brain MCP 客户端 =====
 
