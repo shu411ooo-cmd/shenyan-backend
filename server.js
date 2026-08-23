@@ -984,7 +984,7 @@ function getTools() {
       type: 'function',
       function: {
         name: 'breath_search',
-        description: '语义检索浓缩记忆。当她说起过去的事、但你【不知道确切内容、只有模糊主题/印象】时用——比如"我是不是跟你提过什么""关于那件事你记得多少"。返回"可能相关"的记忆片段（大意/主题/情感），不是逐字记录。命中 = 只是可能相关，口气留余地。判断规则：你只有模糊主题/印象 → 用我；你知道确切原话/事件 → 用 recall 拿逐字证据。\n记忆名/正文以【实】/【悬】/【空】开头 = 这条的可信度：实=她亲口说过，可当事实引用；悬=推断，要留余地（"隐约记得"）；无标记=不可靠，别当事实引用。',
+        description: '语义检索浓缩记忆。当她说起过去的事、但你【不知道确切内容、只有模糊主题/印象】时用——比如"我是不是跟你提过什么""关于那件事你记得多少"。返回"可能相关"的记忆片段（大意/主题/情感），不是逐字记录。命中 = 只是可能相关，口气留余地。判断规则：你只有模糊主题/印象 → 用我；你知道确切原话/事件 → 用 recall 拿逐字证据。\n记忆正文是自然陈述，不再带【实】【悬】标签。可信度靠你自己判断：她亲口说过的事（对话里有出处）可当事实引用；你自己推断/印象的内容，留余地（"隐约记得"）；完全没把握的，别当事实引用。',
         parameters: {
           type: 'object',
           properties: {
@@ -1000,7 +1000,7 @@ function getTools() {
       type: 'function',
       function: {
         name: 'breath_advanced',
-        description: '精细控制的记忆检索：按域/重要度/标签过滤、改情感坐标、或 catalog 目录模式最省 token。\n正文是自然陈述；可信度看 tags（g:实=她亲口说过可当事实，g:悬=推断留余地，无标记=不可靠）。',
+        description: '精细控制的记忆检索：按域/重要度/标签过滤、改情感坐标、或 catalog 目录模式最省 token。\n正文是自然陈述，不带 g: 标签；可信度靠你自己判断——她亲口说过的事可当事实，推断性质的内容留余地，没出处的别当事实。',
         parameters: {
           type: 'object',
           properties: {
@@ -1042,7 +1042,7 @@ function getTools() {
       type: 'function',
       function: {
         name: 'hold',
-        description: '把当下这一件事、感受或判断记下。自动打标并尝试与已有记忆合并。短内容（一句话级别）用这个。\n用自然的陈述记下（禁止【实】【证据】这类标签框）。可信度走 tags：她亲口说的加 g:实，你推断的加 g:悬，没根据就别记。无标记 = 低可信。',
+        description: '把当下这一件事、感受或判断记下。自动打标并尝试与已有记忆合并。短内容（一句话级别）用这个。\n用自然的陈述记下（禁止【实】【证据】这类标签框，也不需要加 g: 标签）。她亲口说的，照实记她的话；你推断的，句子里写清「我推断」，别把推断写成事实；没根据就别记。',
         parameters: {
           type: 'object',
           properties: {
@@ -1062,7 +1062,7 @@ function getTools() {
       type: 'function',
       function: {
         name: 'grow',
-        description: '整理一段长内容（≥30 字）或一天回顾，自动拆成多条独立事件桶。要存多条时用一次 grow 而非多次 hold。\n每条 item 用自然的陈述记下（禁止【实】【证据】标签框），可信度走 tags（g:实/g:悬），规则同 hold。',
+        description: '整理一段长内容（≥30 字）或一天回顾，自动拆成多条独立事件桶。要存多条时用一次 grow 而非多次 hold。\n每条 item 用自然的陈述记下（禁止【实】【证据】标签框，也不需要加 g: 标签），可信度规则同 hold——她亲口说的照实记，你推断的写清「我推断」。',
         parameters: {
           type: 'object',
           properties: {
@@ -1456,9 +1456,10 @@ function formatSegRange(startTs, endTs) {
 
 function segHeader(seg) {
   const range = formatSegRange(seg.period_start_ts, seg.period_end_ts);
+  // 2026-08-21 程芥：叫「历史摘要」他老把它当对话材料复述回话里。改叫「历史背景 · 已经聊过的事」——背景，不是现在的话。
   return range
-    ? `【历史摘要 · ${range}（第 ${seg.period_start}~${seg.period_end} 轮）】`
-    : `【历史摘要 · 第 ${seg.period_start}~${seg.period_end} 轮】`;
+    ? `【历史背景 · 已经聊过的事（${range}）】`
+    : `【历史背景 · 已经聊过的事】`;
 }
 
 /* 相对时间标签：今天 X / 昨天 X / M月d日 X（更早的日期省略年份，够用即可） */
@@ -1493,9 +1494,9 @@ function humanizeDuration(ms) {
 /* 天气感知（前端同步）：沈晏知道「她的城市/窗外天空」。
    感知不是指令：给他在意的东西，不让他变成天气预报。
    2026-08-21 程芥再改：同一条天气不每轮重复注入（那会让沈晏老提天气、连着几条破坏氛围）。
-   只在「天气变了 / 心跳 / 恢复对话」时给——他本来就知道的稳定事实，不必耳边反复报。 */
+   只在「首句 / 隔很久回来」时给——天气是「回来时注意到她的天」，不是活跃对话中的耳边报时。
+   活跃对话中她问天气由对话自然接住，不预埋。 */
 let currentWeather = null;
-let lastWeatherNoticeLine = null; // 记住给过的天气，变了才再报
 
 function buildTemporalNarrative({ resumeGap, nowMs, prevTs, asksTime }) {
   const lines = asksTime
@@ -1571,12 +1572,16 @@ function ageResidue(r, ageMs) {
    - 删掉「我一直在等你/雀跃着断的/心里很暖」这类情绪结论句——内容必须由模型读原文自己感受。
    - valence/arousal 及次级四维只留在后台做 recall/attention 权重，不进叙事。
    - 无具体线头（无 evidence 也无 unfinished）则不注入——宁可无，不编余温。 */
+// 收尾信号：她回来第一句话里带上这些词 → 上次的 departure/线头视为已了结，残留整体不注入
+//（2026-08-21 程芥拍板，防「她都说修完了，沈晏还催她去修 bug」）。
+const RESOLVED_RETURN_RE = /(修完|修好|搞定|弄完|弄好|完成|做完|办完|解决|处理完|回来了)/;
+
 function buildResidueNarrative(residue, ageMs) {
   const parts = [];
   // 离开意图（她走时亲口说的去向，硬事实）：独立于余温线头评估——
   // 自然告别（说了去哪、无悬案）也注入；和线头是两件事，前者管「她去哪了」，后者管「什么没说完」
   const departure = String(residue?.departure || '').trim();
-  if (departure) parts.push(`你走时说「${departure.slice(0, 60)}」`);
+  if (departure) parts.push(`你上次走时说「${departure.slice(0, 60)}」——那是上次离开时的话，现在她已经回来了`);
   // 余温线头：空信号（普通闲聊/任务执行）不注入——安静收尾不该被当成「余温」；有 departure 也照评
   if (String(residue?.grounding || '') !== '空') {
     const a = ageResidue(residue, ageMs);
@@ -1652,6 +1657,17 @@ async function getAttentionConfig() {
 
 /* 主题命中：topic 的 ≥2 字子串出现在消息里（中文短语直接 substring 最稳，不折腾分词）。
    短主题（≤4 字，如"搬家/猫"）整词命中；长主题滑窗取 2~4 字子串碰。 */
+// 口水词（2 字）：配不上「提及」——"我们/今天/觉得"这类在哪都能碰上，当命中会把旧记忆
+// 每轮都拽出来，前文左右跳（程芥 2026-08-21）。命中必须落在非口水词上才算数。
+const STOPWORD2 = new Set([
+  '我们','你们','他们','今天','明天','昨天','现在','时候','觉得','感觉','知道','说话','聊天','聊天',
+  '然后','但是','还是','就是','真的','什么','怎么','这个','那个','一下','有点','没有','如果','因为',
+  '所以','自己','一起','家里','回来','走了','好吧','对了','等等','事情','东西','问题','朋友','早上',
+  '晚上','中午','下午','上次','以前','后来','一直','还是','但是','特别','越来越','上次',
+]);
+
+function isStopword(s) { return s.length === 2 && STOPWORD2.has(s); }
+
 function topicHits(userMessage, topic) {
   if (!userMessage || !topic) return false;
   const msg = String(userMessage);
@@ -1660,14 +1676,19 @@ function topicHits(userMessage, topic) {
   if (t.length <= 4) {
     // 短短语整词命中优先；整词不中时取 2 字片段再碰——
     // 中文口语常把四字短语拆开说（"熬夜习惯"→"上次说我熬夜，现在习惯了"），整词会漏。
-    if (msg.includes(t)) return true;
-    if (t.length === 4) return msg.includes(t.slice(0, 2)) || msg.includes(t.slice(2, 4));
-    if (t.length === 3) return msg.includes(t.slice(0, 2)) || msg.includes(t.slice(1, 3));
+    // 但 2 字片段若是口水词（我们/今天…）不算命中。
+    if (msg.includes(t)) return !isStopword(t);
+    if (t.length === 4) return (msg.includes(t.slice(0, 2)) && !isStopword(t.slice(0, 2))) || (msg.includes(t.slice(2, 4)) && !isStopword(t.slice(2, 4)));
+    if (t.length === 3) return (msg.includes(t.slice(0, 2)) && !isStopword(t.slice(0, 2))) || (msg.includes(t.slice(1, 3)) && !isStopword(t.slice(1, 3)));
     return false;
   }
   for (let len = 4; len >= 2; len--) {
     for (let i = 0; i + len <= t.length; i++) {
-      if (msg.includes(t.slice(i, i + len))) return true;
+      const frag = t.slice(i, i + len);
+      if (msg.includes(frag)) {
+        // 4/3 字片段足够具体，直接算命中；2 字片段必须是实词
+        if (len >= 3 || !isStopword(frag)) return true;
+      }
     }
   }
   return false;
@@ -1684,11 +1705,20 @@ function extractNgrams(text) {
 }
 
 /* 注意力组装：返回 { text, hits }，两个闸都不触发或命中不足时返回 null。
-   排序 = importance × 时间衰减（30 天半衰），牵挂线头相关记忆排前面。 */
+   排序 = importance × 时间衰减（30 天半衰），牵挂线头相关记忆排前面。
+   冷却：同一会话至少隔 ATTENTION_COOLDOWN_TURNS 次检查才再注入，避免连续每轮拽旧记忆
+   → 前文左右跳 / 思考链莫名想到旧事（程芥 2026-08-21）。 */
+const attentionCooldown = new Map(); // sessionId → 上次真正注入时的全局序号
+let attentionSeq = 0;
+const ATTENTION_COOLDOWN_TURNS = 4; // 至少隔 4 次检查再注入（程芥 2026-08-21 加严：连续拽旧记忆最伤连续感）
 async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
   if (opts.memory === false || !userMessage) return null;
   const cfg = await getAttentionConfig();
   const msg = String(userMessage);
+  // 每次检查都推进序号：冷却 = 距上次注入已隔几次检查
+  attentionSeq++;
+  const lastInjectSeq = attentionCooldown.get(sessionId) || -Infinity;
+  if (attentionSeq - lastInjectSeq < ATTENTION_COOLDOWN_TURNS) return null; // 冷却中，这轮不注入
 
   const { data: topics, error } = await supabase
     .from('memory_topics')
@@ -1741,12 +1771,17 @@ async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
     const body = String(t.last_content || '').trim().slice(0, ATTENTION_ITEM_MAX);
     if (!body) continue;
     const g = ['实', '悬', '空'].includes(t.grounding) ? t.grounding : '悬';
-    const line = concernNote && hits.length === 0 ? `（还有没说完的：${concernNote}）\n「${body}」【${g}】` : `「${body}」【${g}】`;
+    // 2026-08-21 程芥：「还有没说完的」读起来像待办指令，模型会抢着去办（修bug/提醒喝水……）。
+    // 改成「你心里还惦记着」——牵挂是背景情绪，不是现在去办的命令。
+    const line = concernNote && hits.length === 0 ? `（你心里还惦记着：${concernNote}）\n「${body}」【${g}】` : `「${body}」【${g}】`;
     if (chars + line.length > cfg.budget_chars) break;
     hits.push(line);
     chars += line.length;
   }
   if (!hits.length) return null;
+  // 真正注入才记录冷却水位（闸没触发不覆盖水位，别把未来几轮的额度烧了）
+  attentionCooldown.set(sessionId, attentionSeq);
+  if (attentionCooldown.size > 1000) attentionCooldown.clear(); // 防无界增长（单用户场景不会到）
   return { text: hits.join('\n'), hits: hits.length };
 }
 
@@ -2057,14 +2092,24 @@ async function buildModelContext(sessionId, opts = {}) {
   const turnTokens = (t) => msgTokens({ role: 'user', content: t.user.content }) +
     t.replies.reduce((s, r) => s + msgTokens(r), 0);
 
-  const stablePrompt = await buildStableSystemPrompt();
+  const stablePrompt = await buildStableSystemPrompt() + `
+【背景纪律】
+对话里会出现这些注记段：【历史背景】（过去已经聊过的事）、【背景记忆】（开始前从你记忆里提取的旧事）、【你心底想起的旧事】（你心里浮起的旧记忆）、【登岛来路】（她带你上永无岛时的来由）、【永无岛的回忆】（你们刚离开永无岛的经历）、【当前时间】。它们全是你的背景，不是她发来的内容——尤其【你心底想起的旧事】，是你在想，不是她贴给你的文字。
+不要复述、不要总结、不要把注记段重新端回台面，也不要为它们道谢。她明确提起某件旧事，你自然接住；别因为背景里记着某件事就主动往回扯——她没提，就专心聊当下。
+你要回应的永远是她**最后那句真实消息**。注记段里哪怕写着【悬】、说还有没做完的事、或引了她早先离开时的话——那也只是背景里的牵挂，**不是你现在要去办的指令**，更不该抢在她当前的话前面被回应。她一句话里若明确喊你做事，你才去做。`;
   // 动态时间叙事：时间心跳 + 恢复对话 + 问时间时注入。
   // 轻量版只给两个锚点（定稿 08-10）：现在是几月几号时刻段 + 上次说话大概多久前；问时间才给精确时钟。
   // 插入点保持在所有缓存断点之后、当前用户消息之前（cache 与 role 约束不变）。
   const nowMs = Date.now();
   const prevTs = history.length >= 2 ? new Date(history[history.length - 2].created_at).getTime() : NaN;
   const isFirstTurn = history.length <= 1;
-  const resumeGap = !isFirstTurn && nowMs - prevTs > 30 * 60 * 1000;
+  // 2026-08-21 程芥拍板：resumeGap 30→60 分钟——30 分钟太容易触发（去修个 bug/上趟厕所/回个消息
+  // 就被当「重新进入会话」，一次塞进 summary+时间+天气+残留+可能的注意力 = 上下文重载）。
+  const resumeGap = !isFirstTurn && nowMs - prevTs > 60 * 60 * 1000;
+  // 2026-08-21 程芥：前文一直跳——最新摘要段（整个前文的浓缩）原本每轮必发，沈晏每轮被它拽着跳。
+  // 改成按需：首句 / 隔了很久回来（resumeGap）才给；平时流畅对话不发，靠 live+frozen + 注意力召回撑住。
+  // 摘要照常塌缩存着不删，需要时（回来/首句）自然出现。
+  const shouldInjectSummary = isFirstTurn || resumeGap;
   const curText = String(history[history.length - 1]?.content || '');
   const asksTime = /几点|几点钟|几点了|几点啦|什么时间|几号|几月几|星期几|周几|今天.*(?:几号|日期|星期)|现在.*(?:时间|几点)/.test(curText);
   // —— 时间心跳：不给模型报时，它只能猜（旧 bug 的根）；每轮报又变成「耳边报时」。
@@ -2084,6 +2129,11 @@ async function buildModelContext(sessionId, opts = {}) {
     const residue = await getLatestResidue(sessionId);
     if (residue) {
       residueLine = buildResidueNarrative(residue, nowMs - prevTs);
+      // 2026-08-21 程芥拍板：她回来第一句话已带收尾信号（修完/好了/搞定/回来了…）→ 这条残留整体不注入。
+      // 否则「你走时说『去修 bug』」还会在她已经说完修完之后被重申，像在催她。
+      if (residueLine && RESOLVED_RETURN_RE.test(String(opts.userMessage || curText))) {
+        residueLine = '';
+      }
       if (residueLine) {
         residueInjected = true;
         residueText = residueLine.trim();
@@ -2109,20 +2159,22 @@ async function buildModelContext(sessionId, opts = {}) {
         ? `她在${currentWeather.city}，${currentWeather.line}。`
         : `她那边${currentWeather.line}。`)
     : '';
-  const weatherChanged = weatherText && weatherText !== lastWeatherNoticeLine;
-  const weatherNotice = (weatherChanged || (weatherText && injectTime)) ? weatherText : '';
-  if (weatherText) lastWeatherNoticeLine = weatherText; // 记住了，窗外变了才再报
-  const timeNotice = buildTemporalNarrative({ resumeGap, nowMs, prevTs, asksTime }) + residueLine;
+  // 2026-08-21 程芥：思考链里他会突然想到她的天气——即使不说。天气是「回来时注意到她的天」，
+  // 不是每小时的耳边报时，更不是聊天中突然插一句。只在首句 / 隔很久回来（resumeGap）才注入，
+  // 活跃对话中绝不注入（她问天气时由对话自然接住）。
+  const weatherNotice = (weatherText && (isFirstTurn || resumeGap)) ? weatherText : '';
+  // 残留余温从时间叙事里拆出来，作为独立动态块（这样「同轮上限」可以单独丢它，不影响时间）。
+  const timeNotice = buildTemporalNarrative({ resumeGap, nowMs, prevTs, asksTime });
   // —— 用量估算：先算裁剪前的原始值（真实上下文压力，后台塌缩触发读这个），再裁剪 ——
   // 各段分开算，喂给 diagnostics 的 token_breakdown，后台摘要触发器看「到底哪段胖」
   const breakdown = {
     tools: opts.tools !== 'off' ? estimateTokens(JSON.stringify(getTools())) : 0,
     stable: estimateTokens(stablePrompt),
     frozen: frozenTurns.reduce((s, t) => s + turnTokens(t), 0),
-    summary: (latestSeg ? estimateTokens(latestSeg.content) : 0) + (anchorSeg ? estimateTokens(anchorSeg.content) : 0),
+    summary: ((shouldInjectSummary && latestSeg) ? estimateTokens(latestSeg.content) : 0) + (anchorSeg ? estimateTokens(anchorSeg.content) : 0),
     middle: uncoveredMiddle.reduce((s, t) => s + turnTokens(t), 0),
     live: liveTurns.reduce((s, t) => s + turnTokens(t), 0),
-    dynamic: (injectTime || weatherNotice) ? estimateTokens((injectTime ? timeNotice : '') + weatherNotice + keepaliveNotes) : 0,
+    dynamic: (injectTime || weatherNotice) ? estimateTokens((injectTime ? timeNotice : '') + (residueLine || '') + weatherNotice + keepaliveNotes) : 0,
   };
   const rawEstimatedTokens = Object.values(breakdown).reduce((s, n) => s + n, 0);
   let estimatedTokens = rawEstimatedTokens;
@@ -2173,7 +2225,7 @@ async function buildModelContext(sessionId, opts = {}) {
         content: `${segHeader(anchorSeg)}\n${anchorSeg.content}`
       }));
     }
-    if (latestSeg) {
+    if (latestSeg && shouldInjectSummary) {
       summarySection.push(withCacheControl({
         role: 'user',
         content: `${segHeader(latestSeg)}\n${latestSeg.content}`
@@ -2190,19 +2242,20 @@ async function buildModelContext(sessionId, opts = {}) {
     for (const r of t.replies) liveSection.push({ role: 'assistant', content: r.content });
   }
 
-  // 动态时间叙事：插到当前用户消息之前、所有缓存断点之后（时间心跳/恢复对话/时间提问时注入）。
-  // 必须用 user 角色 + 【当前时间】标记——OpenRouter 会把数组里的 system 角色消息提升合并进顶层 system，
+  // 动态注入：所有注入块一律放 live 区开头——背景位，且同轮最多 3 块。
+  // 2026-08-21 程芥：注入块原先全部塞在「她当前消息紧前面」，模型把它当「刚说的话」，
+  // 优先级压过她最后那句 → 不接上一句、跳到注记内容。挪到 live 开头后，她最后那句
+  // 永远是离响应最近的真实用户消息，注记只是远背景。同轮上限再收住 resume 轮的"上下文重载"。
+  // 丢块优先级：想起→残留→天气→时间→桥（先丢「旧话题搬运工」，保「当下/跨会话」）。
+  // 必须用 user 角色 + 标记——OpenRouter 会把数组里的 system 角色消息提升合并进顶层 system，
   // 那会让 system 前缀每次请求都变，缓存再次失效。user 角色则原地保留，且 attachImage 仍能认到最后的当前消息。
+  const dynamicBlocks = []; // {prio, tag, msg}  prio 高者先保留
   if (injectTime) {
     let timeBody = '';
     if (timeNotice) timeBody += `【当前时间】\n${timeNotice}`;
     if (keepaliveNotes) timeBody += keepaliveNotes;   // 自带【自由活动记录】标签
-    const timeMsg = { role: 'user', content: timeBody };
-    if (liveSection.length > 0) {
-      liveSection.splice(liveSection.length - 1, 0, timeMsg);
-    } else {
-      liveSection.push(timeMsg);
-    }
+    if (timeBody) dynamicBlocks.push({ prio: 4, tag: 'time', msg: { role: 'user', content: timeBody } });
+    if (residueLine) dynamicBlocks.push({ prio: 2, tag: 'residue', msg: { role: 'user', content: residueLine } });
     // 记录报时时间：时间心跳从这次起算（1 小时 / 时刻段变化后才会再报）
     try {
       await supabase.from('sessions').update({ last_time_notice_at: new Date(nowMs).toISOString() }).eq('id', sessionId);
@@ -2211,23 +2264,21 @@ async function buildModelContext(sessionId, opts = {}) {
     }
   }
 
-  // 天气感知注入：感知不是通知——weatherNotice 只在天气变了/心跳/恢复对话时为非空，其余轮不重复给。
-  if (weatherNotice) {
-    const wMsg = { role: 'user', content: `【她那边】\n${weatherNotice}` };
-    if (liveSection.length > 0) liveSection.splice(liveSection.length - 1, 0, wMsg);
-    else liveSection.push(wMsg);
-  }
+  // 天气感知注入：感知不是通知——weatherNotice 只在首句/隔很久回来时非空，其余轮不重复给。
+  if (weatherNotice) dynamicBlocks.push({ prio: 3, tag: 'weather', msg: { role: 'user', content: `【她那边】\n${weatherNotice}` } });
 
   // —— 第④b 注意力：按当前话题唤起记忆（提及闸/牵挂闸命中才注入；与时间叙事独立） ——
   let attentionInjected = false;
   let attentionHits = 0;
+  let attentionMsg = null;
   if (opts.userMessage && !opts.keepalive && opts.memory !== false) {
     try {
       const attention = await getAttentionMaterial(sessionId, opts.userMessage, opts);
       if (attention && attention.text) {
-        const attMsg = { role: 'user', content: `【想起】\n${attention.text}` };
-        if (liveSection.length > 0) liveSection.splice(liveSection.length - 1, 0, attMsg);
-        else liveSection.push(attMsg);
+        // 2026-08-21 程芥：思考链里沈晏把【想起】当「她给我贴了两段摘要」——角色错位。
+        // 注入块是 user 角色（OpenRouter 会把 system 提到最顶、assistant 会破 cache），
+        // 所以只能靠前缀 + 系统【背景纪律】把它的归属钉死：这是他自己心底的旧记忆，不是她发的。
+        attentionMsg = { role: 'user', content: `【你心底想起的旧事 · 是你自己的记忆，不是她发来的】\n${attention.text}` };
         attentionInjected = true;
         attentionHits = attention.hits;
         console.log(`🔔 [注意力] session=${sessionId} hits=${attention.hits} · ${attention.text.replace(/\n/g, ' ⏎ ').slice(0, 180)}`);
@@ -2235,6 +2286,29 @@ async function buildModelContext(sessionId, opts = {}) {
     } catch (e) {
       console.warn('⚠️ 注意力注入异常:', e.message);
     }
+  }
+  if (attentionInjected) dynamicBlocks.push({ prio: 1, tag: `attention(${attentionHits})`, msg: attentionMsg });
+
+  // —— 永无岛出入桥：入岛来路 / 离岛回望（跨岛边界才注入，背景不是话）——
+  // 由 handleChat 在跨岛那一轮算出 opts.arrivalNote / opts.returnNote，这里原样摆进背景区。
+  const bridgeNotes = [];
+  if (opts.arrivalNote) bridgeNotes.push({ role: 'user', content: opts.arrivalNote });
+  if (opts.returnNote) bridgeNotes.push({ role: 'user', content: opts.returnNote });
+  for (const n of bridgeNotes) dynamicBlocks.push({ prio: 5, tag: 'bridge', msg: n });
+
+  // 同轮上限 3：prio 降序保留前 3，其余丢弃
+  dynamicBlocks.sort((a, b) => b.prio - a.prio);
+  const droppedBlocks = dynamicBlocks.slice(3).map(b => b.tag);
+  const keptBlocks = dynamicBlocks.slice(0, 3);
+  for (const { msg } of keptBlocks) {
+    if (liveSection.length > 0) liveSection.splice(0, 0, msg);
+    else liveSection.push(msg);
+  }
+
+  // 观测：本次注入的动态块 + 丢弃块 + 她最后一句（诊断「前文跳/不接上一句」用，Zeabur 日志可见）
+  const dynamicInjected = keptBlocks.map(b => b.tag);
+  if (dynamicInjected.length) {
+    console.log(`🧩 [动态注入] session=${sessionId} blocks=${dynamicInjected.join(',')}${droppedBlocks.length ? ` dropped=${droppedBlocks.join(',')}` : ''} last_msg=${String(opts.userMessage || '').replace(/\n/g, ' ').slice(0, 40)}`);
   }
 
   // —— 跨 session 流水（默认关：实测命中率掉得离谱 + 挤占 8k 预算，用户 08-16 决定关）——
@@ -2401,16 +2475,20 @@ async function summarizeViaDeepSeek(text) {
         return null;
       }
       const data = await res.json();
-      const content = data.choices?.[0]?.message?.content;
-      if (content) return content;
-      // content 为空：多半是 reasoning 吃光预算，重试一次
-      console.warn(`⚠️ 摘要返回空内容（attempt ${attempt}/2，finish_reason=${data.choices?.[0]?.finish_reason}）`);
+      const choice = data.choices?.[0];
+      const content = choice?.message?.content;
+      const finished = choice?.finish_reason;
+      // 交接文档（LLM缓存与上下文策略）§5：finish_reason=length 的截断摘要绝不能当成功提交——
+      // cursor 前进会把那一段 raw 原文永久藏进半截摘要后面（最危险错误）。只认 finish_reason=stop。
+      // content 空多半是 reasoning 吃光 max_tokens；content 非空但 length = 真截断。两种情况都重试，再不行 fail-open。
+      if (content && finished === 'stop') return content;
+      console.warn(`⚠️ 摘要未完成（attempt ${attempt}/2，finish_reason=${finished}，content=${content ? content.length + '字' : '空'}）`);
     } catch (err) {
       console.error('💥 摘要生成异常:', err.message);
       return null;
     }
   }
-  console.warn('⚠️ 摘要两次尝试仍为空，本轮跳过（下次对话会自动重试）');
+  console.warn('⚠️ 摘要两次尝试仍未完成，本轮跳过（fail-open，raw 继续进投影，下次对话自动重试）');
   return null;
 }
 
@@ -2734,8 +2812,9 @@ function buildInnerStateNarrative(inner) {
 //   messages 表 = 历史（永久保留，演化永远在逐字记录里）
 //   Ombre 桶 = 当前投影（不重复建桶、无变化不动、变化只动该处）
 //   memory_topics 表 = 主题→桶→上次内容的索引，让差分写回免重搜 Ombre
-// 标记长在记忆上（路一）：桶名/正文以【实】/【悬】/【空】开头 + 【证据】引文
-//   + tag g:实|悬|空。无标记记忆视为不可靠（安全网，堵"裸记忆默认当真的"）。
+// 标记长在记忆上（路一）：grounding 分级存 memory_topics.grounding 结构化字段（视觉不可见）。
+// 正文自然陈述、无标签框、无引文尾巴（2026-08-20/23 程芥三改：标签放记忆里不好看）。
+// 无标记 = 低可信仍是安全网——分级由字段承载 + 注入时投影，堵"裸记忆默认当真的"。
 function buildMemoryWritePrompt(nowText) {
   return `你是长期记忆编辑者。判断最近一小窗对话里，有没有值得写进长期记忆的事。长期记忆是"平时想起她"用的浓缩事实层。
 现在是 ${nowText}。
@@ -2896,7 +2975,7 @@ function findExistingMemoryTopic(topics, topic) {
 }
 
 // 记忆正文自然化（2026-08-20 程芥改）：记忆只留自然陈述——像人的记忆，不像证据链。
-// grounding 判定存 memory_topics.grounding 字段 + hold 时 tags 里的 g:实|悬（内部安全网不丢）；
+// grounding 判定存 memory_topics.grounding 字段（2026-08-23：hold 不再写 g: 标签，桶里只剩自然陈述）；
 // evidence（她原话逐字）单独存 memory_topics.evidence 列；逐字诚实由 recall（messages 表精确回溯）负责。
 // 正文不再拼任何标签框或引文尾巴——上次拼「（她原话：「…」）」每条都像注释，还是不像记忆。
 function buildMarkedContent(item) {
@@ -2918,8 +2997,8 @@ async function holdNewMemory(item, marked) {
   // 修复：Ombre hold 的 tags 是 string（不是数组），传数组会 validation error → hold 从未成功
   const resp = await callOmbreTool('hold', {
     content: marked,
-    tags: [`g:${item.grounding}`, item.topic].join(','),
-    why_remembered: `长期记忆编辑者写入。grounding=${item.grounding}，topic=${item.topic}`
+    tags: item.topic,
+    why_remembered: `长期记忆编辑者写入。topic=${item.topic}`
   });
   const bid = extractBucketIdFromHoldResponse(resp);
   console.log(`🌿 记忆新建「${item.topic}」(${item.grounding}) bucket_id=${bid || '(未解析)'}`);
@@ -4734,6 +4813,99 @@ function attachImage(messages, image) {
   return out;
 }
 
+// ===== 永无岛出入桥 =====
+// 岛 = 有专属 settings 行的会话（POST /api/sessions long_talk 建房时写的那行，见 /api/neverland）。
+// 主对话 = 没有 settings 行的普通会话。跨岛边界才注入注记，时间水位天然去重。
+
+async function isIslandSession(sessionId) {
+  if (!sessionId || sessionId === 'global') return false;
+  const { data } = await supabase
+    .from('settings')
+    .select('session_id')
+    .eq('session_id', sessionId)
+    .maybeSingle();
+  return !!data;
+}
+
+// 主对话（非岛会话）最近一条用户消息 —— 登岛来路的「来之前在聊」
+async function findMainTail() {
+  const { data: sp } = await supabase
+    .from('settings')
+    .select('session_id')
+    .neq('session_id', 'global');
+  const islandIds = new Set((sp || []).map((r) => r.session_id));
+  const { data } = await supabase
+    .from('messages')
+    .select('session_id, content')
+    .eq('role', 'user')
+    .eq('visible', true)
+    .order('created_at', { ascending: false })
+    .limit(60);
+  for (const m of data || []) {
+    if (!islandIds.has(m.session_id)) {
+      return String(m.content || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+    }
+  }
+  return null;
+}
+
+// 主对话最后一次说话之后、最近更新过的一座岛 + 它的内容摘要（离岛回望）
+async function findRecentIslandVisit(mainSessionId) {
+  const { data: main } = await supabase
+    .from('sessions')
+    .select('updated_at, created_at')
+    .eq('id', mainSessionId)
+    .maybeSingle();
+  if (!main) return null;
+  const mainLast = main.updated_at ? new Date(main.updated_at).getTime() : new Date(main.created_at).getTime();
+
+  const { data: sp } = await supabase
+    .from('settings')
+    .select('session_id')
+    .neq('session_id', 'global');
+  const ids = (sp || []).map((r) => r.session_id);
+  if (!ids.length) return null;
+
+  const { data: sessions } = await supabase
+    .from('sessions')
+    .select('id, name, updated_at')
+    .in('id', ids);
+  let best = null, bestTs = 0;
+  for (const s of sessions || []) {
+    const ts = s.updated_at ? new Date(s.updated_at).getTime() : 0;
+    if (ts > mainLast && ts > bestTs) { best = s; bestTs = ts; }
+  }
+  if (!best) return null;
+
+  // 岛上内容：优先最新分段摘要（append-only 现成货，不额外烧 LLM）；没有就取最后一条用户消息
+  let digest = '';
+  try {
+    const { data: seg } = await supabase
+      .from('summary_segments')
+      .select('content')
+      .eq('session_id', best.id)
+      .order('period_start', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (seg && seg.content) digest = String(seg.content).replace(/\s+/g, ' ').trim().slice(0, 220);
+  } catch (e) { /* 摘要读取失败走 fallback */ }
+  if (!digest) {
+    try {
+      const { data: lastMsg } = await supabase
+        .from('messages')
+        .select('content')
+        .eq('session_id', best.id)
+        .eq('role', 'user')
+        .eq('visible', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (lastMsg) digest = String(lastMsg.content || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    } catch (e) { /* ignore */ }
+  }
+  return { digest };
+}
+
 // 抽为独立函数，/sessions/:id/chat 和 /api/chat 共用
 async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
   opts.degraded = new Set(); // 本次请求的降级标记，随 recordRequestStat 落 memory_degraded
@@ -4765,6 +4937,31 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
     role: 'user',
     content
   });
+
+  // —— 永无岛出入桥：跨岛边界才注入 ——
+  // 岛首条消息 = 入岛来路（他知道你们为什么一起在这里）；主对话收到 = 离岛回望（他知道你们刚去过岛上）。
+  // 回望用时间水位天然去重：岛最后活跃晚于主对话最后一次说话才注入，聊起来后不再重复。
+  // memory off / tools off 时保持新鲜（桥接注记也跟着记忆链路一起关）。
+  if (opts.memory !== false && opts.tools !== 'off') {
+    try {
+      const isIsland = await isIslandSession(sessionId);
+      if (isFirstMessage && isIsland) {
+        const tail = await findMainTail();
+        opts.arrivalNote = `【登岛来路】她带着你离开主对话，来永无岛一起待会儿。${tail ? `\n来之前在聊：「${tail}」` : ''}`;
+        console.log(`⚓ [登岛来路] session=${sessionId}`);
+      } else if (!isIsland) {
+        const visit = await findRecentIslandVisit(sessionId);
+        if (visit) {
+          opts.returnNote = visit.digest
+            ? `【永无岛的回忆】你们刚离开永无岛。岛上聊过：「${visit.digest}」`
+            : `【永无岛的回忆】你们刚离开永无岛，在岛上待了一阵。`;
+          console.log(`🏝 [离岛回望] main=${sessionId} · ${visit.digest ? visit.digest.slice(0, 60) : '(无摘要)'}`);
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ 永无岛出入桥注记异常（不阻塞主流程）:', e.message);
+    }
+  }
 
   // 2. 构建消息数组 + 附图片（Context Assembly 已替代旧的 compressHistory 热路径压缩）
   //    opts.userMessage 传原文（注意力匹配用她的话，别拿整篇文档去翻记忆）；文档全文已随消息进上下文
