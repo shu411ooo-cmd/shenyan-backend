@@ -12,8 +12,12 @@ const supabase = createClient(
 );
 
 const app = express();
-// CORS：同源前端不需要跨域头，但保留宽松 cors 兼容（同源请求不受 CORS 影响）。
-app.use(cors());
+// CORS：同源前端不需要跨域头；允许带凭证的跨域（本地 dev preview 跨端口测登录），
+// 生产同源不受影响。凭证模式要显式 credentials:true 才带 Access-Control-Allow-Credentials。
+app.use(cors({
+  origin: true,                // 回显请求 Origin（本地 dev 任意端口；生产同源无影响）
+  credentials: true,           // 允许带 cookie 的跨域请求（登录门需要）
+}));
 // 前端静态托管：dist 拷进 public/，同域名出（shenyan.zeabur.app），避免 *.vercel.app 被墙
 // 注意：/api/* 路径下没有静态文件，会自然 fall through 到下面路由，互不干扰。
 // 缓存策略：index.html 永远回源（发布后立刻生效）；JS/CSS 是 Vite 哈希产物 → 永久缓存；
