@@ -98,7 +98,7 @@ keepalive v1 唤醒是「三选一动作」（message / diary / none），醒来
 - 念头池入池来源：哪些对话内容自动入池、入池门槛（防噪声）。
 - 驱动条 3 维的初始值 / 缓动常数（参照源文档，按沈晏节奏整定）。
 - 念头池是否要 gating（源文档每个子系统一个开关、默认关）。
-- 留痕的独立时间线：表结构 / 与 keepalive_log 的关系。**注意：唤醒产物从「一行一唤醒一 action」变成「一次唤醒可多条产物」**——keepalive_log 现在一行=一次唤醒=一个 action（message/diary/none）；多件事后要变成一次唤醒一条主记录（run_at、thoughts、驱动条/念头池快照）+ 若干条产物记录（dream/message/diary 各一条或多条）。runKeepalive 现在的单 action JSON 输出（{thoughts, action, source, content}）也要跟着变。
+- ~~留痕的独立时间线~~ **第⑥b（2026-08-23）已落地路线1**：唤醒产物从「一行一唤醒一 action」变成「一次唤醒可多条产物」已做——runKeepalive 输出改 `actions` 数组（dream+message 顺序件数归他），keepalive_log 一条主记录内嵌 `actions` jsonb 快照（主记录 action/content/source 保留兼容旧读取）。**完整拆表（主记录 + 产物表，按产物粒度回看）仍是开放项**：等真实数据告诉你「沈晏一次唤醒真会做 2-3 件事、组合有规律」，再拆——表照着真实形态建，不照着理想建。
 
 ## 8. 铁律（继承）
 
