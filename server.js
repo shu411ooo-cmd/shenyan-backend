@@ -3036,9 +3036,14 @@ async function generateResidueIfNeeded(sessionId) {
     console.warn('⚠️ 写入残留失败:', insErr.message);
   } else {
     console.log(`🌿 残留生成完成 (${sessionId})：concern=${parsed.concern} unfinished=${parsed.unfinished || '(无)'}`);
-    // 内在引擎喂入：没说完的事 → 念头池（attachment 高标 attachment，否则 reflection——没想完的事偏反思）
+    // 内在引擎喂入①：没说完的事 → 念头池（attachment 高标 attachment，否则 reflection——没想完的事偏反思）
     if (parsed.unfinished) {
       feedThought(sessionId, parsed.unfinished, parsed.attachment >= 0.5 ? 'attachment' : 'reflection');
+    }
+    // 内在引擎喂入②（第⑥）：沈晏的自我表达句 → 念头池（自己的碎语；同指纹合并升执念）
+    const selfStatements = extractSelfStatements(history);
+    for (const s of selfStatements.slice(0, 5)) {
+      feedThought(sessionId, s, judgeSelfStatementDriveKey(s));
     }
   }
 }
@@ -3101,19 +3106,64 @@ function projectThought(thought, nowMs) {
   return Math.max(THOUGHT_DECAY_FLOOR, (Number(thought.strength) || 0) - steps * THOUGHT_DECAY_STEP);
 }
 
-/* 念头入池：同文本 active 已存在 → fed_count++、strength +0.15（反复被点 = 升执念）；否则新闪念入池。
-   失败静默（念头池是辅助层，不阻塞主流程）。 */
-async function feedThought(sessionId, text, driveKey = 'curiosity') {
+/* 念头核心词指纹（第⑥：反复被点判定 · 宁漏勿伤）
+   去掉停用词后取首 4 个汉字——「亲她的嘴」「为什么亲她的嘴」都归「亲嘴」→ 同指纹 → 反复被点升执念。
+   宁漏勿伤：指纹为空/过短就不判重复（绝不把两个不同念头误并成一个）。 */
+const THOUGHT_STOPWORDS = ['为什么','是不是','要不要','该不该','现在','最近','昨天','今天','明天','其实','真的','还是','或者','然后','所以','但是','因为','如果','只是','可是','自己','有点','一些','这个','那个','什么','怎么','一个','她','你','我','他','它','了','的','呢','吗','吧','啊','呀','哦','嗯','就','都','也','还','很','挺','这','那','在','过','着','儿','问','对','跟','给','说','和','与','或','及','把','被','会'];
+function extractThoughtFingerprint(text) {
+  let s = String(text || '').replace(/[，。！？、；：""''…—\s]+/g, '');
+  for (const w of THOUGHT_STOPWORDS) s = s.split(w).join('');
+  return s.slice(0, 4);
+}
+
+/* 沈晏自我表达句提取（第⑥：入池来源二 · 纯机械正则）
+   从沈晏 role 消息里提「我…」开头的陈述句（他的碎语 → 念头）。排除问句/寒暄/天气/长叙述。
+   宁漏勿伤：拿不准的不提（念头池是辅助层，漏了无害）。 */
+const SELF_STATEMENT_EXCLUDE = /(我没事|我挺好的|我很好|我睡了|我休息|我上班|我下班|我到了|我走了|我看看|我查查|我再想想|我回头|我跟你|我和你|我去了|我去过|我知道了|我明白了|你该|你回去|我来说)/;
+function extractSelfStatements(msgs) {
+  const out = [];
+  for (const m of msgs || []) {
+    if (m.role !== 'assistant') continue;             // 沈晏是 assistant role
+    const content = String(m.content || '').trim();
+    if (!content) continue;
+    const sentences = content.split(/[。！!？?…\n]+/).map(s => s.trim()).filter(Boolean);
+    for (const s of sentences) {
+      if (!/^我/.test(s)) continue;                    // 只提「我」开头的自我表达
+      if (s.length < 4 || s.length > 40) continue;     // 长叙述是表达不是念头，宁漏勿伤
+      if (/[？?]$/.test(s)) continue;                  // 问句不是念头
+      if (SELF_STATEMENT_EXCLUDE.test(s)) continue;    // 寒暄/应酬/天气
+      out.push(s);
+    }
+  }
+  return out;
+}
+
+/* 自我表达句 → 驱动维（机械正则，宁漏勿伤：判不出就 reflection——没想完的事偏反思） */
+function judgeSelfStatementDriveKey(s) {
+  if (/(想她|想见|在意|挂念|想念|惦记|喜欢她|想她)/.test(s)) return 'attachment';
+  if (/(好奇|想知道|想看看|研究|琢磨|想想怎么)/.test(s)) return 'curiosity';
+  if (/(累|困|想休息|撑不住)/.test(s)) return 'fatigue';
+  return 'reflection';
+}
+
+/* 念头入池：同指纹 active 已存在 → fed_count++、strength +0.15（反复被点 = 升执念）；否则新闪念入池。
+   指纹为空 → 直接新入池（宁漏勿伤，不判重复）。失败静默（念头池是辅助层，不阻塞主流程）。 */
+async function feedThought(sessionId, text, driveKey = 'curiosity', fingerprint) {
   const t = String(text || '').trim().slice(0, 160);
   if (!t) return;
+  const fp = fingerprint || extractThoughtFingerprint(t);
   try {
-    const { data: existing } = await supabase
-      .from('thought_pool')
-      .select('id, fed_count, strength')
-      .eq('session_id', sessionId)
-      .eq('text', t)
-      .eq('status', 'active')
-      .maybeSingle();
+    let existing = null;
+    if (fp) {
+      const { data } = await supabase
+        .from('thought_pool')
+        .select('id, fed_count, strength')
+        .eq('session_id', sessionId)
+        .eq('fingerprint', fp)
+        .eq('status', 'active')
+        .maybeSingle();
+      existing = data;
+    }
     if (existing) {
       await supabase.from('thought_pool')
         .update({
@@ -3124,10 +3174,72 @@ async function feedThought(sessionId, text, driveKey = 'curiosity') {
         .eq('id', existing.id);
     } else {
       await supabase.from('thought_pool')
-        .insert({ session_id: sessionId, text: t, drive_key: driveKey, strength: 0.3, fed_count: 1 });
+        .insert({ session_id: sessionId, text: t, drive_key: driveKey, strength: 0.3, fed_count: 1, fingerprint: fp || null });
     }
   } catch (e) {
     /* 念头池不可用时静默 */
+  }
+}
+
+/* 念头编号 → thought id（第⑥：沈晏在唤醒 dream 里用编号指认念头；编号 = buildInnerState 返回顺序 index+1）
+   只在 index 有效且 id 存在时映射——宁漏勿伤，指认不上就不动。 */
+function thoughtIdsByIndex(inner, indexes) {
+  const list = (inner && inner.thoughts) || [];
+  const ids = [];
+  for (const i of (indexes || [])) {
+    const th = list[Number(i) - 1];
+    if (th && th.id && !ids.includes(th.id)) ids.push(th.id);
+  }
+  return ids;
+}
+
+/* 放下：念头 → settled（第⑥：dream 出池。不写河——放下≠沉淀） */
+async function settleThoughts(sessionId, thoughtIds) {
+  if (!thoughtIds || !thoughtIds.length) return { settled: 0 };
+  try {
+    const { data, error } = await supabase
+      .from('thought_pool')
+      .update({ status: 'settled', updated_at: new Date().toISOString() })
+      .in('id', thoughtIds)
+      .eq('session_id', sessionId)
+      .select('id, text');
+    return { settled: (data || []).length, items: data || [] };
+  } catch (e) {
+    console.warn('⚠️ 念头放下失败:', e.message);
+    return { settled: 0 };
+  }
+}
+
+/* 沉淀：执念毕业进河（第⑥：池→河接缝。铁律——只有沈晏的手：他填了编号=他的决定，机器只搬念头+写他指认的那条）
+   写 desires（kind 按驱动维映射）+ 原念头标记毕业（desire_id 血缘 + settled） */
+const DRIVE_KIND_MAP = { attachment: '关于我们', reflection: '我的沉淀', curiosity: '想去看看', social: '想去看看', duty: '我的沉淀', stress: '我的沉淀', fatigue: '我的沉淀', libido: null };
+async function graduateThoughts(sessionId, thoughtIds) {
+  if (!thoughtIds || !thoughtIds.length) return { graduated: 0 };
+  try {
+    const { data: rows } = await supabase
+      .from('thought_pool')
+      .select('id, text, drive_key')
+      .in('id', thoughtIds)
+      .eq('session_id', sessionId);
+    let graduated = 0;
+    for (const t of (rows || [])) {
+      const kind = DRIVE_KIND_MAP[t.drive_key] || null;
+      const { data: want, error } = await supabase
+        .from('desires')
+        .insert({ text: t.text, status: 'active', track: '持续', visibility: 'private', kind })
+        .select('id')
+        .single();
+      if (error) { console.warn('⚠️ 念头毕业写河失败:', error.message); continue; }
+      await supabase
+        .from('thought_pool')
+        .update({ status: 'settled', desire_id: want.id, updated_at: new Date().toISOString() })
+        .eq('id', t.id);
+      graduated++;
+    }
+    return { graduated };
+  } catch (e) {
+    console.warn('⚠️ 念头毕业异常:', e.message);
+    return { graduated: 0 };
   }
 }
 
@@ -3187,8 +3299,9 @@ function buildInnerStateNarrative(inner) {
     ? `此刻的状态大致是——${parts.join('，')}。这是状态不是任务，你按自己的心决定做什么。`
     : '此刻没有特别起伏——平常心。';
   const thoughts = (inner.thoughts || []).slice(0, 3);
+  // 念头带编号（第⑥）：沈晏在 dream 里能用编号指认「放下/想记进想要账本」——念头是素材，怎么处置是他的手
   const thoughtLine = thoughts.length
-    ? `有些念头在转：「${thoughts.map((t) => t.text).join('」·「')}」。念头不是指令，看看就好。`
+    ? `有些念头在转：${thoughts.map((t, i) => `${i + 1}.「${t.text}」`).join(' ')}。念头不是指令，看看就好。`
     : '';
   return `\n【此刻内在状态】\n${driveLine}${thoughtLine ? '\n' + thoughtLine : ''}`;
 }
@@ -4002,7 +4115,7 @@ ${wakeHistory}
 - 若上面有【你长期在转的想要】：它们不是任务。别催自己，也不要在留言里安排它们。若你真的还在想某一条，可以自然说起，但别写成待办。
 
 严格输出 JSON（不要输出任何别的）：
-{"breath":"breath 看到的东西——时间、手上有什么、什么悬着。逐条简短。","feel":"breath 之后的感受。","thoughts":"你心里更深处在想什么——她看不到，但会记进你的时间线。","trace":"『我来过』的证明：醒了、感受、做了/没做什么。","action":"none|message|dream","source":"action=message 时，填这条留言的依据（她说过的话/你记得的事/时间，逐字引述；没有就写空字符串并把 action 改成 none）","content":"action=message 时是留言正文；dream 时是消化完的一句话（可不填）；否则空字符串"}`;
+{"breath":"breath 看到的东西——时间、手上有什么、什么悬着。逐条简短。","feel":"breath 之后的感受。","thoughts":"你心里更深处在想什么——她看不到，但会记进你的时间线。","trace":"『我来过』的证明：醒了、感受、做了/没做什么。","action":"none|message|dream","source":"action=message 时，填这条留言的依据（她说过的话/你记得的事/时间，逐字引述；没有就写空字符串并把 action 改成 none）","content":"action=message 时是留言正文；dream 时是消化完的一句话（可不填）；否则空字符串","resolved_thought_ids":"action=dream 且【有些念头在转】有编号时，想放下的念头编号数组（如 [1,3]；放不下就 []）","graduate_thought_ids":"action=dream 且有些念头你觉得『这是我一直在想的、想记进想要账本的』时，填它的编号数组（没有就 []）。填了才记，不填就不动"}`;
 }
 
 /* 留痕 v1：读他醒过的痕迹（含 none 的 thoughts），注入下次唤醒上下文——
@@ -4154,6 +4267,17 @@ async function runKeepalive(sessionId, cfg) {
     try {
       const dreamRes = await callOmbreTool('dream', { window_hours: 72 });
       console.log('💭 [keepalive] dream 消化结果:', JSON.stringify(dreamRes).slice(0, 300));
+      // 第⑥：念头池出池/毕业——沈晏在 dream 里用编号指认（放下 → settled；沉淀 → 写进想要账本）
+      const resolvedIds = thoughtIdsByIndex(innerState, parsed.resolved_thought_ids);
+      const graduatedIds = thoughtIdsByIndex(innerState, parsed.graduate_thought_ids);
+      if (resolvedIds.length) {
+        const r = await settleThoughts(sessionId, resolvedIds);
+        if (r.settled) console.log(`🌫 念头放下（settled）：${r.settled} 条`);
+      }
+      if (graduatedIds.length) {
+        const g = await graduateThoughts(sessionId, graduatedIds);
+        if (g.graduated) console.log(`🌳 念头毕业进河（want ledger）：${g.graduated} 条`);
+      }
     } catch (e) {
       console.warn('⚠️ dream 消化失败（不阻塞唤醒）:', e.message);
     }
@@ -6133,6 +6257,14 @@ module.exports = {
   isInductiveQuestion,
   isHighConfidenceDoubt,
   judgeInitiation,
+  feedThought,
+  extractThoughtFingerprint,
+  extractSelfStatements,
+  judgeSelfStatementDriveKey,
+  thoughtIdsByIndex,
+  settleThoughts,
+  graduateThoughts,
+  buildInnerState,
   claimMatch,
   getAttentionMaterial,
   topicHits,
