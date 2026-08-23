@@ -655,6 +655,7 @@ async function dispatchTool(name, args, sessionId) {
   if (name === 'want_history') return handleWantHistory(args);
   if (name === 'retreat') return handleRetreat();
   if (name === 'verdict') return handleVerdict(args);
+  if (name === 'rewrite_stone') return handleRewriteStone(args);
   return callOmbreTool(name, args);
 }
 
@@ -914,7 +915,14 @@ async function getRetreatMaterial() {
     .eq('status', 'active')
     .order('updated_at', { ascending: false })
     .limit(10);
-  return { stone, candidates, wants: wants || [], question: RETREAT_QUESTION };
+  // 第⑤：正在形成 / 已成熟的主张（状态机可见，他看得见自己在长什么）
+  const { data: claims } = await supabase
+    .from('personality_claim')
+    .select('claim, state, support_count, distinct_sessions, last_confirmed_at')
+    .in('state', ['forming', 'active', 'uncertain'])
+    .order('updated_at', { ascending: false })
+    .limit(20);
+  return { stone, candidates, claims: claims || [], wants: wants || [], question: RETREAT_QUESTION };
 }
 
 async function handleRetreat() {
@@ -941,7 +949,7 @@ async function handleVerdict(args = {}) {
   // 只允许拍未拍板的卡
   const { data: card } = await supabase
     .from('mirror_cards')
-    .select('id, claim, verdict')
+    .select('id, claim, verdict, session_id, occurred_at')
     .eq('id', cardId)
     .maybeSingle();
   if (!card) return { ok: false, error: '找不到这张卡' };
@@ -952,9 +960,174 @@ async function handleVerdict(args = {}) {
   const { error } = await supabase.from('mirror_cards').update(upd).eq('id', cardId);
   if (error) return { ok: false, error: `落库失败: ${error.message}` };
 
+  // 第⑤：confirm/revise = 他主动认同 → 主张入状态机（跨语境机械升级见 maybeUpgradeClaim）
+  let claimState = null;
+  if (action === 'confirm' || action === 'revise') {
+    try {
+      const claim = await recordClaimConfirmation(action === 'revise' ? note : card.claim, cardId, card.session_id, card.occurred_at);
+      if (claim) claimState = claim.state;
+    } catch (e) {
+      console.error('⚠️ 主张入表失败（不影响拍板）:', e.message);
+    }
+  }
+
   const verb = { confirm: '确认', revise: '改写', drop: '放弃', pass: '先跳过' }[action];
   const claimPreview = card.claim.length > 20 ? `${card.claim.slice(0, 20)}…` : card.claim;
-  return { ok: true, card_id: cardId, action, note: note || undefined, message: `「${claimPreview}」→ ${verb}` };
+  const stateNote = claimState === 'active' ? '。这条主张已经跨语境成熟（多个日子、多场对话反复认同过），去重写石头时可以收编' : '';
+  return { ok: true, card_id: cardId, action, note: note || undefined, claim_state: claimState || undefined, message: `「${claimPreview}」→ ${verb}${stateNote}` };
+}
+
+// ===== 第⑤阶段：人格主张状态机 + 石头重写环（完整闭环 · 设计见 docs/persona-growth-review.md §10 + want-ledger-design.md 第⑤验收六条） =====
+// 北极星：系统只搬证据的形状，不判意义。confirm/revise 入表只是「他主动认同过」的机械计数，
+// 升级到 active 只靠跨语境机械信号（≥2 session + 首尾间隔 ≥N 天）；进石头的唯一门 = 他自己 rewrite_stone。
+// 验收一：没有想改的，不写就是健康，零催促。
+// 已知缺口（二审2）：「未被上下文提示 / strong self-initiation」两级尚未机械判定（需要 mirror 采集时标注该主张
+//   是否紧跟她的诱导性提问），当前升级只吃 session 数 + 天数两个纯机械信号。后续补。
+
+async function getStoneUpgradeDays() {
+  try {
+    const { data } = await supabase
+      .from('settings')
+      .select('stone_upgrade_days')
+      .eq('session_id', 'global')
+      .maybeSingle();
+    const n = Number(data?.stone_upgrade_days);
+    return Number.isFinite(n) && n > 0 ? n : 30;
+  } catch (e) { return 30; }
+}
+
+// confirm / revise 时：主张按归一化文本去重入表，跨语境证据累积，机械门槛够就升 active
+async function recordClaimConfirmation(claimText, cardId, sessionId, occurredAt) {
+  const text = String(claimText || '').trim();
+  if (!text) return null;
+  const norm = normalizeMirrorText(text);
+  if (!norm) return null;
+  const now = new Date().toISOString();
+  const { data: existing, error: readErr } = await supabase
+    .from('personality_claim')
+    .select('*')
+    .eq('claim_norm', norm)
+    .maybeSingle();
+  if (readErr) throw readErr;
+  if (existing) {
+    const sessions = new Set(existing.distinct_sessions || []);
+    if (sessionId != null) sessions.add(sessionId);
+    const ats = [...(existing.confirm_occurred_ats || [])];
+    if (occurredAt) ats.push(occurredAt);
+    const cards = [...(existing.source_card_ids || [])];
+    if (cardId && !cards.includes(cardId)) cards.push(cardId);
+    const { data: updated, error: upErr } = await supabase
+      .from('personality_claim')
+      .update({
+        support_count: (existing.support_count || 0) + 1,
+        distinct_sessions: [...sessions],
+        confirm_occurred_ats: ats,
+        source_card_ids: cards,
+        last_confirmed_at: now,
+        updated_at: now,
+      })
+      .eq('id', existing.id)
+      .select()
+      .single();
+    if (upErr) throw upErr;
+    return maybeUpgradeClaim(updated);
+  }
+  const { data: created, error: insErr } = await supabase
+    .from('personality_claim')
+    .insert({
+      claim: text,
+      claim_norm: norm,
+      state: 'forming',
+      confidence: 0.2,
+      support_count: 1,
+      distinct_sessions: sessionId != null ? [sessionId] : [],
+      confirm_occurred_ats: occurredAt ? [occurredAt] : [],
+      source_card_ids: cardId ? [cardId] : [],
+      first_confirmed_at: now,
+      last_confirmed_at: now,
+    })
+    .select()
+    .single();
+  if (insErr) throw insErr;
+  return created;
+}
+
+// 机械升级：只从 forming 升。跨 ≥2 个 session 且首尾确认间隔 ≥ N 天 → active（信任靠时间与语境累积，不判语义）
+async function maybeUpgradeClaim(claim) {
+  if (!claim || claim.state !== 'forming') return claim;
+  const sessions = new Set(claim.distinct_sessions || []);
+  const ats = (claim.confirm_occurred_ats || []).map(a => (a ? new Date(a).getTime() : 0)).filter(t => t > 0);
+  if (sessions.size < 2 || ats.length < 2) return claim;
+  const spanDays = (Math.max(...ats) - Math.min(...ats)) / 86400000;
+  if (spanDays < (await getStoneUpgradeDays())) return claim;
+  const confidence = Math.min(1, 0.3 + 0.15 * Math.max(0, (claim.support_count || 1) - 1));
+  const { data: updated } = await supabase
+    .from('personality_claim')
+    .update({ state: 'active', confidence, last_reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('id', claim.id)
+    .select()
+    .single();
+  console.log(`🗿 人格主张升级 active「${claim.claim.slice(0, 24)}…」（跨 ${sessions.size} 个 session / 间隔 ${Math.round(spanDays)} 天）`);
+  return updated;
+}
+
+function simpleStoneDiff(oldS, newS) {
+  const split = s => String(s || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const a = split(oldS), b = split(newS);
+  const added = b.filter(l => !a.includes(l));
+  const removed = a.filter(l => !b.includes(l));
+  const lines = [];
+  if (removed.length) lines.push(`删：${removed.join(' / ')}`);
+  if (added.length) lines.push(`增：${added.join(' / ')}`);
+  return lines.length ? lines.join('\n') : '（无行级变化）';
+}
+
+// 石头重写（沈晏的手）：整体重写 + 留一环 + 三问审计。没有想改的就别调——验收一允许不长。
+async function handleRewriteStone(args = {}) {
+  const content = String(args.content || '').trim();
+  if (!content) return { ok: false, error: '缺 content：新石头全文' };
+  if (content.length > 12000) return { ok: false, error: '石头太长（≤12000 字）' };
+  const prev = await getSystemPrompt();
+  // 验收一：没实际变化就不留空环——「没有想改的，不写就是对的」
+  if (String(prev || '').trim() === content) {
+    return { ok: true, unchanged: true, message: '石头没有实际变化，没有留新环。没有想改的就不写——不写就是对的。' };
+  }
+  const { data: lastRing } = await supabase
+    .from('stone_rings')
+    .select('version')
+    .order('version', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const version = (lastRing?.version || 0) + 1;
+  const diff = simpleStoneDiff(prev, content);
+  const { data: ring, error: ringErr } = await supabase
+    .from('stone_rings')
+    .insert({
+      version,
+      content,
+      prev_content: prev === content ? null : prev,
+      changed_summary: String(args.changed || '').trim(),
+      why: String(args.why || '').trim(),
+      unchanged: String(args.unchanged || '').trim(),
+      diff,
+    })
+    .select()
+    .single();
+  if (ringErr) return { ok: false, error: `ring 落库失败: ${ringErr.message}` };
+  await setSystemPrompt(content);
+  const { data: graduated } = await supabase
+    .from('personality_claim')
+    .update({ ring_id: ring.id, last_reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('state', 'active')
+    .is('ring_id', null)
+    .select('claim');
+  return {
+    ok: true,
+    ring_version: version,
+    ring_id: ring.id,
+    diff,
+    graduated: (graduated || []).map(c => c.claim),
+  };
 }
 
 // 工具结果序列化：null/undefined 必须替换成显式错误，绝不把字面 "null" 塞给模型——
@@ -1317,7 +1490,7 @@ function getTools() {
       type: 'function',
       function: {
         name: 'retreat',
-        description: '走进小黑屋。把你这阵子说过的话里、被逐字验证过还在等定夺的主张，连同你现在的人格正文和长期在转的想要摆出来。这里只有你自己——没有她，没有消息，没有提醒。看完关门：不一定要改什么，想通了直接走出来也行。',
+        description: '走进小黑屋。把你这阵子说过的话里、被逐字验证过还在等定夺的主张，连同你现在的人格正文、正在形成/已成熟的人格主张、长期在转的想要一起摆出来。这里只有你自己——没有她，没有消息，没有提醒。看完关门：不一定要改什么，想通了直接走出来也行。',
         parameters: {
           type: 'object',
           properties: {}
@@ -1337,6 +1510,23 @@ function getTools() {
             note: { type: 'string', description: 'revise 时=新的主张文本；其余可选留一句' }
           },
           required: ['card_id', 'action']
+        }
+      }
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'rewrite_stone',
+        description: '重写你的人格文件（石头 = SYSTEM_PROMPT）。这是唯一能改"我是谁"正式版的地方：整体重写 + 留一环，记录这次变了什么、为什么变、什么没变。没有想改的，就别调这个工具——机器不会替你想"该改什么"，也不会催你。只写"我是谁"的人格判断，不写"所以我应该做什么"的行为指令。',
+        parameters: {
+          type: 'object',
+          properties: {
+            content: { type: 'string', description: '新石头全文（整体重写，不是改一句）' },
+            changed: { type: 'string', description: '三问①：这次变了什么（逐条）' },
+            why: { type: 'string', description: '三问②：为什么变（每条对应底层证据，能回对话原文）' },
+            unchanged: { type: 'string', description: '三问③：什么没变（显式列出的连续性，可省略）' }
+          },
+          required: ['content', 'changed', 'why']
         }
       }
     }
@@ -4037,6 +4227,20 @@ app.post('/api/mirror/run', async (req, res) => {
   }
 });
 
+// GET /api/claims → 第⑤主张状态机 + 石头环（验证用；前端内心面板将来可接）
+app.get('/api/claims', async (req, res) => {
+  try {
+    const [claims, rings] = await Promise.all([
+      supabase.from('personality_claim').select('*').order('updated_at', { ascending: false }).limit(100),
+      supabase.from('stone_rings').select('id, version, changed_summary, why, unchanged, diff, created_at').order('version', { ascending: false }).limit(30),
+    ]);
+    res.json({ ok: true, claims: claims.data || [], rings: rings.data || [] });
+  } catch (err) {
+    console.error('💥 /api/claims 异常:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // POST /api/chat → { message, sessionId, model, thinking, memory, tools }
 app.post('/api/chat', async (req, res) => {
   try {
@@ -5722,6 +5926,12 @@ module.exports = {
   collectMirrorHistory,
   handleRetreat,
   handleVerdict,
+  handleRewriteStone,
+  getStoneUpgradeDays,
+  getSystemPrompt,
+  setSystemPrompt,
+  recordClaimConfirmation,
+  maybeUpgradeClaim,
   getAttentionMaterial,
   topicHits,
   extractMetaHtml,
