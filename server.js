@@ -12,6 +12,20 @@ const supabase = createClient(
 );
 
 const app = express();
+// 2026-08-23 安全补：站点访问控制（B 方案止血——外部 curl/脚本扫不动；前端同域 + 带 x-site-key）
+// 前端产物构建时用 VITE_SITE_KEY 注入（源码不躺明文），请求统一带 x-site-key 头；
+// 本中间件校验该头。本地 dev 用同一个 key（.env 的 SITE_KEY，前端 vite.config 读同名）。
+// 边界诚实：key 会在线上 JS 里（build 注入），防「路人乱扫」，不防「定向扒 JS 的攻击者」——那要 C 的登录门。
+app.use((req, res, next) => {
+  const SITE_KEY = process.env.SITE_KEY || '';
+  // 放行：健康检查、首页、静态资源、以及不带 key 时（未配置 = 先不锁，防把自己锁死）
+  if (!SITE_KEY) return next();
+  if (req.path === '/health' || req.path === '/' || req.path.startsWith('/assets/')) return next();
+  const supplied = req.headers['x-site-key'] || req.query.site_key || '';
+  if (supplied === SITE_KEY) return next();
+  return res.status(401).json({ error: 'unauthorized' });
+});
+// CORS：同源前端不需要跨域头，但保留宽松 cors 兼容（同源请求不受 CORS 影响）。
 app.use(cors());
 // 前端静态托管：dist 拷进 public/，同域名出（shenyan.zeabur.app），避免 *.vercel.app 被墙
 // 注意：/api/* 路径下没有静态文件，会自然 fall through 到下面路由，互不干扰。
