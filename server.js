@@ -4590,6 +4590,15 @@ app.get('/health', (req, res) => {
   res.json({ status: '服务正常，沈晏在线' });
 });
 
+// ===== 语音通话（ringdonut 子服务挂载）=====
+// ringdonut 从 codeberg 拉入（ringdonut/ 目录），host.js/llm.js 已填沈晏宿主实现。
+// 独立 createClient + 独立鉴权，挂进主服务复用主鉴权外层；未来可拆独立服务。
+const callRouter = require('./ringdonut/backend/routes/call').router;
+const voiceInputRouter = require('./ringdonut/backend/routes/voice-input');
+app.use('/api/call', callRouter);
+app.use('/api/voice-input', voiceInputRouter);
+console.log('📞 [call] ringdonut 语音通话路由已挂载');
+
 app.get('/db-test', async (req, res) => {
   const { data, error } = await supabase.from('sessions').select('*');
   if (error) return res.status(500).json({ error: error.message });
