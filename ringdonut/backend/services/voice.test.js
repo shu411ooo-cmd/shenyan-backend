@@ -25,6 +25,18 @@ test('settles an unpunctuated spoken line with a period', () => {
     assert.equal(cleanSpokenText('Are you all right?'), 'Are you all right?');
 });
 
+test('settles Chinese spoken lines with Chinese punctuation', () => {
+    assert.equal(cleanSpokenText('我一直都在'), '我一直都在。');
+    assert.equal(cleanSpokenText('我就在这儿，'), '我就在这儿。');
+    assert.equal(cleanSpokenText('你还好吗？'), '你还好吗？');
+    assert.equal(cleanSpokenText('真的假的……'), '真的假的……');
+});
+
+test('strips Chinese wrapper prefixes from a spoken adaptation', () => {
+    assert.equal(cleanSpokenText('```\n翻译：过来。\n```'), '过来。');
+    assert.equal(cleanSpokenText('中文：我一直都在。'), '我一直都在。');
+});
+
 test('formats recent chat context without hidden sticker instructions', () => {
     const context = formatVoiceConversationContext([
         { role: 'user', content: '[sticker:user-hug]\n[sticker-meaning]hidden instruction[/sticker-meaning]\n抱抱我' },

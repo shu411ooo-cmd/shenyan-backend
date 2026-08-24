@@ -115,13 +115,21 @@ function formatCallRecord(totalSeconds, summary) {
 function splitSpokenSegments(value, maxLength = 240) {
     const source = String(value || '').replace(/\s+/g, ' ').trim();
     if (!source) return [];
-    const sentences = source.match(/[^.!?]+(?:[.!?]+|$)/g)?.map(item => item.trim()).filter(Boolean) || [source];
+    // 中英文句读一起切：。！？. ! ? …（中文句号也能正确分句）
+    const sentences = source.match(/[^。！？.!?…]+(?:[。！？.!?…]+|$)/g)?.map(item => item.trim()).filter(Boolean) || [source];
     const segments = [];
     for (const sentence of sentences) {
         if (sentence.length <= maxLength) {
             const previous = segments[segments.length - 1];
-            if (previous && previous.length < 18 && previous.length + 1 + sentence.length <= maxLength) {
-                segments[segments.length - 1] = `${previous} ${sentence}`;
+            // 中文以句读结尾的句子已经是一句完整的话，独立成段立即开播；
+            // 英文短句（<18）保持合并，凑成自然长度。
+            const previousIsChineseComplete = previous
+                && /[㐀-鿿]/.test(previous)
+                && /[。！？…]$/.test(previous);
+            if (!previousIsChineseComplete && previous && previous.length < 18 && previous.length + 1 + sentence.length <= maxLength) {
+                // 中文句子之间不插空格（英文需要空格分隔词，中文不需要）
+                const joiner = /[㐀-鿿]/.test(previous) ? '' : ' ';
+                segments[segments.length - 1] = `${previous}${joiner}${sentence}`;
             } else {
                 segments.push(sentence);
             }

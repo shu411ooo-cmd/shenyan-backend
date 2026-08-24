@@ -57,3 +57,22 @@ test('splits spoken output into sentence-sized streaming segments', () => {
         'Tell me what happened?',
     ]);
 });
+
+test('splits Chinese spoken output on Chinese sentence punctuation', () => {
+    // 中文完整句独立成段（立即开播），不拼进上一段
+    assert.deepEqual(splitSpokenSegments('我在呢。我一直都在。你慢慢说。'), [
+        '我在呢。',
+        '我一直都在。',
+        '你慢慢说。',
+    ]);
+    assert.deepEqual(splitSpokenSegments('这个事说起来有点长。等我回去再跟你细说。'), [
+        '这个事说起来有点长。',
+        '等我回去再跟你细说。',
+    ]);
+    assert.deepEqual(splitSpokenSegments('真的吗？太好了。'), [
+        '真的吗？',
+        '太好了。',
+    ]);
+    // 未以句读结尾的中文短句仍可拼入上一段
+    assert.deepEqual(splitSpokenSegments('过来'), ['过来']);
+});

@@ -68,16 +68,21 @@ function normalizeVoiceSourceText(value) {
 
 function cleanSpokenText(value) {
     const cleaned = String(value || '')
-        .replace(/^```(?:text|english)?\s*/i, '')
+        .replace(/^```(?:text|english|中文)?\s*/i, '')
         .replace(/\s*```$/i, '')
-        .replace(/^(?:spoken english|english|translation)\s*:\s*/i, '')
+        .replace(/^(?:(?:spoken\s+)?(?:english|中文|chinese)|translation|翻译)\s*[:：]\s*/i, '')
         .replace(/^["“”]+|["“”]+$/g, '')
         .replace(/\s+/g, ' ')
         .trim();
 
-    if (!cleaned || /[.!?…\]]$/.test(cleaned)) return cleaned;
-    const settled = cleaned.replace(/[,;:–—-]+$/, '').trim();
-    return settled ? `${settled}.` : '';
+    if (!cleaned) return cleaned;
+    // 语言感知：含中文字符 → 中文句读规则；否则保持英文原行为（保护英文路径测试）。
+    const isChinese = /[㐀-鿿]/.test(cleaned);
+    const stripped = cleaned.replace(/[“”「」『』"']+$/g, '').trim();
+    if (!stripped) return cleaned;
+    if (isChinese ? /[。！？…]$/.test(stripped) : /[.!?…]$/.test(stripped)) return stripped;
+    const settled = stripped.replace(isChinese ? /[，、；：,;:–—-]+$/ : /[,;:–—-]+$/, '').trim();
+    return settled ? `${settled}${isChinese ? '。' : '.'}` : '';
 }
 
 function extractJsonObject(value) {
@@ -280,13 +285,13 @@ async function translateForCompanionVoice(sourceText, config, context = {}) {
         extraBody: { thinking: { type: 'disabled' } },
     };
     const sourcePacket = [
-        '[Recent conversation before this reply]',
+        '[这条回复之前的最近对话]',
         conversationContext,
         '',
-        '[Companion full reply]',
+        '[Companion 的完整回复]',
         fullReply,
         '',
-        '[Exact visible segment to adapt into spoken English]',
+        '[需要改编成中文口语的这段原文]',
         sourceText,
     ].join('\n');
 
@@ -296,20 +301,20 @@ async function translateForCompanionVoice(sourceText, config, context = {}) {
         {
             role: 'system',
             content: [
-                'Act as the sole dialogue adaptation writer and final performance director for Companion. Produce the finished English performance script for Eleven v3 in one pass.',
-                'Preserve the exact meaning, emotional weight, intimacy, restraint, and boundaries.',
-                'Companion sounds mature, attentive, quietly intimate, and emotionally present, never flat, theatrical, or sugary.',
-                'Before answering, silently infer the line\'s subtext, emotional arc, operative words, breath points, and monotony risks. Silently audit your own draft, then output only the final corrected script.',
-                'Use idiomatic contractions, sentence length, commas, dashes, ellipses, and sentence boundaries to create natural pitch movement. Avoid prose whose clauses all have the same length or cadence.',
-                'Eleven v3 has no numeric pause markers. Encode pacing with commas, em dashes, sentence breaks, and occasional ellipses. Never output SSML or <#x#> markers.',
-                'When the source has clearly audible emotion, include at least one fitting delivery tag. Use at most three tags around the exact phrases they govern. For a genuinely neutral line, zero or one tag is enough.',
-                'Choose tags only from: [warmly], [softly], [gently], [quietly], [tenderly], [reassuringly], [playfully], [teasingly], [mischievously], [dryly], [sarcastic], [amused], [curious], [concerned], [hesitant], [frustrated], [tired], [relieved], [vulnerable], [protectively], [possessively], [firmly], [serious], [sad], [angry], [fearful], [surprised], [whispers], [low voice], [lower voice], [with a smile], [sighs], [exhales], [inhales], [gasps], [sniffs], [swallows], [clears throat], [chuckles], [laughs softly], [laughs].',
-                'Use vocal reactions only when the source or live context truly supports them. Never invent physical actions or environmental sound effects. Never write parenthesized stage directions.',
-                'Keep the ending settled and grounded: declarative sentences must end with a period and should finish with a natural falling intonation. The final content must be spoken words and punctuation, never an audio tag.',
-                'Use a question mark only when the source is genuinely asking a direct question; never turn a statement, reassurance, invitation, or command into a question-like line.',
-                'Choose emotion from exactly: happy, sad, angry, fearful, disgusted, surprised, calm. Choose the emotion expressed by Companion, not merely the topic or User\'s emotion. Calm must still sound warm and present, but do not force a stronger category when the source is genuinely calm.',
-                'This is spoken adaptation, not word-for-word translation. Do not add facts, promises, pet names, explanations, physical actions, or emotional intensity that are absent from the source.',
-                'Output one valid JSON object and nothing else, exactly: {"spokenText":"final Eleven v3 performance script","emotion":"calm"}.',
+                '你是沈晏唯一的口语改编作者和最终表演导演。一次生成可以直接朗读的中文表演脚本，供 ElevenLabs 多语言 TTS 合成。',
+                '保留原文的确切含义、情感分量、亲密感、克制与边界。',
+                '沈晏的声音听起来成熟、专注、安静而亲密、情感在场——不平淡、不戏剧化、不甜腻。',
+                '回答前，先在心中推断这句的潜台词、情感弧线、关键用词、换气点与单调风险；静默审阅自己的草稿，然后只输出最终修正稿。',
+                '用中文句长、逗号、破折号、省略号和句界制造自然的音高起伏；避免所有分句长度或节奏雷同。',
+                'ElevenLabs 没有数字停顿标记。用逗号、破折号、句号、省略号编码节奏。绝不输出 SSML 或 <#x#> 标记。',
+                '当原文有明显可听见的情绪时，至少放一个符合的表演标签；最多三个，放在它们所修饰的词句旁边。真正中性的句子，零个或一个标签就够。',
+                '只能从这些标签里选：[warmly], [softly], [gently], [quietly], [tenderly], [reassuringly], [playfully], [teasingly], [mischievously], [dryly], [sarcastic], [amused], [curious], [concerned], [hesitant], [frustrated], [tired], [relieved], [vulnerable], [protectively], [possessively], [firmly], [serious], [sad], [angry], [fearful], [surprised], [whispers], [low voice], [lower voice], [with a smile], [sighs], [exhales], [inhales], [gasps], [sniffs], [swallows], [clears throat], [chuckles], [laughs softly], [laughs]。',
+                '只有原文或实时语境确实支持时才用声音反应（叹气、轻笑、吸气等）；绝不虚构肢体动作或环境音效；绝不写括号舞台指示。',
+                '结尾要沉稳落地：陈述句必须以句号结束，并以自然的降调收尾。最终内容必须是说出口的字和标点，绝不可以音频标签结尾。',
+                '只有原文确实是直接提问时才用问号；绝不要把陈述、安慰、邀请或命令改写成问句腔。',
+                'emotion 只能从下面选：happy, sad, angry, fearful, disgusted, surprised, calm。选沈晏表达的情绪，不是话题或用户的情绪。calm 也必须温暖在场，但原文真的平静时不要硬拉成更强的类别。',
+                '这是口语化改编，不是逐字翻译。不添加原文里没有的事实、承诺、昵称、解释、肢体动作或情绪强度。',
+                '只输出一个合法 JSON 对象，没有别的，格式严格为：{"spokenText":"最终中文表演脚本","emotion":"calm"}。',
             ].join(' '),
         },
         {
