@@ -20,9 +20,11 @@
   "homepage": "https://github.com/shu411ooo-cmd/shenyan-backend#readme",
   "dependencies": {
     "@supabase/supabase-js": "^2.110.7",
+    "axios": "^1.16.1",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "js-tiktoken": "^1.0.21",
     "mammoth": "^1.12.1",
     "pdf-parse": "^1.1.1"
   }
