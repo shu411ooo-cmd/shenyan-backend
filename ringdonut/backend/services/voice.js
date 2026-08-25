@@ -332,11 +332,13 @@ function buildElevenLabsRequestBody(spokenText, config, continuity = {}) {
         ? Math.min(1, Math.max(0, config.stability))
         : 0.5;
     const supportsTextContinuity = String(config.ttsModel || '').toLowerCase() !== 'eleven_v3';
+    // 语言感知：中文脚本标注 zh（否则多语言模型会用英文发音规则读中文）；英文保持原行为 en
+    const languageCode = /[㐀-鿿]/.test(String(spokenText || '')) ? 'zh' : 'en';
 
     return {
         text: spokenText,
         model_id: config.ttsModel,
-        language_code: 'en',
+        language_code: languageCode,
         ...(supportsTextContinuity && continuity.previousText
             ? { previous_text: continuity.previousText }
             : {}),

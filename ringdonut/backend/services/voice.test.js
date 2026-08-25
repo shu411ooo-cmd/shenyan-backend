@@ -139,3 +139,18 @@ test('keeps continuity available for models that support previous_text', () => {
     }, { previousText: 'I am right here.' });
     assert.equal(body.previous_text, 'I am right here.');
 });
+
+test('marks Chinese spoken text as zh so the voice does not use English pronunciation', () => {
+    const zh = buildElevenLabsRequestBody('今天下雨了，我有点想你。', {
+        ttsModel: 'eleven_flash_v2_5',
+        stability: 0.5,
+    });
+    assert.equal(zh.language_code, 'zh');
+    assert.equal(zh.text, '今天下雨了，我有点想你。');
+    // 英文路径保持原行为 en
+    const en = buildElevenLabsRequestBody('Stay here. I am listening.', {
+        ttsModel: 'eleven_flash_v2_5',
+        stability: 0.5,
+    });
+    assert.equal(en.language_code, 'en');
+});
