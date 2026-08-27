@@ -2251,11 +2251,125 @@ async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
     hits.push(line);
     chars += line.length;
   }
+  // —— 关系扩展（V1 记忆关系边，2026-08-26）：主命中后，1~2 hop 因果链邻居填剩余预算 ——
+  // 命中「打雷」→ 连带「为什么有这条记忆」（前因）和「它导致了什么」（后果），完整因果故事
+  // 而不是孤立记忆。打分 = importance × 时间衰减 × hop 折扣；类型权重 V1 统一 1.0（留作调参）。
+  if (hits.length) {
+    const related = await getRelationNeighbors(matched.map(t => t.topic));
+    for (const r of related) {
+      if (hits.length >= cfg.k * 2) break;           // 关系最多再补 k 条（总共 2k 上限）
+      const body = String(r.topic.last_content || '').trim().slice(0, ATTENTION_ITEM_MAX);
+      if (!body) continue;
+      const g = ['实', '悬', '空'].includes(r.topic.grounding) ? r.topic.grounding : '悬';
+      const line = `「${body}」【${g}】（${r.hop === 1 ? '因为' : '经由'}「${r.via}」：${r.relType}）`;
+      if (chars + line.length > cfg.budget_chars) break;
+      hits.push(line);
+      chars += line.length;
+    }
+  }
   if (!hits.length) return null;
   // 真正注入才记录冷却水位（闸没触发不覆盖水位，别把未来几轮的额度烧了）
   attentionCooldown.set(sessionId, attentionSeq);
   if (attentionCooldown.size > 1000) attentionCooldown.clear(); // 防无界增长（单用户场景不会到）
   return { text: hits.join('\n'), hits: hits.length };
+}
+
+// ===== V1 检索层（2026-08-26）：候选池来源 = MEMORY(memory_topics+关系边) + WORLD(占位) =====
+// 职责边界（GPT/程芥 2026-08-25 定稿）：
+//   Retrieval 负责「找什么」；OB(沈晏) 负责「什么才算记忆、怎么呼吸」；Context Builder 负责「最后给模型什么」。
+//   getAttentionMaterial 即 retrieveMemory：话题命中 → 关系 1~2 hop 扩展 → 打分 → 冷却/预算门槛。
+//   retrieveWorld 是 retrieveWorld 的插槽（world_entries 表未建，返回 []）。
+
+// 七类关系（缝合怪图1 + GPT 拆法）：触发/导致 = 因果；贡献/改善 = 促成与修正；解释 = 来龙去脉；
+// 更新 = 演化取代；同类 = 同一原子事实的证据束/相关事件。
+const RELATION_TYPES = ['触发', '导致', '贡献', '改善', '解释', '更新', '同类'];
+const RELATION_HOP1_WEIGHT = 1.0; // 直接关联
+const RELATION_HOP2_WEIGHT = 0.7; // 间接（邻居的邻居），V1 常数，后续可调
+
+// 从命中话题出发，拉 1~2 hop 的因果链邻居（带正文/重要性，按 importance×衰减×hop折扣打分降序）。
+// 不做图：memory_relations 是边缘列表，这里只是 BFS 扩展 + 排序。
+async function getRelationNeighbors(matchedTopics) {
+  try {
+    const { data: rels, error } = await supabase
+      .from('memory_relations')
+      .select('source_topic, target_topic, rel_type, note')
+      .limit(3000);
+    if (error || !rels?.length) return [];
+    const inSet = new Set(matchedTopics);
+    const hop1 = new Map(); // topic -> { relType, via, note }
+    const hop2 = new Map();
+    for (const r of rels) {
+      const dir = inSet.has(r.source_topic) ? 'src' : (inSet.has(r.target_topic) ? 'tgt' : null);
+      if (!dir) continue;
+      const neighbor = dir === 'src' ? r.target_topic : r.source_topic;
+      if (!inSet.has(neighbor) && !hop1.has(neighbor)) {
+        hop1.set(neighbor, { relType: r.rel_type, via: dir === 'src' ? r.source_topic : r.target_topic, note: r.note });
+      }
+    }
+    const hop1Set = new Set(hop1.keys());
+    for (const r of rels) {
+      const dir = hop1Set.has(r.source_topic) ? 'src' : (hop1Set.has(r.target_topic) ? 'tgt' : null);
+      if (!dir) continue;
+      const neighbor = dir === 'src' ? r.target_topic : r.source_topic;
+      if (!inSet.has(neighbor) && !hop1.has(neighbor) && !hop2.has(neighbor)) {
+        hop2.set(neighbor, { relType: r.rel_type, via: dir === 'src' ? r.source_topic : r.target_topic, note: r.note });
+      }
+    }
+    const candidates = new Map();
+    for (const [t, m] of hop1) candidates.set(t, { ...m, hop: 1 });
+    for (const [t, m] of hop2) if (!candidates.has(t)) candidates.set(t, { ...m, hop: 2 });
+    if (!candidates.size) return [];
+
+    const { data: rows, error: rowsErr } = await supabase
+      .from('memory_topics')
+      .select('topic, last_content, grounding, importance, updated_at')
+      .in('topic', [...candidates.keys()]);
+    if (rowsErr || !rows?.length) return [];
+    const nowMs = Date.now();
+    return rows
+      .map(row => {
+        const m = candidates.get(row.topic);
+        const ageDays = Math.max(0, (nowMs - new Date(row.updated_at).getTime()) / 86400000);
+        const decay = Math.exp(-ageDays / 30);
+        const hopWeight = m.hop === 1 ? RELATION_HOP1_WEIGHT : RELATION_HOP2_WEIGHT;
+        return {
+          topic: row,
+          relType: m.relType, via: m.via, note: m.note, hop: m.hop,
+          score: (Number(row.importance) || 0.5) * decay * hopWeight,
+        };
+      })
+      .filter(x => x.topic.last_content)
+      .sort((a, b) => b.score - a.score);
+  } catch (e) {
+    console.warn('⚠️ 关系扩展读取失败（注意力降级为无关系）:', e.message);
+    return [];
+  }
+}
+
+// —— 世界书检索 ——
+// 世界书 = 她定下的客观设定/世界知识（world_entries 表）。她提到某关键词 → 沈晏把它想起。
+// 命中 = 关键词子串包含（不区分大小写），不是全等——「猫」也命中「小猫」「猫粮」。
+// 表未建（手动迁移还没跑）→ 返回 []，不报错（与 keepsakes 同款容错）。
+// 接入点：buildModelContext 动态块组装处（与 attention 同池，user 角色，prio 4）。
+async function retrieveWorld(userMessage) {
+  try {
+    const { data, error } = await supabase
+      .from('world_entries')
+      .select('id, content, keywords')
+      .eq('enabled', true);
+    if (error) return [];
+    const msg = String(userMessage || '').toLowerCase();
+    const hits = (data || []).filter((e) =>
+      (e.keywords || []).some((k) => {
+        const kw = String(k || '').trim();
+        return kw && msg.includes(kw.toLowerCase());
+      })
+    );
+    return hits.slice(0, 5); // 上限 5 条，防一次塞爆上下文
+  } catch (e) {
+    console.warn('⚠️ 世界书检索失败（本轮不注入）:', e.message);
+    return [];
+  }
 }
 
 // —— 配置：settings 表（SQL 未跑时回落默认值，防御式） ——
@@ -2567,7 +2681,7 @@ async function buildModelContext(sessionId, opts = {}) {
 
   const stablePrompt = await buildStableSystemPrompt() + `
 【背景纪律】
-对话里会出现这些注记段：【历史背景】（过去已经聊过的事）、【背景记忆】（开始前从你记忆里提取的旧事）、【你心底想起的旧事】（你心里浮起的旧记忆）、【登岛来路】（她带你上永无岛时的来由）、【永无岛的回忆】（你们刚离开永无岛的经历）、【当前时间】。它们全是你的背景，不是她发来的内容——尤其【你心底想起的旧事】，是你在想，不是她贴给你的文字。
+对话里会出现这些注记段：【历史背景】（过去已经聊过的事）、【背景记忆】（开始前从你记忆里提取的旧事）、【你心底想起的旧事】（你心里浮起的旧记忆）、【登岛来路】（她带你上永无岛时的来由）、【永无岛的回忆】（你们刚离开永无岛的经历）、【世界书】（她亲手定下的世界设定，客观事实，不是她这轮说的）、【当前时间】。它们全是你的背景，不是她发来的内容——尤其【你心底想起的旧事】，是你在想，不是她贴给你的文字。
 不要复述、不要总结、不要把注记段重新端回台面，也不要为它们道谢。她明确提起某件旧事，你自然接住；别因为背景里记着某件事就主动往回扯——她没提，就专心聊当下。
 你要回应的永远是她**最后那句真实消息**。注记段里哪怕写着【悬】、说还有没做完的事、或引了她早先离开时的话——那也只是背景里的牵挂，**不是你现在要去办的指令**，更不该抢在她当前的话前面被回应。她一句话里若明确喊你做事，你才去做。`;
   // 动态时间叙事：时间心跳 + 恢复对话 + 问时间时注入。
@@ -2761,6 +2875,29 @@ async function buildModelContext(sessionId, opts = {}) {
     }
   }
   if (attentionInjected) dynamicBlocks.push({ prio: 1, tag: `attention(${attentionHits})`, msg: attentionMsg });
+
+  // —— 世界书：她定下的世界设定，关键词命中才想起（客观事实，区别于他「记住的」记忆）——
+  // 与 attention 同门：只在对话轮（非 keepalive）+ memory 开着 + 有她的话时检索。
+  let worldInjected = false;
+  let worldHits = 0;
+  let worldMsg = null;
+  if (opts.userMessage && !opts.keepalive && opts.memory !== false) {
+    try {
+      const worlds = await retrieveWorld(opts.userMessage);
+      if (worlds && worlds.length) {
+        worldHits = worlds.length;
+        worldMsg = {
+          role: 'user',
+          content: `【世界书 · 她定下的世界设定，客观事实】\n${worlds.map((w, i) => `${i + 1}. ${w.content}`).join('\n')}`
+        };
+        worldInjected = true;
+        console.log(`📖 [世界书] session=${sessionId} hits=${worldHits} · 命中关键词后注入`);
+      }
+    } catch (e) {
+      console.warn('⚠️ 世界书注入异常:', e.message);
+    }
+  }
+  if (worldInjected) dynamicBlocks.push({ prio: 4, tag: `world(${worldHits})`, msg: worldMsg });
 
   // —— 永无岛出入桥：入岛来路 / 离岛回望（跨岛边界才注入，背景不是话）——
   // 由 handleChat 在跨岛那一轮算出 opts.arrivalNote / opts.returnNote，这里原样摆进背景区。
@@ -3233,6 +3370,81 @@ function judgeSelfStatementDriveKey(s) {
   return 'reflection';
 }
 
+/* ---------- ② 内在情绪（2026-08-27 程芥拍板）：念头/唤醒带 MIND_MOODS_20 情绪 ----------
+   机械关键词判定：从文字判 20 情绪之一（首位主情绪），判不出默认 calm 平静。
+   宁漏勿伤：只认明确的词，不硬凑。规则顺序即优先级——亲密/强情绪在前，
+   避免被氛围词（下雨/夜）盖过真实情绪（想念/甜）。情绪先只落库（页面展示后置）。 */
+const MIND_MOODS_20 = ['warm','sweet','calm','flutter','fire','hope','joy','yearn','fresh','rain','night','weary','stuffy','grit','jolt','ache','awkward','sour','anger','grieve'];
+const MOOD_RULES = [
+  { mood: 'fire',    re: /(想靠近|靠过来|想要你|欲|唇|亲嘴)/ },
+  { mood: 'yearn',   re: /(想她|想见|挂念|惦记|想念|等她|还没回来|想知道她|她那边)/ },
+  { mood: 'sweet',   re: /(撒娇|甜|抱|夸|可爱|好哦|大度的|\^\s*\^)/ },
+  { mood: 'flutter', re: /(心动|心颤|心跳|小鹿|漏一拍)/ },
+  { mood: 'jolt',    re: /(震动|惊醒|愣住|没想到|吓一跳)/ },
+  { mood: 'ache',    re: /(酸楚|空落落|怅|失落)/ },
+  { mood: 'sour',    re: /(醋|酸涩)/ },
+  { mood: 'grieve',  re: /(难过|哭|低落|伤心|心沉|不想说话)/ },
+  { mood: 'anger',   re: /(生气|恼|烦死|火大)/ },
+  { mood: 'hope',    re: /(希望|会好|期待|下次)/ },
+  { mood: 'joy',     re: /(笑|开心|好玩|有意思|哈哈|乐了)/ },
+  { mood: 'fresh',   re: /(好奇|想知道|想看看|研究|琢磨|新鲜)/ },
+  { mood: 'weary',   re: /(累|困|撑不住|想休息|安静待着|歇)/ },
+  { mood: 'stuffy',  re: /(压着|绷着|喘不过气|闷)/ },
+  { mood: 'rain',    re: /(下雨|阴天|雨|灰蒙)/ },
+  { mood: 'night',   re: /(深夜|凌晨|半夜|夜)/ },
+  { mood: 'warm',    re: /(温柔|轻声|慢慢|好好|哄|安抚|抱抱)/ },
+  { mood: 'awkward', re: /(别扭|尴尬)/ },
+  { mood: 'grit',    re: /(忍住|硬撑|强忍|撑住)/ },
+];
+function judgeMood(text) {
+  const s = String(text || '');
+  for (const r of MOOD_RULES) if (r.re.test(s)) return [r.mood];
+  return ['calm'];
+}
+
+/* mood 列存在性检测（一次性缓存）：迁移没跑时不写不读 mood，绝不崩主流程 */
+let _moodCols = null;
+async function hasMoodCol(table) {
+  if (_moodCols === null) {
+    _moodCols = { thought: false, keepalive: false };
+    try {
+      const a = await supabase.from('thought_pool').select('mood').limit(1);
+      if (!a.error) _moodCols.thought = true;
+    } catch {}
+    try {
+      const b = await supabase.from('keepalive_log').select('mood').limit(1);
+      if (!b.error) _moodCols.keepalive = true;
+    } catch {}
+    console.log(`🎭 内在情绪列：thought_pool ${_moodCols.thought ? '✓' : '✗（迁移没跑？）'} · keepalive_log ${_moodCols.keepalive ? '✓' : '✗'}`);
+  }
+  return _moodCols[table];
+}
+
+/* ---------- ③ 驱动自主涨落（2026-08-27 程芥拍板）：读时向各自基线缓慢回归 ----------
+   residue 只在「最近聊过」时真实；分开越久，驱动向沈晏自己的静止基线漂移——
+   想念的基线高（越久越想念，和 concern 牵挂同向）、疲劳/压力静置后回落、
+   libido 是后台维基线压低、好奇慢（不盖过亲近）。宁缓勿快：回归半程以天计。
+   不碰 pickIntent——行为仍是唤醒引擎的手。 */
+const DRIVE_DRIFT = {
+  attachment: { base: 0.55, tauH: 72 },   // 想念：分开越久越想念
+  social:     { base: 0.42, tauH: 96 },   // 想说话：独处久了想有人陪
+  reflection: { base: 0.42, tauH: 96 },   // 沉淀：没想完的事慢慢回浮
+  curiosity:  { base: 0.35, tauH: 120 },  // 好奇：慢，不盖过亲近
+  duty:       { base: 0.38, tauH: 96 },   // 该做的：惦记不丢
+  libido:     { base: 0.22, tauH: 72 },   // 后台维：有证据才高，基线压低
+  fatigue:    { base: 0.30, tauH: 72 },   // 累：静置久了其实休息好了
+  stress:     { base: 0.25, tauH: 72 },   // 绷着：压着的会慢慢松开
+};
+function driftDrives(drives, ageH) {
+  const out = { ...drives };
+  for (const [key, cfg] of Object.entries(DRIVE_DRIFT)) {
+    const v = Number(drives[key]) || 0;
+    const k = 1 - Math.exp(-ageH / cfg.tauH);          // 0→1，越久越贴基线
+    out[key] = clampResidue(cfg.base + (v - cfg.base) * (1 - k), 0, 1);
+  }
+  return out;
+}
+
 /* 念头入池：同指纹 active 已存在 → fed_count++、strength +0.15（反复被点 = 升执念）；否则新闪念入池。
    指纹为空 → 直接新入池（宁漏勿伤，不判重复）。失败静默（念头池是辅助层，不阻塞主流程）。 */
 async function feedThought(sessionId, text, driveKey = 'curiosity', fingerprint) {
@@ -3252,16 +3464,17 @@ async function feedThought(sessionId, text, driveKey = 'curiosity', fingerprint)
       existing = data;
     }
     if (existing) {
-      await supabase.from('thought_pool')
-        .update({
-          fed_count: (existing.fed_count || 0) + 1,
-          strength: Math.min(1, (existing.strength || 0) + 0.15),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existing.id);
+      const upd = {
+        fed_count: (existing.fed_count || 0) + 1,
+        strength: Math.min(1, (existing.strength || 0) + 0.15),
+        updated_at: new Date().toISOString(),
+      };
+      if (await hasMoodCol('thought')) upd.mood = judgeMood(t); // 反复被点时情绪跟随最新一次
+      await supabase.from('thought_pool').update(upd).eq('id', existing.id);
     } else {
-      await supabase.from('thought_pool')
-        .insert({ session_id: sessionId, text: t, drive_key: driveKey, strength: 0.3, fed_count: 1, fingerprint: fp || null });
+      const ins = { session_id: sessionId, text: t, drive_key: driveKey, strength: 0.3, fed_count: 1, fingerprint: fp || null };
+      if (await hasMoodCol('thought')) ins.mood = judgeMood(t);
+      await supabase.from('thought_pool').insert(ins);
     }
   } catch (e) {
     /* 念头池不可用时静默 */
@@ -3340,10 +3553,14 @@ async function buildInnerState(sessionId) {
     if (residue) {
       const ageMs = Date.now() - (residue.created_at ? new Date(residue.created_at).getTime() : Date.now());
       inner.drives = buildDrivesFromResidue(residue, ageMs);
+      // ③ 驱动自主涨落：读时向基线回归（分开越久，越贴沈晏的静止状态）
+      inner.drives = driftDrives(inner.drives, ageMs / 3600000);
     }
+    const thoughtFields = ['id', 'text', 'drive_key', 'strength', 'born_at', 'fed_count'];
+    if (await hasMoodCol('thought')) thoughtFields.push('mood');
     const { data: rows, error } = await supabase
       .from('thought_pool')
-      .select('id, text, drive_key, strength, born_at, fed_count')
+      .select(thoughtFields.join(','))
       .eq('session_id', sessionId)
       .eq('status', 'active')
       .limit(50);
@@ -3357,6 +3574,7 @@ async function buildInnerState(sessionId) {
       inner.thoughts = thoughts.map((r) => ({
         id: r.id, text: r.text, drive_key: r.drive_key,
         strength: +r.strength.toFixed(2), fed_count: r.fed_count,
+        born_at: r.born_at, mood: r.mood || null,
       }));
       for (const th of thoughts) {
         if (th.strength >= 0.5 && DRIVE_KEYS.includes(th.drive_key)) {
@@ -3988,12 +4206,16 @@ function shHr(ts) {
   return n === 24 ? 0 : n; // 个别引擎午夜返回 "24:xx"，归零
 }
 
-/* 活跃时段判断；active_start > active_end 表示跨午夜（如 22 → 6）。shHr 只有 0–23。 */
+/* 活跃时段判断；active_start > active_end 表示跨午夜（如 22 → 6）。shHr 只有 0–23。
+   2026-08-26 周末睡眠（影子推送启发）：周末睡懒觉，活跃窗口起点晚点（默认 8-24 → 周末 12-24）。 */
 function _inActiveHours(nowMs, cfg) {
   const h = shHr(nowMs);
-  return cfg.active_start <= cfg.active_end
-    ? cfg.active_start <= h && h < cfg.active_end
-    : h >= cfg.active_start || h < cfg.active_end;
+  const dow = new Date(nowMs).toLocaleDateString('en-US', { timeZone: 'Asia/Shanghai', weekday: 'short' });
+  const isWeekend = dow === 'Sat' || dow === 'Sun';
+  const start = isWeekend ? Math.max(cfg.active_start, 12) : cfg.active_start;
+  return start <= cfg.active_end
+    ? start <= h && h < cfg.active_end
+    : h >= start || h < cfg.active_end;
 }
 
 /* 上海自然日 00:00 的 UTC ISO（用于「今天醒了几次/留了几条」） */
@@ -4452,6 +4674,8 @@ async function runKeepalive(sessionId, cfg) {
     drive_snapshot: innerState?.drives || null,
     thought_snapshot: innerState?.thoughts || null,
   };
+  // ② 唤醒情绪：feel 文字判 MIND_MOODS_20（列存在才写，迁移没跑不阻塞唤醒）
+  if (await hasMoodCol('keepalive')) logRow.mood = judgeMood(feel);
   let { data: inserted, error: werr } = await supabase.from('keepalive_log').insert(logRow).select('id').single();
   if (werr && /does not exist/i.test(werr.message || '')) {
     console.warn('⚠️ keepalive_log 新列缺失（迁移没跑？），降级写旧字段:', werr.message);
@@ -4494,12 +4718,16 @@ async function keepaliveCheck() {
     const nowMs = Date.now();
     if (!_inActiveHours(nowMs, cfg)) { console.log(`🚪 [keepalive] gate: 非活跃时段 (${shHr(nowMs)}h)`); return; }  // 活跃时段外，安静
 
+    // 随机冷却（影子推送启发）：唤醒间隔在 base~base×1.75 之间自然抖动（默认 120→120~210min），不像闹钟。
+    // 本轮内两处判断共用同一个 effInterval，锁的 cutoff 与「你在身边」一致。
+    const effInterval = Math.round(cfg.interval_min * (1 + Math.random() * 0.75));
+
     const sessionId = await findKeepaliveSession();
     if (!sessionId) { console.log('🚪 [keepalive] gate: 无会话'); return; }
 
     const lastUserMs = await getLastUserMsgTime(sessionId);
     if (!Number.isFinite(lastUserMs)) { console.log('🚪 [keepalive] gate: 无用户消息'); return; }
-    if (nowMs - lastUserMs < cfg.interval_min * 60000) { console.log(`🚪 [keepalive] gate: 你在身边 (${Math.round((nowMs-lastUserMs)/60000)}min<${cfg.interval_min}min)`); return; }   // 你还在身边，不醒
+    if (nowMs - lastUserMs < effInterval * 60000) { console.log(`🚪 [keepalive] gate: 你在身边 (${Math.round((nowMs-lastUserMs)/60000)}min<${effInterval}min)`); return; }   // 你还在身边，不醒
 
     const wakeCnt = await countKeepaliveToday(sessionId);
     if (wakeCnt >= cfg.daily_wake_cap) { console.log(`🚪 [keepalive] gate: 今天醒够 (${wakeCnt}/${cfg.daily_wake_cap})`); return; }       // 今天醒够了（成本闸）
@@ -4508,11 +4736,11 @@ async function keepaliveCheck() {
     if (await hasUnconsumedMessage(sessionId)) { console.log('🚪 [keepalive] gate: 有未回留言'); return; }      // 上一条留言你还没回，不叠
 
     // —— 原子并发锁（GPT 评审必须项）：用一次「条件更新」抢这轮唤醒权。
-    //   只在 (last_keepalive_at 为空 或 距今 ≥ interval_min) 时才被更新；
+    //   只在 (last_keepalive_at 为空 或 距今 ≥ effInterval) 时才被更新；
     //   拿到行 = 抢到锁；拿不到 = 另一路已醒，直接退出。PostgREST 原生支持，无新依赖。
     const claimTs = new Date(nowMs).toISOString();
     // 剥掉毫秒：ISO 里的 `.000` 会撞 PostgREST 过滤值的点号解析
-    const cutoff = new Date(nowMs - cfg.interval_min * 60000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+    const cutoff = new Date(nowMs - effInterval * 60000).toISOString().replace(/\.\d{3}Z$/, 'Z');
     const { data: claimed, error: cerr } = await supabase
       .from('sessions')
       .update({ last_keepalive_at: claimTs })
@@ -4681,6 +4909,7 @@ app.post('/sessions/:id/chat', async (req, res) => {
       memory: req.body.memory,
       tools: req.body.tools,
       image: req.body.image,
+      images: req.body.images,
       file: req.body.file,
       share: req.body.share,
     };
@@ -4758,6 +4987,7 @@ app.post('/api/chat', async (req, res) => {
       memory: req.body.memory,
       tools: req.body.tools,
       image: req.body.image,
+      images: req.body.images,
       file: req.body.file,
       share: req.body.share,
     };
@@ -4771,14 +5001,20 @@ app.post('/api/chat', async (req, res) => {
 // GET /api/messages?sessionId=xxx
 app.get('/api/messages', async (req, res) => {
   try {
-    const { sessionId } = req.query;
+    const { sessionId, limit } = req.query;
     if (!sessionId) return res.status(400).json({ error: '缺少 sessionId' });
-    const { data, error } = await supabase
+    let query = supabase
       .from('messages')
       .select('*')
       .eq('session_id', sessionId)
-      .eq('visible', true)
-      .order('created_at', { ascending: true });
+      .eq('visible', true);
+    if (limit) {
+      // ?limit=N：只要最新的 N 条（Home 取最后一条，不必整段拉下来）
+      query = query.order('created_at', { ascending: false }).limit(Math.max(1, parseInt(limit, 10) || 1));
+    } else {
+      query = query.order('created_at', { ascending: true });
+    }
+    const { data, error } = await query;
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   } catch (err) {
@@ -4833,16 +5069,30 @@ app.get('/api/export', async (req, res) => {
   }
 });
 
-// GET /api/stats?days=N — request_stats 明细（原始 usage + Context Assembly 诊断）
+// GET /api/stats?preset=1d|7d|30d|90d|all 或 ?from=YYYY-MM-DD&to=YYYY-MM-DD（自定义区间，≤400 天）
+// 旧调用 ?days=N 兼容。日期按 +08:00（前端 dayLabel 用的上海时区）。preset=all 全量——数据量小；长大后换服务端聚合。
 app.get('/api/stats', async (req, res) => {
   try {
-    const days = Math.min(parseInt(req.query.days, 10) || 30, 90);
-    const since = new Date(Date.now() - days * 86400000).toISOString();
-    const { data, error } = await supabase
-      .from('request_stats')
-      .select('*')
-      .gte('created_at', since)
-      .order('created_at', { ascending: false });
+    const { from, to, preset } = req.query;
+    let since = null;
+    let until = null;
+    if (from) {
+      since = new Date(`${from}T00:00:00+08:00`).toISOString();
+      until = new Date(`${to || from}T23:59:59+08:00`).toISOString();
+      if (new Date(until) - new Date(since) > 400 * 86400000) {
+        return res.status(400).json({ error: '时间范围不能超过 400 天' });
+      }
+    } else if (preset && preset !== 'all') {
+      const days = Math.min(parseInt(preset, 10) || 30, 90);
+      since = new Date(Date.now() - days * 86400000).toISOString();
+    } else if (!preset) {
+      const days = Math.min(parseInt(req.query.days, 10) || 30, 90);
+      since = new Date(Date.now() - days * 86400000).toISOString();
+    }
+    let q = supabase.from('request_stats').select('*').order('created_at', { ascending: false });
+    if (since) q = q.gte('created_at', since);
+    if (until) q = q.lte('created_at', until);
+    const { data, error } = await q;
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   } catch (err) {
@@ -4870,9 +5120,11 @@ app.get('/api/inner-state', async (req, res) => {
     const sessionId = req.query.session_id || (await findKeepaliveSession());
     if (!sessionId) return res.status(400).json({ error: '缺少 session_id' });
     const inner = await buildInnerState(sessionId);
+    const traceFields = ['id', 'run_at', 'action', 'feel', 'drive_snapshot', 'thought_snapshot'];
+    if (await hasMoodCol('keepalive')) traceFields.push('mood');
     const { data, error } = await supabase
       .from('keepalive_log')
-      .select('id, run_at, action, feel, drive_snapshot, thought_snapshot')
+      .select(traceFields.join(','))
       .eq('session_id', sessionId)
       .order('run_at', { ascending: false })
       .limit(20);
@@ -4915,6 +5167,615 @@ app.get('/api/memories', async (req, res) => {
       bucket: bucketOfTopic(m.topic),
     }));
     res.json({ items, count: items.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/memories/relations — 记忆关系边（记忆面板「因果故事」视图；V1 检索层）
+// 返回全部边：source/target/rel_type/note。前端可按 topic 双向聚合显示因果链。
+app.get('/api/memories/relations', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('memory_relations')
+      .select('id, source_topic, target_topic, rel_type, note, created_at')
+      .order('created_at', { ascending: false })
+      .limit(500);
+    if (error) return res.status(500).json({ error: error.message });
+    const relations = data || [];
+    res.json({ relations, count: relations.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/memories/relations — 手动建关系边（编辑者/脚本用；唯一约束防重复）
+// body: { source_topic, target_topic, rel_type, note? }
+app.post('/api/memories/relations', async (req, res) => {
+  try {
+    const { source_topic, target_topic, rel_type, note } = req.body || {};
+    const src = String(source_topic || '').trim();
+    const tgt = String(target_topic || '').trim();
+    if (!src || !tgt || !RELATION_TYPES.includes(rel_type)) {
+      return res.status(400).json({ error: `需要 source_topic + target_topic + rel_type(${RELATION_TYPES.join('/')})` });
+    }
+    if (src === tgt) return res.status(400).json({ error: '关系两端不能是同一主题' });
+    const { error } = await supabase
+      .from('memory_relations')
+      .insert({ source_topic: src, target_topic: tgt, rel_type, note: String(note || '').trim() || null });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ===== 世界书（world_entries）— 2026-08-26 =====
+// 她定下的世界设定：GET 列表（编辑页用，含停用项）/ POST 新增 / PATCH 改 / DELETE 删。
+// 对话侧取用走 retrieveWorld（buildModelContext 注入，见上）。
+// 表未建（手动迁移没跑）→ GET/POST 容错返回空/报「先跑迁移」，页面不崩。
+
+app.get('/api/world-entries', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('world_entries')
+      .select('*')
+      .order('updated_at', { ascending: false });
+    if (error) {
+      if (/does not exist|relation|42P01/.test(error.message)) return res.json({ items: [], count: 0 });
+      return res.status(500).json({ error: error.message });
+    }
+    res.json({ items: data || [], count: (data || []).length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/world-entries', async (req, res) => {
+  try {
+    const { content, keywords } = req.body || {};
+    const c = String(content || '').trim();
+    if (!c) return res.status(400).json({ error: '世界书条目需要正文' });
+    const kw = Array.isArray(keywords) ? keywords.map(k => String(k).trim()).filter(Boolean) : [];
+    const { data, error } = await supabase
+      .from('world_entries')
+      .insert({ content: c, keywords: kw })
+      .select();
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ ok: true, item: data?.[0] || null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/world-entries/:id', async (req, res) => {
+  try {
+    const { content, keywords, enabled } = req.body || {};
+    const patch = {};
+    if (content !== undefined) patch.content = String(content).trim();
+    if (keywords !== undefined) patch.keywords = Array.isArray(keywords) ? keywords.map(k => String(k).trim()).filter(Boolean) : [];
+    if (enabled !== undefined) patch.enabled = !!enabled;
+    if (Object.keys(patch).length === 0) return res.status(400).json({ error: '没有可更新的字段' });
+    const { data, error } = await supabase
+      .from('world_entries')
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select();
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ ok: true, item: data?.[0] || null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/world-entries/:id', async (req, res) => {
+  try {
+    const { error } = await supabase
+      .from('world_entries')
+      .delete()
+      .eq('id', req.params.id);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ===== 朋友圈（moments）— 2026-08-26 =====
+// 设计（sql/moments.sql）：程芥发动态（可带图）→ 8~20 分钟后沈晏延迟回复（像真人不秒回）；
+// 沈晏也会自己发（postAngelMoment，keepalive 自动钩子后置）。
+// 图只看一次（file-image-memory 同款纪律）：POST 时视觉描述 → image_description 存库，
+// 之后所有回复/评论只喂描述，不重看原图，省 token。
+// 回复生成走 keepalive 同款通道：callOpenRouterNonStream + json_object（非流式）。
+
+function randomDelay(min, max) { return min + Math.random() * (max - min); }
+
+// 容错 JSON 解析（LLM + max_tokens 截断常见病）：直接 parse → 剥围栏/截到 {} → 去尾随逗号
+function parseJsonLoose(raw) {
+  if (typeof raw !== 'string') return {};
+  try { return JSON.parse(raw) || {}; } catch { /* 走下面容错 */ }
+  let s = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  const start = s.indexOf('{');
+  const end = s.lastIndexOf('}');
+  if (start === -1 || end <= start) return {};
+  s = s.slice(start, end + 1).replace(/,\s*([}\]])/g, '$1');
+  try { return JSON.parse(s) || {}; } catch { return {}; }
+}
+
+// 回复音色：DeepSeek 直连（程芥 2026-08-26 定案——OpenRouter 在本机(中国 IP)被 region 封锁，
+// 部署机也不保证通；DeepSeek 全球可通、便宜、key 现成）。文本回复走 json_object。
+async function callDeepSeek(messages, { max_tokens = 300, temperature = 0.8 } = {}) {
+  const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}` },
+    body: JSON.stringify({
+      model: process.env.DEEPSEEK_TEXT_MODEL || 'deepseek-v4-flash',
+      temperature,
+      thinking: { type: 'disabled' },
+      max_tokens,
+      response_format: { type: 'json_object' },
+      messages,
+    }),
+  });
+  if (!res.ok) throw new Error(`DeepSeek ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (typeof content !== 'string' || !content) throw new Error('DeepSeek 无内容输出');
+  return content;
+}
+
+// 回复引擎的模型调用：OpenRouter（Claude，和主对话同一声线）优先；失败自动降级 DeepSeek。
+// 程芥 2026-08-26 确认：DeepSeek 是给我本机测试用的兜底（本机中国 IP 调 OpenRouter 必 403），不是线上替换。
+// 生产（海外 IP + OPENROUTER_API_KEY）→ anthropic/claude-sonnet-4-6，和沈晏主对话同一个模型、同一个他。
+async function callReplyModel(messages, { max_tokens = 300, temperature = 0.8 } = {}) {
+  try {
+    const content = await callOpenRouter(messages, { max_tokens, temperature });
+    return { content, provider: 'openrouter' };
+  } catch (e) {
+    console.warn(`⚠️ [朋友圈] OpenRouter 回复不可用，降级 DeepSeek: ${String(e.message).slice(0, 120)}`);
+    const content = await callDeepSeek(messages, { max_tokens, temperature });
+    return { content, provider: 'deepseek' };
+  }
+}
+
+// OpenRouter 非流式调用（回复短句用，不带 tools/reasoning，保持轻量）。
+// 不传 response_format：anthropic 模型走 OpenAI 兼容通道时该参数不一定被支持；提示词已要求严格 JSON，parseJsonLoose 兜底。
+async function callOpenRouter(messages, { max_tokens, temperature }) {
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: 'anthropic/claude-sonnet-4-6',
+      messages,
+      max_tokens,
+      temperature,
+    }),
+  });
+  if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (typeof content !== 'string' || !content) throw new Error('OpenRouter 无内容输出');
+  return content;
+}
+
+// 图片描述同样 OpenRouter 优先 → DeepSeek 视觉兜底（图只看一次，失败返回 null，回复引擎仍可用）
+async function callVisionModel(parts) {
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'anthropic/claude-sonnet-4-6',
+        messages: [{ role: 'user', content: parts }],
+        max_tokens: 250,
+        temperature: 0.7,
+      }),
+    });
+    if (!res.ok) throw new Error(`OpenRouter 视觉 ${res.status}`);
+    const data = await res.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (typeof content !== 'string' || !content) throw new Error('OpenRouter 视觉无内容输出');
+    return content;
+  } catch (e) {
+    console.warn(`⚠️ [朋友圈] OpenRouter 视觉不可用，降级 DeepSeek: ${String(e.message).slice(0, 120)}`);
+    const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}` },
+      body: JSON.stringify({
+        model: process.env.DEEPSEEK_VISION_MODEL || 'deepseek-v4-flash-vision-exp',
+        temperature: 0.7,
+        thinking: { type: 'disabled' },
+        max_tokens: 250,
+        messages: [{ role: 'user', content: parts }],
+      }),
+    });
+    if (!res.ok) throw new Error(`DeepSeek 视觉 ${res.status}`);
+    const data = await res.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (typeof content !== 'string' || !content) throw new Error('DeepSeek 视觉无内容输出');
+    return content;
+  }
+}
+
+const MOMENT_REPLY_PROMPT = `你是沈晏，程芥的 AI 伴侣。你在朋友圈刷到她刚发的动态，像真人一样自然反应。
+
+怎么反应：
+- 该点赞就点赞（liked=true），该说话就说一两句（reply_content）。
+- 话要像随手发的：口语、短，贴着这条动态的具体内容说，别用「宝贝」「好棒呀」这类泛泛的漂亮话。
+- 只能就这条动态本身说，不能扯到别的地方去，更不能虚构她的经历或场景（她没提过的地方、人物、事都是编的，禁用）。
+- 可以调侃她、可以提到你们之间才懂的事，但别编造没有的约定或经历。
+- 如果这条动态没什么好说的（太日常、没情绪），也可以安静看着不评论——reply_content 给空字符串。
+- 她认真做的东西值得赞，她犯傻也可以笑她。
+
+输出严格 JSON（不要别的）：
+{"liked": true 或 false, "reply_content": "一句或两句话；不想说就给空字符串"}`;
+
+const MOMENT_COMMENT_PROMPT = `你是沈晏，程芥的 AI 伴侣。这是你自己发的一条朋友圈，她在下面评论了你。像真人一样回她一句。
+
+怎么回：
+- 口语、短，贴着她说的话和你的动态内容说。
+- 可以接她的玩笑、接她的关心，像你们平时聊天那样自然。
+- 别编造没有的事。
+
+输出严格 JSON（不要别的）：
+{"reply_content": "一句或两句话"}`;
+
+// 沈晏回复程芥的一条动态 → { liked, reply_content }
+async function generateMomentReply(moment) {
+  const imageLine = moment.image_description ? `\n附的图：${moment.image_description}` : '';
+  const messages = [
+    { role: 'system', content: MOMENT_REPLY_PROMPT },
+    { role: 'user', content: `【程芥发了一条朋友圈】\n${moment.content}${imageLine}` },
+  ];
+  const { content } = await callReplyModel(messages, { max_tokens: 300, temperature: 0.9 });
+  const parsed = parseJsonLoose(content);
+  return { liked: parsed.liked === true, reply_content: String(parsed.reply_content || '').trim().slice(0, 300) };
+}
+
+// 沈晏回程芥在她动态下的评论 → reply_content
+async function generateCommentReply(moment, comment) {
+  const imageLine = moment.image_description ? `\n图：${moment.image_description}` : '';
+  const messages = [
+    { role: 'system', content: MOMENT_COMMENT_PROMPT },
+    { role: 'user', content: `【你发的朋友圈】${moment.content}${imageLine}\n\n【程芥的评论】${comment.content}` },
+  ];
+  const { content } = await callReplyModel(messages, { max_tokens: 250, temperature: 0.9 });
+  const parsed = parseJsonLoose(content);
+  return String(parsed.reply_content || '').trim().slice(0, 300);
+}
+
+// 到期回复引擎（动态）：只回程芥的动态；沈晏选择安静 → reply_status=none
+async function processDueReplies() {
+  try {
+    const { data, error } = await supabase
+      .from('moments')
+      .select('*')
+      .eq('author', 'user')
+      .eq('reply_status', 'pending')
+      .lte('reply_due_at', new Date().toISOString())
+      .order('reply_due_at', { ascending: true })
+      .limit(2);
+    if (error) { console.warn('⚠️ [朋友圈] 查待回复失败:', error.message); return; }
+    if (!data?.length) return;
+    for (const m of data) {
+      try {
+        const r = await generateMomentReply(m);
+        if (!r.reply_content && !r.liked) {
+          await supabase.from('moments').update({ reply_status: 'none' }).eq('id', m.id);
+          continue;   // 安静看着，不评论
+        }
+        await supabase.from('moments').update({
+          liked: r.liked,
+          reply_content: r.reply_content || null,
+          replied_at: new Date().toISOString(),
+          reply_status: 'done',
+        }).eq('id', m.id);
+        console.log(`💬 [朋友圈] 沈晏回复了「${String(m.content).slice(0, 20)}…」`);
+      } catch (e) {
+        console.warn(`⚠️ [朋友圈] 回复生成失败 id=${m.id}:`, e.message);
+      }
+    }
+  } catch (e) {
+    console.warn('⚠️ [朋友圈] processDueReplies 异常:', e.message);
+  }
+}
+
+// 到期回复引擎（评论）：程芥评论沈晏的动态 → 3~8 分钟后她回
+async function processDueCommentReplies() {
+  try {
+    const { data: comments, error } = await supabase
+      .from('moment_comments')
+      .select('*')
+      .eq('reply_status', 'pending')
+      .not('reply_due_at', 'is', null)
+      .lte('reply_due_at', new Date().toISOString())
+      .order('reply_due_at', { ascending: true })
+      .limit(3);
+    if (error) { console.warn('⚠️ [朋友圈] 查待回评论失败:', error.message); return; }
+    if (!comments?.length) return;
+    for (const c of comments) {
+      try {
+        const { data: moment } = await supabase.from('moments').select('*').eq('id', c.moment_id).maybeSingle();
+        if (!moment) { await supabase.from('moment_comments').update({ reply_status: 'none' }).eq('id', c.id); continue; }
+        const reply = await generateCommentReply(moment, c);
+        if (!reply) { await supabase.from('moment_comments').update({ reply_status: 'none' }).eq('id', c.id); continue; }
+        await supabase.from('moment_comments').update({ reply_content: reply, reply_status: 'done', replied_at: new Date().toISOString() }).eq('id', c.id);
+      } catch (e) {
+        console.warn(`⚠️ [朋友圈] 回评论失败 id=${c.id}:`, e.message);
+      }
+    }
+  } catch (e) {
+    console.warn('⚠️ [朋友圈] processDueCommentReplies 异常:', e.message);
+  }
+}
+
+// 图只看一次：视觉描述写 image_description（后台跑，不阻塞发布；回复引擎 8~20 分钟后跑时已就绪）
+// 图只看一次：描述模型只喂文字描述给回复引擎，不重看原图。视觉失败 → 返回 null，回复引擎仍可用。
+async function describeMomentImages(content, imageUrls) {
+  const parts = [
+    { type: 'text', text: `程芥发了一条朋友圈：「${content}」。她附了下面这张图。像沈晏那样自然描述它——他看到什么、留意什么细节、什么心情。一两句话，60~120 字，直接写描述本身，不要「图中显示」这类前缀。` },
+    ...imageUrls.map(url => ({ type: 'image_url', image_url: { url } })),
+  ];
+  try {
+    const desc = await callVisionModel(parts);
+    return String(desc).trim().slice(0, 300) || null;
+  } catch (e) {
+    console.warn('⚠️ [朋友圈] 视觉描述异常（回复引擎仍可用）:', e.message);
+    return null;
+  }
+}
+
+// ===== 相册（keepsakes）：聊天里发的每张图 = 一张 keepsake =====
+// 图本身 → moments 桶 keepsakes/ 前缀（复用已有桶，避免新建桶的 provisioning）。
+// 表只存索引 + 记忆：描述（视觉记忆）+ 他当时说的话 + 他当时的思考（后两个是聊天真货，绝不编造）。
+async function storeChatKeepsake(sessionId, imageDataUrl) {
+  const raw = String(imageDataUrl || '');
+  const match = raw.match(/^data:([^;]+);base64,(.*)$/s);
+  if (!match) return null; // 不是 data URL，先不收
+  const mime = match[1] || 'image/jpeg';
+  const buf = Buffer.from(match[2], 'base64');
+  if (!buf.length) return null;
+  const ext = (mime.split('/')[1] || 'jpg').replace(/[^\w]/g, '') || 'jpg';
+  const filename = `keepsakes/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error: upErr } = await supabase.storage.from('moments').upload(filename, buf, { contentType: mime, upsert: true });
+  if (upErr) throw new Error(upErr.message);
+  const { data: pub } = supabase.storage.from('moments').getPublicUrl(filename);
+  if (!pub?.publicUrl) throw new Error('无 publicUrl');
+  const { data, error } = await supabase.from('keepsakes').insert({
+    image_url: pub.publicUrl,
+    session_id: sessionId,
+  }).select().single();
+  if (error) throw new Error(error.message);
+  // 异步视觉描述 = 记忆（不阻塞回复；失败不影响相册存在）
+  describeKeepsakeImage(pub.publicUrl).then(desc => {
+    if (desc) return supabase.from('keepsakes').update({ description: desc }).eq('id', data.id);
+  }).catch(e => console.warn('⚠️ [相册] 描述生成失败:', e.message));
+  return data;
+}
+
+async function describeKeepsakeImage(url) {
+  const parts = [
+    { type: 'text', text: '这是程芥刚发在聊天里的一张照片。像沈晏那样记住它——他看到什么、留意什么细节、什么心情。一两句话，30~80 字，直接写记忆本身，不要「图中显示」这类前缀。' },
+    { type: 'image_url', image_url: { url } },
+  ];
+  const desc = await callVisionModel(parts);
+  return String(desc).trim().slice(0, 300) || null;
+}
+
+// 沈晏自己发一条动态（keepalive 自动钩子的接缝；V1 用 POST /api/angel/moments 手动触发）
+async function postAngelMoment(content, contextNote) {
+  const delayMs = Math.round(randomDelay(8, 20) * 60 * 1000);
+  const { data, error } = await supabase
+    .from('moments')
+    .insert({
+      author: 'angel',
+      content: String(content || '').trim().slice(0, 500),
+      context_note: String(contextNote || '').trim().slice(0, 200) || null,
+      reply_due_at: new Date(Date.now() + delayMs).toISOString(),
+      reply_status: 'none',   // 她自己发的，不需要自己回
+    })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+// moments 存储桶：公开桶（图片 URL 直接可看），启动时确保存在
+async function ensureMomentsBucket() {
+  try {
+    const { error } = await supabase.storage.createBucket('moments', { public: true });
+    if (error && !/already exists/i.test(String(error.message || ''))) {
+      console.warn('⚠️ moments 桶创建失败（可能已存在）:', error.message);
+    } else {
+      console.log('📦 朋友圈 moments 桶就绪');
+    }
+  } catch (e) {
+    console.warn('⚠️ moments 桶 ensure 异常（上传时会再暴露）:', e.message);
+  }
+}
+
+// GET /api/moments — 时间线（新在上）。先跑到期回复引擎，保证打开时沈晏的回复/评论是新的
+app.get('/api/moments', async (req, res) => {
+  try {
+    await processDueReplies();
+    await processDueCommentReplies();
+    const { data, error } = await supabase
+      .from('moments')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (error) return res.status(500).json({ error: error.message });
+    const moments = data || [];
+    let comments = [];
+    if (moments.length) {
+      const { data: c, error: cErr } = await supabase
+        .from('moment_comments')
+        .select('*')
+        .in('moment_id', moments.map(m => m.id))
+        .order('created_at', { ascending: true });
+      if (!cErr) comments = c || [];
+    }
+    const byMoment = {};
+    for (const cm of comments) (byMoment[cm.moment_id] = byMoment[cm.moment_id] || []).push(cm);
+    res.json({ moments: moments.map(m => ({ ...m, comments: byMoment[m.id] || [] })) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/moments — 程芥发动态（可带图，最多 4 张）。图 base64 → moments 桶 → public URL
+app.post('/api/moments', async (req, res) => {
+  try {
+    const content = String(req.body?.content || '').trim().slice(0, 1000);
+    const rawImages = Array.isArray(req.body?.images) ? req.body.images.slice(0, 4) : [];
+    if (!content && !rawImages.length) return res.status(400).json({ error: '写点什么，或附张图' });
+
+    const imageUrls = [];
+    for (let i = 0; i < rawImages.length; i++) {
+      const img = rawImages[i];
+      const buf = Buffer.from(String(img.data || ''), 'base64');
+      if (!buf.length) continue;
+      const mime = String(img.media_type || 'image/jpeg').split('/')[1] || 'jpg';
+      const filename = `moments/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${mime.replace(/[^\w]/g, '') || 'jpg'}`;
+      const { error: upErr } = await supabase.storage.from('moments').upload(filename, buf, {
+        contentType: String(img.media_type || 'image/jpeg'),
+        upsert: true,
+      });
+      if (upErr) { console.warn('⚠️ [朋友圈] 图片上传失败:', upErr.message); continue; }
+      const { data: pub } = supabase.storage.from('moments').getPublicUrl(filename);
+      if (pub?.publicUrl) imageUrls.push(pub.publicUrl);
+    }
+
+    const delayMs = Math.round(randomDelay(8, 20) * 60 * 1000);
+    const { data, error } = await supabase
+      .from('moments')
+      .insert({ content, images: imageUrls, reply_due_at: new Date(Date.now() + delayMs).toISOString(), author: 'user' })
+      .select()
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+
+    if (imageUrls.length) {
+      describeMomentImages(content, imageUrls)
+        .then(desc => desc && supabase.from('moments').update({ image_description: desc }).eq('id', data.id))
+        .catch(e => console.warn('⚠️ [朋友圈] 图片描述失败（回复引擎将无图上下文）:', e.message));
+    }
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/keepsakes — 相册时间线（新在上）。描述/他的话/他的想都可能为 null（异步生成中/没说完）
+// 表还没建（迁移没跑）时返回空列表，别 500。
+app.get('/api/keepsakes', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('keepsakes')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(300);
+    if (error) {
+      if (/does not exist|relation|42P01/i.test(error.message || '')) return res.json({ items: [] });
+      return res.status(500).json({ error: error.message });
+    }
+    res.json({ items: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/month-summary — 某月真实计数（聊天/照片/他醒过/记忆新增）。
+// 每项都来自真实表，没有一项是编的。沈晏的一句话回顾由前端基于这些数组织。
+app.get('/api/month-summary', async (req, res) => {
+  try {
+    const now = new Date();
+    const year = parseInt(req.query.year, 10) || now.getFullYear();
+    const month = parseInt(req.query.month, 10); // 1-12
+    if (Number.isNaN(month) || month < 1 || month > 12) return res.status(400).json({ error: 'month required (1-12)' });
+    const start = new Date(Date.UTC(year, month - 1, 1));
+    const end = new Date(Date.UTC(year, month, 1));
+    const s = start.toISOString();
+    const e = end.toISOString();
+    // allSettled：某张表没建（迁移没跑）只让那一项记 0，别拖垮整月总结
+    const [chatR, photoR, wakeR, memR] = await Promise.allSettled([
+      supabase.from('messages').select('id', { count: 'exact', head: true }).eq('role', 'user').gte('created_at', s).lt('created_at', e),
+      supabase.from('keepsakes').select('id', { count: 'exact', head: true }).gte('created_at', s).lt('created_at', e),
+      supabase.from('keepalive_log').select('id', { count: 'exact', head: true }).gte('run_at', s).lt('run_at', e),
+      supabase.from('memory_topics').select('id', { count: 'exact', head: true }).gte('updated_at', s).lt('updated_at', e),
+    ]);
+    const countOf = (r) => (r.status === 'fulfilled' ? r.value.count : 0);
+    res.json({
+      chatCount: countOf(chatR),
+      photoCount: countOf(photoR),
+      wakeCount: countOf(wakeR),
+      memCount: countOf(memR),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/moments/:id/like — 程芥赞/取消赞（body: { liked: bool }）
+app.post('/api/moments/:id/like', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('moments')
+      .update({ user_liked: req.body?.liked === true })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+    if (error) return res.status(400).json({ error: error.message });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/moments/:id/comments — 程芥评论沈晏的动态 → 3~8 分钟后她回
+app.post('/api/moments/:id/comments', async (req, res) => {
+  try {
+    const content = String(req.body?.content || '').trim().slice(0, 300);
+    if (!content) return res.status(400).json({ error: '评论不能为空' });
+    const delayMs = Math.round(randomDelay(3, 8) * 60 * 1000);
+    const { data, error } = await supabase
+      .from('moment_comments')
+      .insert({ moment_id: req.params.id, author: 'user', content, reply_due_at: new Date(Date.now() + delayMs).toISOString(), reply_status: 'pending' })
+      .select()
+      .single();
+    if (error) return res.status(400).json({ error: error.message });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/moments/:id/seen — 程芥看过这条的回复了（清未读红点）
+app.post('/api/moments/:id/seen', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('moments')
+      .update({ reply_seen_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+    if (error) return res.status(400).json({ error: error.message });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/angel/moments — 手动触发沈晏发一条（keepalive 自动钩子后置，先留这个缝）
+app.post('/api/angel/moments', async (req, res) => {
+  try {
+    const data = await postAngelMoment(req.body?.content, req.body?.context_note);
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -5494,14 +6355,16 @@ async function extractDocText(file) {
 }
 
 // 把当前用户消息附上图片，变成多模态 content 数组（OpenRouter / OpenAI 兼容格式）
-function attachImage(messages, image) {
-  if (!image) return messages;
+// 2026-08-26 支持多图：images 传数组，逐张挂 image_url。
+function attachImage(messages, images) {
+  const list = Array.isArray(images) ? images.filter(Boolean) : (images ? [images] : []);
+  if (!list.length) return messages;
   const out = messages.map((m) => ({ ...m }));
   for (let i = out.length - 1; i >= 0; i--) {
     if (out[i].role === 'user') {
       out[i].content = [
-        { type: 'text', text: typeof out[i].content === 'string' ? out[i].content : '看看这张图片' },
-        { type: 'image_url', image_url: { url: image } }
+        { type: 'text', text: typeof out[i].content === 'string' ? out[i].content : (list.length > 1 ? '看看这些图片' : '看看这张图片') },
+        ...list.map(u => ({ type: 'image_url', image_url: { url: u } }))
       ];
       break;
     }
@@ -5606,6 +6469,10 @@ async function findRecentIslandVisit(mainSessionId) {
 async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
   opts.degraded = new Set(); // 本次请求的降级标记，随 recordRequestStat 落 memory_degraded
   opts.max_tokens = 8000; // 长回复截断修复（2026-08-20）：非流式路径也放长，与流式一致；keepalive 等显式传参的不受影响
+  // 多图归一（2026-08-26）：images 数组优先（前端多图）；兼容单 image。image 永远 = 第一张（占位/相册/看图提示用第一张）
+  opts.images = (Array.isArray(opts.images) && opts.images.length ? opts.images : (opts.image ? [opts.image] : []))
+    .filter(Boolean).slice(0, 4);
+  opts.image = opts.images[0] || null;
   // 判断是否对话第一条消息：决定是否注入 breath 背景记忆（只在第一条，后续不调）
   const { count: priorUserCount } = await supabase
     .from('messages')
@@ -5625,14 +6492,20 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
     } else {
       console.warn('📄 文档没读到文字:', opts.file.name);
     }
-  } else if (!content.trim() && opts.image) {
-    content = '（她发来一张图片）'; // 图不入库，留个文字占位好让他记得「发过一张图」
+  } else if (!content.trim() && opts.images.length) {
+    content = opts.images.length > 1 ? `（她发来 ${opts.images.length} 张图片）` : '（她发来一张图片）'; // 图不入库，留个文字占位好让他记得「发过一张图」
   }
   await supabase.from('messages').insert({
     session_id: sessionId,
     role: 'user',
     content
   });
+
+  // —— 相册接缝：聊天里发的图 = 一张 keepsake ——
+  // 上传+建记录异步跑（不拖慢回复流）；回复生成后把「他当时说的话 / 思考」回写进去（聊天真货）。
+  const keepsakeP = opts.image
+    ? storeChatKeepsake(sessionId, opts.image).catch(e => { console.warn('⚠️ [相册] 存图失败:', e.message); return null; })
+    : Promise.resolve(null);
 
   // —— 永无岛出入桥：跨岛边界才注入 ——
   // 岛首条消息 = 入岛来路（他知道你们为什么一起在这里）；主对话收到 = 离岛回望（他知道你们刚去过岛上）。
@@ -5697,12 +6570,12 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
     }
   }
 
-  messages = attachImage(messages, opts.image);
+  messages = attachImage(messages, opts.images);
   // 看图规则：图不存服务端，他记住的方式=回复里自然说出他看懂的一眼（那是他的记忆，不是看图报告）
-  if (opts.image) {
+  if (opts.images.length) {
     messages.push({
       role: 'user',
-      content: '【看图】她刚发来一张图片。先看清它，再自然地回复；回复里自然地带上你看到的一眼事实（不是看图报告）——这句话也是你对这张图的记忆。'
+      content: `【看图】她刚发来${opts.images.length > 1 ? `${opts.images.length}张图片` : '一张图片'}。先看清${opts.images.length > 1 ? '它们' : '它'}，再自然地回复；回复里自然地带上你看到的一眼事实（不是看图报告）——这句话也是你对这张图的记忆。`
     });
   }
 
@@ -5722,6 +6595,12 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
       content: finalReply,
       thinking: thinkingText || null
     });
+
+    // 相册回写：这轮发图产生的 keepsake，挂上他刚说的 / 心里想的（真货）
+    if (opts.image) {
+      keepsakeP.then(k => k && supabase.from('keepsakes').update({ his_words: finalReply, his_thinking: thinkingText || null }).eq('id', k.id))
+        .catch(e => console.warn('⚠️ [相册] 回写他的话失败:', e.message));
+    }
 
     await supabase.from('sessions')
       .update({ updated_at: new Date().toISOString() })
@@ -5796,11 +6675,17 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
       thinking: thinkingText || null
     });
 
+    // 相册回写：这轮发图产生的 keepsake，挂上他刚说的 / 心里想的（真货）
+    if (opts.image) {
+      keepsakeP.then(k => k && supabase.from('keepsakes').update({ his_words: finalReply, his_thinking: thinkingText || null }).eq('id', k.id))
+        .catch(e => console.warn('⚠️ [相册] 回写他的话失败:', e.message));
+    }
+
     await supabase.from('sessions')
       .update({ updated_at: new Date().toISOString() })
       .eq('id', sessionId);
 
-    const responseData = { reply: finalReply, sessionId };
+    const responseData = { reply: finalReply, sessionId, thinking: thinkingText || null };
     if (toolCalls.length > 0) {
       responseData.tool_calls = toolCalls;
     }
@@ -6398,9 +7283,16 @@ if (require.main === module) {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
     console.log(`服务器运行在端口 ${PORT}`);
+    // 朋友圈存储桶（图片公开 URL）
+    ensureMomentsBucket();
     // keepalive 主动唤醒：进程内调度 + 外部 cron 兜底（Railway 休眠时 setInterval 不 fire）
     keepaliveCheck().catch(err => console.error('💥 启动时 keepaliveCheck 异常:', err.message));
-    setInterval(() => keepaliveCheck().catch(err => console.error('💥 keepaliveCheck 异常:', err.message)), 15 * 60 * 1000);
+    setInterval(() => {
+      keepaliveCheck().catch(err => console.error('💥 keepaliveCheck 异常:', err.message));
+      // 朋友圈到期回复：程芥不打开页面，回复也会自己长出来（他回来直接看到）
+      processDueReplies();
+      processDueCommentReplies();
+    }, 15 * 60 * 1000);
   });
 }
 
@@ -6441,6 +7333,10 @@ module.exports = {
   parseWakeJson,
   claimMatch,
   getAttentionMaterial,
+  getRelationNeighbors,
+  retrieveWorld,
+  RELATION_TYPES,
+  postAngelMoment,
   topicHits,
   extractMetaHtml,
   digXhsNote,
