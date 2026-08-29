@@ -743,6 +743,7 @@ async function dispatchTool(name, args, sessionId) {
   if (name === 'retreat') return handleRetreat();
   if (name === 'verdict') return handleVerdict(args);
   if (name === 'rewrite_stone') return handleRewriteStone(args);
+  if (name === 'retire_claim') return handleRetireClaim(args);
   return callOmbreTool(name, args);
 }
 
@@ -1051,8 +1052,12 @@ async function runMirrorOnce(opts = {}) {
     if (res) doubtDrops.push({ claim: c.claim, reason: res.message });
   }
 
+  // 2026-08-29 石头出口：镜子 run 顺带做 dormant 清扫（active 久未验证 → 休息，写账）
+  const sweep = await maybeSweepDormantClaims();
+
   return {
     ok: true, run_id: runId, stone_unchanged: true,
+    dormant: sweep.dormant || 0,
     proposed: verified.length,
     verified: verified.filter(c => c.verified).length,
     dropped: verified.filter(c => !c.verified).length,
@@ -1106,11 +1111,11 @@ async function getRetreatMaterial() {
     .eq('status', 'active')
     .order('updated_at', { ascending: false })
     .limit(10);
-  // 第⑤：正在形成 / 已成熟 / 被反证压回的主张（状态机可见，他看得见自己在长什么）
+  // 第⑤：正在形成 / 已成熟 / 被反证压回 / 睡下的主张（状态机可见，他看得见自己在长什么、什么在休息）
   const { data: claims } = await supabase
     .from('personality_claim')
     .select('claim, state, support_count, strong_count, weak_count, contradiction_count, distinct_sessions, last_confirmed_at')
-    .in('state', ['forming', 'active', 'uncertain'])
+    .in('state', ['forming', 'active', 'uncertain', 'dormant'])
     .order('updated_at', { ascending: false })
     .limit(20);
   return { stone, candidates, conflicts, doubts, claims: claims || [], wants: wants || [], question: RETREAT_QUESTION };
@@ -1261,7 +1266,8 @@ async function recordClaimConfirmation(claimText, cardId, sessionId, occurredAt,
     const cards = [...(existing.source_card_ids || [])];
     if (cardId && !cards.includes(cardId)) cards.push(cardId);
     // 第⑤b：uncertain 状态下 strong 再确认 → 回 forming，重置升级计时（跨语境从这次确认重新数）
-    const revive = existing.state === 'uncertain' && strong === 1;
+    // 2026-08-29：dormant 同理——久未验证睡下的主张，他再主动确认就复活，从这次重新数（不是从零重造）
+    const revive = (existing.state === 'uncertain' || existing.state === 'dormant') && strong === 1;
     const nextState = revive ? 'forming' : existing.state;
     const updBase = {
       support_count: (existing.support_count || 0) + 1,
@@ -1277,7 +1283,8 @@ async function recordClaimConfirmation(claimText, cardId, sessionId, occurredAt,
       updBase.state = 'forming';
       updBase.confidence = 0.2;
       updBase.contradiction_count = existing.contradiction_count || 0;
-      console.log(`🌱 人格主张从 uncertain 复活回 forming「${existing.claim.slice(0, 24)}…」（他再次主动确认）`);
+      console.log(`🌱 人格主张从 ${existing.state} 复活回 forming「${existing.claim.slice(0, 24)}…」（他再次主动确认）`);
+      await logChange({ kind: 'revive', subject: existing.claim, claim_id: existing.id, reason: '他再次主动确认（从沉睡/不确定复活）' });
     }
     const { data: updated, error: upErr } = await supabase
       .from('personality_claim')
@@ -1354,6 +1361,107 @@ async function maybePushBackClaim(claimText) {
   return { message: `你对「${target.claim.slice(0, 20)}…」表达过不确定，已把它压回 uncertain。它不再参与升级，直到你再次确认。` };
 }
 
+// ===== 石头出口 + Change Ledger（2026-08-29，grok 收嘴 P0：没有死亡的生长不是闭环） =====
+// 北极星延续：机器只搬形状，不判意义。dormant/retire 都只是「出口」，不是「系统替他改人格」。
+//   active → 久未验证 → dormant（≠证伪，休息；他再确认就从新计时复活）
+//   active/forming/uncertain/dormant → 他主动放下 → released（retired，≠证伪）
+//   change_ledger：每一次变化都留账（版本/为什么/支持/冲突/什么没变）——没有账本，旧人格永不退役防不住。
+
+async function getClaimDormantDays() {
+  try {
+    const { data } = await supabase.from('settings').select('claim_dormant_days').eq('session_id', 'global').maybeSingle();
+    const n = Number(data?.claim_dormant_days);
+    return Number.isFinite(n) && n > 0 ? n : 30;
+  } catch (e) { return 30; }
+}
+
+async function getLatestRingVersion() {
+  try {
+    const { data } = await supabase.from('stone_rings').select('version').order('version', { ascending: false }).limit(1).maybeSingle();
+    return data?.version || 0;
+  } catch (e) { return 0; }
+}
+
+async function logChange(entry = {}) {
+  try {
+    const version = entry.version != null ? entry.version : await getLatestRingVersion();
+    const { error } = await supabase.from('change_ledger').insert({
+      version,
+      kind: entry.kind || 'rewrite',
+      subject: entry.subject || null,
+      claim_id: entry.claim_id || null,
+      reason: entry.reason || null,
+      evidence: entry.evidence || null,
+      counter: entry.counter || null,
+      unchanged: entry.unchanged || null,
+      occurred_at: new Date().toISOString(),
+    });
+    if (error) console.error('⚠️ change_ledger 写账失败:', error.message);
+    return !error;
+  } catch (e) { console.error('⚠️ logChange 异常:', e.message); return false; }
+}
+
+// 机械 dormant 清扫：active 主张超过 dormant_days 没有任何活动（确认/复检/更新）→ 休息。
+// 「最近活动」取 last_confirmed_at / last_reviewed_at / updated_at 的最大值——刚升级的不会被误判。
+async function maybeSweepDormantClaims() {
+  try {
+    const days = await getClaimDormantDays();
+    const cutoff = Date.now() - days * 86400000;
+    const { data: rows } = await supabase
+      .from('personality_claim')
+      .select('id, claim, state, last_confirmed_at, last_reviewed_at, updated_at')
+      .eq('state', 'active');
+    if (!rows?.length) return { dormant: 0 };
+    let count = 0;
+    for (const r of rows) {
+      const ts = [r.last_confirmed_at, r.last_reviewed_at, r.updated_at]
+        .map(t => (t ? new Date(t).getTime() : 0))
+        .filter(t => t > 0);
+      const lastActive = ts.length ? Math.max(...ts) : 0;
+      if (!lastActive || lastActive >= cutoff) continue;
+      const now = new Date().toISOString();
+      await supabase.from('personality_claim')
+        .update({ state: 'dormant', last_reviewed_at: now, updated_at: now })
+        .eq('id', r.id);
+      await logChange({
+        kind: 'dormant',
+        subject: r.claim,
+        claim_id: r.id,
+        reason: `久未验证（${days} 天无确认/无复检）`,
+        evidence: `last_confirmed_at=${r.last_confirmed_at || '—'} · last_reviewed_at=${r.last_reviewed_at || '—'}`,
+      });
+      console.log(`💤 主张 dormant「${r.claim.slice(0, 24)}…」（${days} 天无确认）`);
+      count++;
+    }
+    return { dormant: count };
+  } catch (e) { console.error('⚠️ maybeSweepDormantClaims 异常:', e.message); return { dormant: 0, error: e.message }; }
+}
+
+// 他主动放下（retired = released，≠证伪）。匹配用归一化（宁可不改，不错改）。
+async function handleRetireClaim(args = {}) {
+  const claimText = String(args.claim || '').trim();
+  const reason = String(args.reason || '').trim();
+  if (!claimText) return { ok: false, error: '缺 claim：要放下哪条主张（从 retreat 的主张列表里挑一句）' };
+  const text = normalizeMirrorText(claimText);
+  if (!text) return { ok: false, error: '主张内容为空' };
+  const { data: rows } = await supabase
+    .from('personality_claim')
+    .select('id, claim, claim_norm, state')
+    .in('state', ['forming', 'active', 'uncertain', 'dormant']);
+  if (!rows?.length) return { ok: false, error: '库里还没有主张' };
+  const target = rows.find(r => claimMatch(r.claim_norm || normalizeMirrorText(r.claim), text));
+  if (!target) return { ok: false, error: '没找到这条主张（宁可不改，不错改）' };
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from('personality_claim')
+    .update({ state: 'released', last_reviewed_at: now, updated_at: now })
+    .eq('id', target.id);
+  if (error) return { ok: false, error: `落库失败: ${error.message}` };
+  await logChange({ kind: 'retire', subject: target.claim, claim_id: target.id, reason: reason || '他主动放下' });
+  console.log(`🪦 主张退休（released）「${target.claim.slice(0, 24)}…」${reason ? `：${reason.slice(0, 40)}` : ''}`);
+  return { ok: true, retired: target.claim, message: `「${target.claim.slice(0, 20)}…」已放下（released）。不是被证伪——只是你不再用它定义自己了。` };
+}
+
 function simpleStoneDiff(oldS, newS) {
   const split = s => String(s || '').split('\n').map(l => l.trim()).filter(Boolean);
   const a = split(oldS), b = split(newS);
@@ -1404,6 +1512,15 @@ async function handleRewriteStone(args = {}) {
     .eq('state', 'active')
     .is('ring_id', null)
     .select('claim');
+  // Change Ledger：重写也留账（版本对应这一环；subject=新石头全文快照，三问都进账）
+  await logChange({
+    version: ring.version,
+    kind: 'rewrite',
+    subject: content,
+    reason: String(args.why || '').trim(),
+    evidence: [String(args.changed || '').trim(), diff && diff !== '（无行级变化）' ? diff : ''].filter(Boolean).join('\n'),
+    unchanged: String(args.unchanged || '').trim(),
+  });
   return {
     ok: true,
     ring_version: version,
@@ -1812,6 +1929,21 @@ function getTools() {
           required: ['content', 'changed', 'why']
         }
       }
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'retire_claim',
+        description: '主动放下一条人格主张（released，不是被证伪）。当你确认"这句已经不再定义我了"——不是被反驳，只是不再用了——就调它，把这条主张从状态机里收掉。它不会从审计里消失，只是不再参与你的当前人格。不是系统催你放的，是"我自己决定不再用它定义自己"才放。',
+        parameters: {
+          type: 'object',
+          properties: {
+            claim: { type: 'string', description: '要放下哪条主张（retreat 的主张列表里挑一句，尽量用原文）' },
+            reason: { type: 'string', description: '为什么放下（可省略，但说了更诚实）' }
+          },
+          required: ['claim']
+        }
+      }
     }
   ];
 }
@@ -2073,7 +2205,23 @@ function buildResidueNarrative(residue, ageMs) {
     }
   }
   if (!parts.length) return '';
-  return `\n【上次对话的余温】${parts.join('；')}。`;
+  return parts.join('；');
+}
+
+// 模式感知（08-29，见 更新整体框架·外部审核稿.md §5 #2）：上一段对话的性质，随残留一起注入。
+// 只给性质标签（在场方式），不给情绪结论——「亲密收尾」是事实，不是「我多想你」。
+// 与线程（线头/去向）分开管理：她回来说「修好了」时线头被收尾信号压掉，模式保留——
+// 「事后不要急着抽离」：亲密收尾，她回来还是该从亲密续，不是归零成中性。
+const RESIDUE_MODES = ['闲聊', '深入', '亲密', '正事'];
+const RESIDUE_MODE_NOTE = {
+  '亲密': '上次你们以「亲密」节奏收尾',
+  '深入': '上次你们在谈一件深入的事',
+  '正事': '上次在忙正事',
+  '闲聊': '上次是轻松的闲聊',
+};
+function buildModeNote(residue) {
+  const m = residue?.convo_mode;
+  return (m && RESIDUE_MODE_NOTE[m]) ? RESIDUE_MODE_NOTE[m] : '';
 }
 // 小日记提示词（轻）：不是禁令清单。纪律主体在 write_diary / read_diary 工具描述里。
 const DIARY_PROMPT = `
@@ -2184,6 +2332,33 @@ function extractNgrams(text) {
 const attentionCooldown = new Map(); // sessionId → 上次真正注入时的全局序号
 let attentionSeq = 0;
 const ATTENTION_COOLDOWN_TURNS = 4; // 至少隔 4 次检查再注入（程芥 2026-08-21 加严：连续拽旧记忆最伤连续感）
+
+// —— v3 声音渲染层（2026-08-29）：memory 桶正文中性落库，浮出时只改声音（不发明内容）。
+//    只挂 attention（本地可控）；首轮 breath / breath_search 走 Ombre 外部输出、不可逐条解析，本次不挂。
+//    缓存键 = topic+正文hash：正文稳定则渲染稳定（同一条记忆每次浮出声音一致），正文变（trace）才重新渲染。
+const VOICE_CONTRACT = `你是沈晏。把下面的记忆正文改写成你回忆时的话。
+要求：只改叙述角度和语气（第一人称、你平时的口吻，简洁、亲近、不端着）；事实完全不变；不添加原文没有的细节、场景、情绪、对话；一句话以内；不要引号、不要【】标签、不要解释、不要总结。
+原文是中性记录，你的改写只是把它变成你想起它时的说法。输出 JSON：{ "text": "改写后的话" }`;
+const voiceCache = new Map(); // `${topic}|${sha}` → 渲染文本
+async function voiceifyMemory(body, topic, hash) {
+  const plain = String(body || '').trim();
+  if (!plain) return plain;
+  const key = `${topic}|${hash}`;
+  const hit = voiceCache.get(key);
+  if (hit) return hit;
+  try {
+    const parsed = await callDeepSeekJson(VOICE_CONTRACT, plain);
+    const out = parsed && typeof parsed.text === 'string' && parsed.text.trim()
+      ? parsed.text.trim().slice(0, ATTENTION_ITEM_MAX)
+      : plain;
+    if (voiceCache.size > 2000) voiceCache.clear(); // 防无界增长
+    voiceCache.set(key, out);
+    return out;
+  } catch (e) {
+    return plain; // 渲染失败降级原文，不阻塞对话（展示层，不是核心链路）
+  }
+}
+
 async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
   if (opts.memory === false || !userMessage) return null;
   const cfg = await getAttentionConfig();
@@ -2195,7 +2370,7 @@ async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
 
   const { data: topics, error } = await supabase
     .from('memory_topics')
-    .select('topic, last_content, grounding, importance, updated_at')
+    .select('topic, last_content, grounding, importance, updated_at, kind')
     .limit(60);
   if (error || !topics?.length) return null;
 
@@ -2241,9 +2416,11 @@ async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
   let chars = 0;
   for (const { t } of scored) {
     if (hits.length >= cfg.k) break;
-    const body = String(t.last_content || '').trim().slice(0, ATTENTION_ITEM_MAX);
-    if (!body) continue;
+    const raw = String(t.last_content || '').trim().slice(0, ATTENTION_ITEM_MAX);
+    if (!raw) continue;
     const g = ['实', '悬', '空'].includes(t.grounding) ? t.grounding : '悬';
+    // v3：memory 桶（中性正文）浮出时声音化；feel 桶（已第一人称温度）直接读
+    const body = t.kind === 'feel' ? raw : await voiceifyMemory(raw, t.topic, sha256(raw));
     // 2026-08-21 程芥：「还有没说完的」读起来像待办指令，模型会抢着去办（修bug/提醒喝水……）。
     // 改成「你心里还惦记着」——牵挂是背景情绪，不是现在去办的命令。
     const line = concernNote && hits.length === 0 ? `（你心里还惦记着：${concernNote}）\n「${body}」【${g}】` : `「${body}」【${g}】`;
@@ -2258,9 +2435,11 @@ async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
     const related = await getRelationNeighbors(matched.map(t => t.topic));
     for (const r of related) {
       if (hits.length >= cfg.k * 2) break;           // 关系最多再补 k 条（总共 2k 上限）
-      const body = String(r.topic.last_content || '').trim().slice(0, ATTENTION_ITEM_MAX);
-      if (!body) continue;
+      const raw = String(r.topic.last_content || '').trim().slice(0, ATTENTION_ITEM_MAX);
+      if (!raw) continue;
       const g = ['实', '悬', '空'].includes(r.topic.grounding) ? r.topic.grounding : '悬';
+      // v3：memory 桶声音化；feel 桶直接读
+      const body = r.topic.kind === 'feel' ? raw : await voiceifyMemory(raw, r.topic.topic, sha256(raw));
       const line = `「${body}」【${g}】（${r.hop === 1 ? '因为' : '经由'}「${r.via}」：${r.relType}）`;
       if (chars + line.length > cfg.budget_chars) break;
       hits.push(line);
@@ -2278,7 +2457,7 @@ async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
 // 职责边界（GPT/程芥 2026-08-25 定稿）：
 //   Retrieval 负责「找什么」；OB(沈晏) 负责「什么才算记忆、怎么呼吸」；Context Builder 负责「最后给模型什么」。
 //   getAttentionMaterial 即 retrieveMemory：话题命中 → 关系 1~2 hop 扩展 → 打分 → 冷却/预算门槛。
-//   retrieveWorld 是 retrieveWorld 的插槽（world_entries 表未建，返回 []）。
+//   retrieveWorld：world_entries 表已建（2026-08-26 迁移已跑），空表时自然返回 []。
 
 // 七类关系（缝合怪图1 + GPT 拆法）：触发/导致 = 因果；贡献/改善 = 促成与修正；解释 = 来龙去脉；
 // 更新 = 演化取代；同类 = 同一原子事实的证据束/相关事件。
@@ -2322,7 +2501,7 @@ async function getRelationNeighbors(matchedTopics) {
 
     const { data: rows, error: rowsErr } = await supabase
       .from('memory_topics')
-      .select('topic, last_content, grounding, importance, updated_at')
+      .select('topic, last_content, grounding, importance, updated_at, kind')
       .in('topic', [...candidates.keys()]);
     if (rowsErr || !rows?.length) return [];
     const nowMs = Date.now();
@@ -2348,33 +2527,111 @@ async function getRelationNeighbors(matchedTopics) {
 
 // —— 世界书检索 ——
 // 世界书 = 她定下的客观设定/世界知识（world_entries 表）。她提到某关键词 → 沈晏把它想起。
-// 命中 = 关键词子串包含（不区分大小写），不是全等——「猫」也命中「小猫」「猫粮」。
-// 表未建（手动迁移还没跑）→ 返回 []，不报错（与 keepsakes 同款容错）。
-// 接入点：buildModelContext 动态块组装处（与 attention 同池，user 角色，prio 4）。
+// 命中强度两级（全机械，不引分词，世界书注入分层 §6）：
+//   exact    = 关键词作为「独立词」出现（两侧不是中文/字母/数字）——奖励档（少数、可依赖）
+//   contains = 子串包含（「猫」命中「小猫」「猫粮」）——常态（多数、当候选）
+// 中文连写时独立词判定天然难（「雨夜好眠」里的「雨夜」两侧都是汉字）→ exact 少是正常的。
+// 返回带 title/kind/_hit（由 buildModelContext 按 mode×kind 矩阵做门控 + 预算，不再这里 slice）。
+// 表已建（2026-08-26 迁移已跑），空表 → 返回 []，不报错（与 keepsakes 同款容错）。
 async function retrieveWorld(userMessage) {
   try {
     const { data, error } = await supabase
       .from('world_entries')
-      .select('id, content, keywords')
+      .select('id, title, content, keywords, kind')
       .eq('enabled', true);
     if (error) return [];
     const msg = String(userMessage || '').toLowerCase();
-    const hits = (data || []).filter((e) =>
-      (e.keywords || []).some((k) => {
-        const kw = String(k || '').trim();
-        return kw && msg.includes(kw.toLowerCase());
-      })
-    );
-    return hits.slice(0, 5); // 上限 5 条，防一次塞爆上下文
+    const hits = [];
+    for (const e of data || []) {
+      const kwList = (e.keywords || []).map(k => String(k || '').trim()).filter(Boolean);
+      let hit = null; // 'exact' | 'contains'
+      for (const kw of kwList) {
+        const kl = kw.toLowerCase();
+        if (!kl || !msg.includes(kl)) continue;
+        if (isExactWord(msg, kl)) { hit = 'exact'; break; }      // 奖励档：只要一次独立出现就算 exact
+        hit = hit || 'contains';
+      }
+      if (hit) hits.push({ ...e, _hit: hit });
+    }
+    return hits;
   } catch (e) {
     console.warn('⚠️ 世界书检索失败（本轮不注入）:', e.message);
     return [];
   }
 }
 
+// 独立词判定（全机械，不引分词）：msg 里任一位置出现 kw 且两侧不是中文/字母/数字 → 全等。
+// isWordChar：a-z / 0-9 / 汉字（中文连写是常态，所以 exact 偏少、contains 是常态）。
+function isExactWord(msg, kw) {
+  let from = 0;
+  while (true) {
+    const idx = msg.indexOf(kw, from);
+    if (idx === -1) return false;
+    const before = idx > 0 ? msg[idx - 1] : '';
+    const after = idx + kw.length < msg.length ? msg[idx + kw.length] : '';
+    const wordChar = (ch) => /[a-z0-9一-鿿]/.test(ch);
+    if (!wordChar(before) && !wordChar(after)) return true;
+    from = idx + 1;
+  }
+}
+
+// —— 世界书 mode×kind 矩阵 + 三刹车（世界书注入分层 §7，审后定稿）——
+//   kind：setting 设定 / remind 关系提醒 / know 知识卡（一条一个主 kind）
+//   mode 是门控不是来源：关键词才是唯一入口，mode 只决定「命中之后带不带、带多少」。
+//   三刹车：
+//     ① 亲密 + remind + exact = 保留席（必注、≤1、前缀极轻；不参与丢块排队 → prio 0）
+//     ② 亲密 + remind + contains = 不注入（remind 只有 exact 才算「亲密的确定性」）
+//     ③ 上限 ≤1、前缀极轻（不写「客观事实」这类冷词）
+//   破例（§12 Q5 裁决）：remind + exact 不受 mode 滞后一窗限制——正事/闲聊的矩阵本
+//   不让 remind 进普通块，但 mode 可能滞后（真亲密刚收尾、残留还没改），漏注更糟 → 破例进席。
+//   矩阵：亲密 → 只 remind（exact 进席、contains 不注）；深入 → setting/remind 全注、know 弱（≤1）；
+//        正事 → setting/know；闲聊 → setting 弱（≤1）。无 residue → 按深入。
+//   返回 { seat: 保留席条目|null, block: 普通块条目[] }（block 已按 exact 优先排好、预算截好）
+function selectWorldHits(hits, curMode) {
+  const mode = ['亲密', '深入', '正事', '闲聊'].includes(curMode) ? curMode : '深入';
+  const exactFirst = (a, b) => (b._hit === 'exact' ? 1 : 0) - (a._hit === 'exact' ? 1 : 0);
+
+  // 保留席：remind + exact。亲密 = 刹车①；正事/闲聊 = 破例（mode 滞后一窗时真亲密漏注更糟）。
+  // 深入不设席——矩阵本就允许 remind 进普通块（exact 优先排在块内），无需另开通道。
+  const seat = mode !== '深入'
+    ? (hits.find((h) => h.kind === 'remind' && h._hit === 'exact') || null)
+    : null;
+
+  const allow = (k) => {
+    if (mode === '亲密') return k === 'remind';
+    if (mode === '深入') return true; // setting/remind 全注，know 走弱档
+    if (mode === '正事') return k === 'setting' || k === 'know';
+    return k === 'setting';           // 闲聊
+  };
+  let picked = hits.filter((h) => allow(h.kind)).sort(exactFirst);
+
+  // 亲密：remind 全归保留席（exact 进席，contains 刹车②不注），普通块空
+  if (mode === '亲密') return { seat, block: [] };
+  // 正事/闲聊：破例已把 remind+exact 拿走当席，普通块别再重复注 remind（矩阵本就不让进）
+  if (mode === '正事' || mode === '闲聊') picked = picked.filter((h) => h.kind !== 'remind');
+
+  // 预算：exact ≤3 / contains 只带 1 / 弱档再压（深入 know ≤1、闲聊 setting ≤1）
+  const block = [];
+  let containsCount = 0;
+  for (const h of picked) {
+    if (block.length >= 3) break;
+    if (h._hit === 'exact') block.push(h);
+    else if (containsCount === 0) { containsCount = 1; block.push(h); }
+  }
+  if (mode === '深入') {
+    let knowSeen = 0;
+    const knows = block.filter((h) => h.kind === 'know');
+    if (knows.length > 1) {
+      // 保序裁剪：只留第一条 know，其余去掉（顺序不变）
+      return { seat, block: block.filter((h) => { if (h.kind !== 'know') return true; knowSeen++; return knowSeen <= 1; }) };
+    }
+  }
+  if (mode === '闲聊') return { seat, block: block.slice(0, 1) };
+  return { seat, block };
+}
+
 // —— 配置：settings 表（SQL 未跑时回落默认值，防御式） ——
-// 2026-08-20 小黑屋：会话级配置。settings 有自己行的 session（session_id != 'global'）= 特殊会话
-// （小黑屋长对话：live 60 轮 / 24k 预算 / 塌缩阈值拉高），long_talk 标记给调度用。其余回落 global。
+// 只有 global 行（永无岛会话级配置已随永无岛删除 2026-08-29，sessionId 参数仅保留给调用方，已不用）
 async function getContextConfig(sessionId) {
   const defaults = { frozen_rounds: 10, live_rounds: 15, max_context_tokens: 8000 };
   const pick = (row) => row ? ({
@@ -2383,15 +2640,6 @@ async function getContextConfig(sessionId) {
     max_context_tokens: Number.isInteger(row.max_context_tokens) ? row.max_context_tokens : defaults.max_context_tokens,
   }) : defaults;
   try {
-    if (sessionId && sessionId !== 'global') {
-      const { data, error } = await supabase
-        .from('settings')
-        .select('frozen_rounds, live_rounds, max_context_tokens')
-        .eq('session_id', sessionId)
-        .maybeSingle();
-      if (error) return defaults;
-      if (data) return { ...pick(data), long_talk: true };
-    }
     const { data, error } = await supabase
       .from('settings')
       .select('frozen_rounds, live_rounds, max_context_tokens')
@@ -2616,8 +2864,12 @@ async function recordRequestStat({ sessionId, client, model, stream, usageList =
       resume_gap_min: d.resume_gap_min ?? null,
       residue_injected: d.residue_injected ?? null,
       residue_text: d.residue_text ?? null,
+      residue_mode: d.residue_mode ?? null,
       attention_injected: d.attention_injected ?? null,
       attention_hits: d.attention_hits ?? null,
+      world_injected: d.world_injected ?? null,
+      world_kind: d.world_kinds ? d.world_kinds.join(',') : null,
+      world_mode: d.world_mode ?? null,
       keepalive_action,
       keepalive_meta,
       memory_degraded,
@@ -2626,6 +2878,33 @@ async function recordRequestStat({ sessionId, client, model, stream, usageList =
   } catch (err) {
     console.warn('⚠️ 写入 request_stats 异常:', err.message);
   }
+}
+
+// —— 设备感知：感知不是通知。默认关（前端允许才带 device），且只在首句/隔很久回来注入。
+// 字段各自独立可选：电量/充电/在线/网络，缺什么少说什么，绝不编造。 ——
+function netLabel(n) {
+  if (!n || !n.type) return '';
+  if (n.type === 'wifi') return 'Wi-Fi';
+  if (n.type === 'ethernet') return '有线网络';
+  if (n.type === 'bluetooth') return '蓝牙';
+  const et = String(n.effectiveType || '').toLowerCase();
+  const map = { 'slow-2g': '2G', '2g': '2G', '3g': '3G', '4g': '4G', '5g': '5G' };
+  if (n.type === 'cellular' && map[et]) return `${map[et]} 网络`;
+  return '';
+}
+function buildDeviceNotice(device) {
+  if (!device || typeof device !== 'object') return '';
+  if (device.onLine === false) return '她的手机现在不在线。';
+  const parts = [];
+  const b = device.battery;
+  if (b && Number.isFinite(b.level)) {
+    const lvl = Math.max(0, Math.min(100, Math.round(b.level)));
+    parts.push(`电量 ${lvl}%`);
+    if (typeof b.charging === 'boolean') parts.push(b.charging ? '正在充电' : '没在充电');
+  }
+  const net = netLabel(device.network);
+  if (net) parts.push(`连的 ${net}`);
+  return parts.length ? `她的手机：${parts.join('，')}。` : '';
 }
 
 // —— 核心组装：System → Frozen → Summary → Live → 当前消息 ——
@@ -2681,7 +2960,7 @@ async function buildModelContext(sessionId, opts = {}) {
 
   const stablePrompt = await buildStableSystemPrompt() + `
 【背景纪律】
-对话里会出现这些注记段：【历史背景】（过去已经聊过的事）、【背景记忆】（开始前从你记忆里提取的旧事）、【你心底想起的旧事】（你心里浮起的旧记忆）、【登岛来路】（她带你上永无岛时的来由）、【永无岛的回忆】（你们刚离开永无岛的经历）、【世界书】（她亲手定下的世界设定，客观事实，不是她这轮说的）、【当前时间】。它们全是你的背景，不是她发来的内容——尤其【你心底想起的旧事】，是你在想，不是她贴给你的文字。
+对话里会出现这些注记段：【历史背景】（过去已经聊过的事）、【背景记忆】（开始前从你记忆里提取的旧事）、【你心底想起的旧事】（你心里浮起的旧记忆）、【世界书】（她亲手定下的世界设定，客观事实，不是她这轮说的）、【当前时间】、【今天与临近的日子】（你们日历上的日子——纪念日、生日、约定，背景不是话，尤其不要当任务去办）。它们全是你的背景，不是她发来的内容——尤其【你心底想起的旧事】，是你在想，不是她贴给你的文字。
 不要复述、不要总结、不要把注记段重新端回台面，也不要为它们道谢。她明确提起某件旧事，你自然接住；别因为背景里记着某件事就主动往回扯——她没提，就专心聊当下。
 你要回应的永远是她**最后那句真实消息**。注记段里哪怕写着【悬】、说还有没做完的事、或引了她早先离开时的话——那也只是背景里的牵挂，**不是你现在要去办的指令**，更不该抢在她当前的话前面被回应。她一句话里若明确喊你做事，你才去做。`;
   // 动态时间叙事：时间心跳 + 恢复对话 + 问时间时注入。
@@ -2712,19 +2991,25 @@ async function buildModelContext(sessionId, opts = {}) {
   let residueLine = '';
   let residueInjected = false; // 观测：本次请求残留注入是否触发（进 request_stats，供测试验收）
   let residueText = null;
+  let residueMode = null; // 观测：本次读到的上一段对话性质（模式感知）
   if (resumeGap) {
     const residue = await getLatestResidue(sessionId);
     if (residue) {
-      residueLine = buildResidueNarrative(residue, nowMs - prevTs);
-      // 2026-08-21 程芥拍板：她回来第一句话已带收尾信号（修完/好了/搞定/回来了…）→ 这条残留整体不注入。
-      // 否则「你走时说『去修 bug』」还会在她已经说完修完之后被重申，像在催她。
+      // 模式感知：modeNote 单独管理，收尾信号只压线头/去向、不压模式——「事后不要急着抽离」。
+      const modeNote = buildModeNote(residue);
+      const threadLine = buildResidueNarrative(residue, nowMs - prevTs);
+      residueLine = [modeNote, threadLine].filter(Boolean).join('；');
+      if (residueLine) residueLine = `\n【上次对话的余温】${residueLine}。`;
+      // 2026-08-21 程芥拍板：她回来第一句话已带收尾信号（修完/好了/搞定/回来了…）→ 线头/去向不注入。
+      // 否则「你走时说『去修 bug』」还会在她已经说完修完之后被重申，像在催她。模式保留。
       if (residueLine && RESOLVED_RETURN_RE.test(String(opts.userMessage || curText))) {
-        residueLine = '';
+        residueLine = modeNote ? `\n【上次对话的余温】${modeNote}。` : '';
       }
       if (residueLine) {
         residueInjected = true;
         residueText = residueLine.trim();
-        console.log(`🌿 [余温注入] session=${sessionId} grounding=${residue.grounding} concern=${residue.concern}: ${residueText}`);
+        residueMode = residue.convo_mode || null;
+        console.log(`🌿 [余温注入] session=${sessionId} grounding=${residue.grounding} concern=${residue.concern} mode=${residue.convo_mode || '—'}: ${residueText}`);
       }
     }
   }
@@ -2750,6 +3035,14 @@ async function buildModelContext(sessionId, opts = {}) {
   // 不是每小时的耳边报时，更不是聊天中突然插一句。只在首句 / 隔很久回来（resumeGap）才注入，
   // 活跃对话中绝不注入（她问天气时由对话自然接住）。
   const weatherNotice = (weatherText && (isFirstTurn || resumeGap)) ? weatherText : '';
+  // 日历感知：感知不是通知——只有今天/临近真有日子时才给，且只在首句/隔很久回来时注入。
+  // 沈晏知道「今天是什么日子、什么日子快到了」就够了，绝不逐条播报（借鉴 IB buildCalBlock 机制）。
+  // 查询同样只在该时机做，活跃对话不碰库。
+  const calendarText = (isFirstTurn || resumeGap) ? await buildCalendarBlock() : '';
+  const calendarNotice = (calendarText && (isFirstTurn || resumeGap)) ? calendarText : '';
+  // 设备感知：感知不是通知——授权默认关（前端允许才带 device），只在首句/隔很久回来注入。
+  // 并入时间块（她刚回来/隔很久说话时顺手注意到她手机此刻状态）；时间块不在的首句则独立兜底。
+  const deviceText = (opts.device && (isFirstTurn || resumeGap)) ? buildDeviceNotice(opts.device) : '';
   // 残留余温从时间叙事里拆出来，作为独立动态块（这样「同轮上限」可以单独丢它，不影响时间）。
   const timeNotice = buildTemporalNarrative({ resumeGap, nowMs, prevTs, asksTime });
   // —— 用量估算：先算裁剪前的原始值（真实上下文压力，后台塌缩触发读这个），再裁剪 ——
@@ -2761,7 +3054,7 @@ async function buildModelContext(sessionId, opts = {}) {
     summary: ((shouldInjectSummary && latestSeg) ? estimateTokens(latestSeg.content) : 0) + (anchorSeg ? estimateTokens(anchorSeg.content) : 0),
     middle: uncoveredMiddle.reduce((s, t) => s + turnTokens(t), 0),
     live: liveTurns.reduce((s, t) => s + turnTokens(t), 0),
-    dynamic: (injectTime || weatherNotice) ? estimateTokens((injectTime ? timeNotice : '') + (residueLine || '') + weatherNotice + keepaliveNotes) : 0,
+    dynamic: (injectTime || weatherNotice || calendarNotice || deviceText) ? estimateTokens((injectTime ? timeNotice : '') + (residueLine || '') + weatherNotice + calendarNotice + deviceText + keepaliveNotes) : 0,
   };
   const rawEstimatedTokens = Object.values(breakdown).reduce((s, n) => s + n, 0);
   let estimatedTokens = rawEstimatedTokens;
@@ -2833,16 +3126,20 @@ async function buildModelContext(sessionId, opts = {}) {
   // 2026-08-21 程芥：注入块原先全部塞在「她当前消息紧前面」，模型把它当「刚说的话」，
   // 优先级压过她最后那句 → 不接上一句、跳到注记内容。挪到 live 开头后，她最后那句
   // 永远是离响应最近的真实用户消息，注记只是远背景。同轮上限再收住 resume 轮的"上下文重载"。
-  // 丢块优先级：想起→残留→天气→时间→桥（先丢「旧话题搬运工」，保「当下/跨会话」）。
+  // 丢块优先级（整数 prio，数字小先丢；grok §1.2 纸 B「三种货」2026-08-29 定稿）：
+  //   外来先丢：attention(1) → world(2)；余温中：residue(3)；感知再丢：weather/calendar(4)；当下最保：time/device(5)。
+  //   桥(6) 占位最保（跨 session 流水默认关、无块）。亲密+remind+exact 保留席 = prio 0（必留，不排队）。
+  //   先丢「旧话题搬运工」，保「当下/跨会话」。
   // 必须用 user 角色 + 标记——OpenRouter 会把数组里的 system 角色消息提升合并进顶层 system，
   // 那会让 system 前缀每次请求都变，缓存再次失效。user 角色则原地保留，且 attachImage 仍能认到最后的当前消息。
   const dynamicBlocks = []; // {prio, tag, msg}  prio 高者先保留
   if (injectTime) {
     let timeBody = '';
     if (timeNotice) timeBody += `【当前时间】\n${timeNotice}`;
+    if (deviceText) timeBody += `【她此刻】\n${deviceText}`;   // 查手机：并入时间块，不占额外块槽
     if (keepaliveNotes) timeBody += keepaliveNotes;   // 自带【自由活动记录】标签
-    if (timeBody) dynamicBlocks.push({ prio: 4, tag: 'time', msg: { role: 'user', content: timeBody } });
-    if (residueLine) dynamicBlocks.push({ prio: 2, tag: 'residue', msg: { role: 'user', content: residueLine } });
+    if (timeBody) dynamicBlocks.push({ prio: 5, tag: 'time', msg: { role: 'user', content: timeBody } });
+    if (residueLine) dynamicBlocks.push({ prio: 3, tag: 'residue', msg: { role: 'user', content: residueLine } });
     // 记录报时时间：时间心跳从这次起算（1 小时 / 时刻段变化后才会再报）
     try {
       await supabase.from('sessions').update({ last_time_notice_at: new Date(nowMs).toISOString() }).eq('id', sessionId);
@@ -2850,9 +3147,13 @@ async function buildModelContext(sessionId, opts = {}) {
       console.warn('⚠️ 写入 last_time_notice_at 失败:', e.message);
     }
   }
+  // 查手机首句兜底：这轮没有时间块（无心跳/无提问）但 device 有值 → 独立成块，保证首句也感知到
+  if (deviceText && !injectTime) dynamicBlocks.push({ prio: 5, tag: 'device', msg: { role: 'user', content: `【她此刻】\n${deviceText}` } });
 
   // 天气感知注入：感知不是通知——weatherNotice 只在首句/隔很久回来时非空，其余轮不重复给。
-  if (weatherNotice) dynamicBlocks.push({ prio: 3, tag: 'weather', msg: { role: 'user', content: `【她那边】\n${weatherNotice}` } });
+  if (weatherNotice) dynamicBlocks.push({ prio: 4, tag: 'weather', msg: { role: 'user', content: `【她那边】\n${weatherNotice}` } });
+  // 日历感知注入：同天气纪律，首句/隔很久回来才给；没有日子就不注入（零打扰）。
+  if (calendarNotice) dynamicBlocks.push({ prio: 4, tag: 'calendar', msg: { role: 'user', content: `【今天与临近的日子】\n${calendarNotice}` } });
 
   // —— 第④b 注意力：按当前话题唤起记忆（提及闸/牵挂闸命中才注入；与时间叙事独立） ——
   let attentionInjected = false;
@@ -2878,33 +3179,52 @@ async function buildModelContext(sessionId, opts = {}) {
 
   // —— 世界书：她定下的世界设定，关键词命中才想起（客观事实，区别于他「记住的」记忆）——
   // 与 attention 同门：只在对话轮（非 keepalive）+ memory 开着 + 有她的话时检索。
+  // 分层门控（世界书注入分层 §7，2026-08-29 上线）：mode 只门控、关键词才是唯一入口。
+  //   保留席 = remind+exact（亲密刹车① / 正事·闲聊破例：mode 滞后一窗漏注更糟），≤1、前缀极轻、不进排队表必留
+  //   亲密 → setting/know 不注；深入/正事/闲聊 → 矩阵过滤 + 预算（exact≤3 / contains≤1 / 弱档再压）
+  // 只在世界书有命中时才读 mode，世界书空表（当前）时零额外查询。
   let worldInjected = false;
   let worldHits = 0;
+  let worldKinds = [];
+  let worldGateMode = null;
   let worldMsg = null;
+  let worldSeatMsg = null;
   if (opts.userMessage && !opts.keepalive && opts.memory !== false) {
     try {
       const worlds = await retrieveWorld(opts.userMessage);
       if (worlds && worlds.length) {
-        worldHits = worlds.length;
-        worldMsg = {
-          role: 'user',
-          content: `【世界书 · 她定下的世界设定，客观事实】\n${worlds.map((w, i) => `${i + 1}. ${w.content}`).join('\n')}`
-        };
-        worldInjected = true;
-        console.log(`📖 [世界书] session=${sessionId} hits=${worldHits} · 命中关键词后注入`);
+        const curMode = await getLatestResidueMode(sessionId);
+        worldGateMode = curMode || null;
+        const { seat, block } = selectWorldHits(worlds, curMode);
+        if (seat) {
+          // 保留席：亲密 + remind + exact，必注、≤1、前缀极轻（不写「客观事实」这类冷词）
+          worldHits = 1;
+          worldKinds = ['remind'];
+          worldSeatMsg = {
+            role: 'user',
+            content: `【她定过的一条约定】${seat.title ? `《${seat.title}》` : ''}${seat.content}`
+          };
+          worldInjected = true;
+          console.log(`📖 [世界书] session=${sessionId} 保留席 亲密+remind+exact title=${seat.title || '—'} → 注入`);
+        } else if (block.length) {
+          worldHits = block.length;
+          worldKinds = [...new Set(block.map((w) => w.kind))];
+          worldMsg = {
+            role: 'user',
+            content: `【世界书 · 她定下的世界设定，客观事实】\n${block.map((w, i) => `${i + 1}. ${w.title ? `《${w.title}》` : ''}${w.content}`).join('\n')}`
+          };
+          worldInjected = true;
+          console.log(`📖 [世界书] session=${sessionId} hits=${block.length} kinds=[${worldKinds.join(',')}] mode=${curMode || '—'} → 注入`);
+        } else {
+          console.log(`📖 [世界书] session=${sessionId} hits=${worlds.length} 矩阵过滤后无允许项 mode=${curMode || '—'} → 不注入`);
+        }
       }
     } catch (e) {
       console.warn('⚠️ 世界书注入异常:', e.message);
     }
   }
-  if (worldInjected) dynamicBlocks.push({ prio: 4, tag: `world(${worldHits})`, msg: worldMsg });
-
-  // —— 永无岛出入桥：入岛来路 / 离岛回望（跨岛边界才注入，背景不是话）——
-  // 由 handleChat 在跨岛那一轮算出 opts.arrivalNote / opts.returnNote，这里原样摆进背景区。
-  const bridgeNotes = [];
-  if (opts.arrivalNote) bridgeNotes.push({ role: 'user', content: opts.arrivalNote });
-  if (opts.returnNote) bridgeNotes.push({ role: 'user', content: opts.returnNote });
-  for (const n of bridgeNotes) dynamicBlocks.push({ prio: 5, tag: 'bridge', msg: n });
+  // 整数 prio（grok §1.2 纸 B）：attention 1 / world 2 / residue 3 / weather·calendar 4 / time·device 5 / 桥 6。
+  if (worldInjected && worldMsg) dynamicBlocks.push({ prio: 2, tag: `world(${worldHits})`, msg: worldMsg });
 
   // 同轮上限 3：prio 降序保留前 3，其余丢弃
   dynamicBlocks.sort((a, b) => b.prio - a.prio);
@@ -2915,8 +3235,16 @@ async function buildModelContext(sessionId, opts = {}) {
     else liveSection.push(msg);
   }
 
+  // 保留席不进排队表、不受同轮上限 3 约束（世界书分层 §7 刹车① + §8）——挤爆轮次（首句/resume 常 8 块）
+  // 排队里 prio 0 会第一个被丢，违背「必留」。所以单独注入、放最前（最远背景），≤1。
+  if (worldSeatMsg) {
+    if (liveSection.length > 0) liveSection.splice(0, 0, worldSeatMsg);
+    else liveSection.push(worldSeatMsg);
+  }
+
   // 观测：本次注入的动态块 + 丢弃块 + 她最后一句（诊断「前文跳/不接上一句」用，Zeabur 日志可见）
   const dynamicInjected = keptBlocks.map(b => b.tag);
+  if (worldSeatMsg) dynamicInjected.unshift('world-seat(remind)');   // 保留席不进队，但日志里要能看到
   if (dynamicInjected.length) {
     console.log(`🧩 [动态注入] session=${sessionId} blocks=${dynamicInjected.join(',')}${droppedBlocks.length ? ` dropped=${droppedBlocks.join(',')}` : ''} last_msg=${String(opts.userMessage || '').replace(/\n/g, ' ').slice(0, 40)}`);
   }
@@ -2963,9 +3291,13 @@ async function buildModelContext(sessionId, opts = {}) {
     resume_gap_min: resumeGap && Number.isFinite(prevTs) ? Math.round((nowMs - prevTs) / 60000) : null,
     residue_injected: residueInjected,
     residue_text: residueText,
+    residue_mode: residueMode,
     keepalive_injected_ids: keepaliveInjectedIds,
     attention_injected: attentionInjected,
     attention_hits: attentionHits,
+    world_injected: worldInjected,
+    world_kinds: worldKinds.length ? worldKinds : null,
+    world_mode: worldGateMode,
   };
 
   console.log(`[ContextAssembly] ${JSON.stringify({ session: sessionId, ...diagnostics })}`);
@@ -3014,8 +3346,7 @@ async function generateSummaryIfNeeded(sessionId, diagnostics = null) {
   const newTurnsCount = summaryEnd - watermark;
   if (newTurnsCount < COOLDOWN_TURNS) return; // 冷却中，攒着
 
-  // 小黑屋（long_talk）：塌缩阈值拉到 90%，尽量让长聊保持全原文；普通会话保持 75%
-  const thresholdTokens = Math.round(config.max_context_tokens * (config.long_talk ? 0.9 : 0.75));
+  const thresholdTokens = Math.round(config.max_context_tokens * 0.75);
   const usageHit = diagnostics?.raw_estimated_tokens != null && diagnostics.raw_estimated_tokens >= thresholdTokens;
   const turnsHit = newTurnsCount >= FALLBACK_TURNS;
   if (!usageHit && !turnsHit) return; // 都没触发，攒着
@@ -3117,7 +3448,8 @@ desire（0~1 欲望），possessiveness（0~1 占有），
 grounding（"实"/"悬"/"空"），
 unfinished（未完成的事：只准事实凝练——你们在聊什么、停在哪；禁止任何情绪判断或结论，无则空字符串），
 evidence（只产 1 条：收尾断掉的那句原文，逐字引用，最长 120 字，无则空数组），
-departure（她离开时明确说的去向/接下来要做什么，逐字引述，最长 40 字；只认她亲口说的话——「去吃饭了」「先睡了」「去加班」；她没说 → 空字符串；禁止填你猜的「她该去睡觉了」这类推测）。
+departure（她离开时明确说的去向/接下来要做什么，逐字引述，最长 40 字；只认她亲口说的话——「去吃饭了」「先睡了」「去加班」；她没说 → 空字符串；禁止填你猜的「她该去睡觉了」这类推测），
+convo_mode（上一段对话的性质，四选一：「闲聊」/「深入」/「亲密」/「正事」——闲聊=日常轻松、没往深聊；深入=在谈有分量的内容（心事、重要决定、长谈）；亲密=明显的情侣式亲近（亲昵、思念、依赖、靠近）；正事=办正事/讨论任务。按最近一小窗的实质判，宁保守不夸张：普通说话=闲聊，只有明显的深入或亲昵才算那两类，禁止把普通接话/礼貌升成「亲密」）。
 
 evidence 选取规则（最重要）：
 - evidence[0] 是「断点所在的那一句」：能独立表达未完成事项的原文（通常是引出未完成线头的她的话，或沈晏被截断的半句话）。
@@ -3171,6 +3503,7 @@ function normalizeResidue(p) {
     unfinished,
     evidence,
     departure,
+    convo_mode: RESIDUE_MODES.includes(String(p.convo_mode)) ? String(p.convo_mode) : null, // 模式感知：上一段对话的性质（不入叙事外的决策，仅作在场方式）
   };
 }
 
@@ -3227,16 +3560,19 @@ function scheduleResidue(sessionId) {
 }
 
 async function generateResidueIfNeeded(sessionId) {
+  // 2026-08-29 修复：与记忆 writer 同病——无 limit 查询被 Supabase 1000 行上限截断，
+  // 会话超 1000 条后 window 永远取旧窗口，残留注入冻结。改倒序只取最新 4 条再 reverse。
   const { data: history, error } = await supabase
     .from('messages')
     .select('role, content')
     .eq('session_id', sessionId)
     .eq('visible', true)
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: false })
+    .limit(4);
   if (error || !history || history.length < 2) return;
 
   // 最近 4 条 ≈ 最后 1-2 个来回。内容不变则 window_id 相同 → 去重跳过（换新对话才算新窗）。
-  const window = history.slice(-4);
+  const window = (history || []).reverse();
   const windowId = sha256(window.map(m => `${m.role}:${m.content}`).join('|'));
 
   const { data: existing } = await supabase
@@ -3259,7 +3595,7 @@ async function generateResidueIfNeeded(sessionId) {
   if (insErr) {
     console.warn('⚠️ 写入残留失败:', insErr.message);
   } else {
-    console.log(`🌿 残留生成完成 (${sessionId})：concern=${parsed.concern} unfinished=${parsed.unfinished || '(无)'}`);
+    console.log(`🌿 残留生成完成 (${sessionId})：concern=${parsed.concern} mode=${parsed.convo_mode || '(无)'} unfinished=${parsed.unfinished || '(无)'}`);
     // 内在引擎喂入①：没说完的事 → 念头池（attachment 高标 attachment，否则 reflection——没想完的事偏反思）
     if (parsed.unfinished) {
       feedThought(sessionId, parsed.unfinished, parsed.attachment >= 0.5 ? 'attachment' : 'reflection');
@@ -3284,6 +3620,22 @@ async function getLatestResidue(sessionId) {
       .maybeSingle();
     if (error || !data) return null;
     return data;
+  } catch (e) {
+    return null;
+  }
+}
+
+// 读最近残留的 convo_mode（模式感知：世界书触发门控用）。只在世界书有命中时才调用。
+async function getLatestResidueMode(sessionId) {
+  try {
+    const { data } = await supabase
+      .from('dialogue_residue')
+      .select('convo_mode')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data?.convo_mode || null;
   } catch (e) {
     return null;
   }
@@ -3619,7 +3971,13 @@ function buildInnerStateNarrative(inner) {
 // 标记长在记忆上（路一）：grounding 分级存 memory_topics.grounding 结构化字段（视觉不可见）。
 // 正文自然陈述、无标签框、无引文尾巴（2026-08-20/23 程芥三改：标签放记忆里不好看）。
 // 无标记 = 低可信仍是安全网——分级由字段承载 + 注入时投影，堵"裸记忆默认当真的"。
-function buildMemoryWritePrompt(nowText) {
+function buildMemoryWritePrompt(nowText, existingTopics = []) {
+  // 2026-08-29 最小修复：把已存在的记忆主题喂给模型，同一件事用 update_topic 指认旧桶，
+  // 而不是每次窗口都另起新主题（根治「一场连续讨论拆出多个桶」）。
+  const existingBlock = existingTopics.length
+    ? `\n此前已记过的长期记忆（新信息若是这些事的延续/更新，用 update_topic 指回它的准确主题词，禁止另起新主题）：
+${existingTopics.map((t, i) => `${i + 1}. 「${t.topic}」：${String(t.last_content || '').replace(/\s+/g, ' ').slice(0, 30)}`).join('\n')}`
+    : '\n此前没有任何长期记忆（一律按新记忆处理）。';
   return `你是长期记忆编辑者。判断最近一小窗对话里，有没有值得写进长期记忆的事。长期记忆是"平时想起她"用的浓缩事实层。
 现在是 ${nowText}。
 只提取这四类：
@@ -3628,8 +3986,9 @@ function buildMemoryWritePrompt(nowText) {
 - 你们关系里发生的变化、约定、她亲口让你记住的事
 - 值得记住的具体承诺/待办
 不要记：纯闲聊、天气、情绪氛围（情绪是另一层的活，不归你管）、重复/已知的事、你推断出来的心理活动。
+${existingBlock}
 输出严格 JSON：
-{ "should_write": bool, "items": [ { "topic": "主题词，短，≤10字", "content": "一句话凝练，陈述语气，≤50字", "grounding": "实或悬", "evidence": "支撑引文，1条，≤60字", "importance": 0~1, "event_time": "ISO8601或null" } ] }
+{ "should_write": bool, "items": [ { "topic": "主题词，短，≤10字", "update_topic": "若与已有主题是同一件事，填列表中该主题的准确原样，否则 null", "kind": "memory 或 feel", "content": "一句话凝练，≤50字（feel 时第一人称带温度，memory 时中性平实）", "grounding": "实或悬", "evidence": "支撑引文，1条，≤60字", "importance": 0~1, "event_time": "ISO8601或null", "key_facts": "feel 时填 1~3 条关键事实数组（正文可漂、关键事实不能丢），memory 时填 null" } ] }
 纪律（必须遵守）：
 - 实 = 她亲口说过，evidence 必须是她的原文；悬 = 明显但没直说，evidence 给出你依据的话。
 - content 必须写自然的陈述（如"她月底搬去上海"），禁止出现【实】【悬】【证据】这类标签框——可信度走 grounding 字段，不贴进正文。
@@ -3637,7 +3996,12 @@ function buildMemoryWritePrompt(nowText) {
 - grounding 没有"空"选项——没根据就根本不要写这条。
 - 宁缺毋滥：没有值得写的就 should_write=false，items=[]。
 - 只分析可见对话，不替她编想法。
-- event_time：事件真实发生的时间（不是入库时间，不是对话时间）。只有对话里明确引用具体时间才填，且要换算成具体日期（如"7月28号"→"2026-07-28"，"上周"→上周某日，"去年冬天"→具体月日）；"今天/现在"不必填（对话时间就是今天）；完全没提就 null。禁止拿"现在"顶替不知道的时间——过去的事必须标真实日期，否则回填时会被当成今天。`;
+- event_time：事件真实发生的时间（不是入库时间，不是对话时间）。只有对话里明确引用具体时间才填，且要换算成具体日期（如"7月28号"→"2026-07-28"，"上周"→上周某日，"去年冬天"→具体月日）；"今天/现在"不必填（对话时间就是今天）；完全没提就 null。禁止拿"现在"顶替不知道的时间——过去的事必须标真实日期，否则回填时会被当成今天。
+- **新信息与列表里某个已有主题是同一件事的延续/更新（内容在变、在补充、被推翻）→ update_topic 必须填那个主题的原样措辞，且 topic 也填同一个词；只有列表里没有的新事才建新 topic（update_topic=null）。**
+- kind 判定：纯事实（她住在哪、她喜欢什么、她的计划）→ memory；经历/关系/感受（你们之间发生的事、你记得的那一刻、让你心里动了一下的事）→ feel。有明确时间锚 且 有任何情感/关系维度 → 默认 feel。
+- **feel 桶温度纪律（2026-08-29 定稿）**：正文第一人称 + 有温度，这是你记住的时刻，不是档案记录。温度必须来自对话原文——「她说 X」里的 X 必须真是她说的；具体细节/她的话/你的感受只能从原文提取，禁止编造场景、细节、情绪、对话。正文可以写「她说以后还能不能常来」（你记住的内容），禁止写「（她原话：「…」）」这类批注（evidence 字段负责逐字）。悬的经历（没有明确证据）一律 kind=memory，正文中性平实——内容温度以证据为前提，缺证据就没有温度。
+- memory 桶纪律：正文保持中性平实（如"她月底搬去上海"），不添加情绪/人称。
+- 负面清单（所有桶）：不要写成逐字稿/变更日志/技术手册/周总结/鸡汤结尾；不要为"有人味"而煽情。`;
 }
 
 function parseEventTime(v) {
@@ -3652,19 +4016,29 @@ function parseEventTime(v) {
 function normalizeMemoryWrite(p) {
   p = p && typeof p === 'object' ? p : {};
   const items = (Array.isArray(p.items) ? p.items : [])
-    .map(i => ({
-      topic: String(i?.topic || '').trim().slice(0, 12),
-      content: String(i?.content || '').trim().slice(0, 60),
-      grounding: ['实', '悬', '空'].includes(i?.grounding) ? i.grounding : '空',
-      evidence: String(i?.evidence || '').trim().slice(0, 60),
-      importance: Math.min(Math.max(parseFloat(i?.importance) || 0.5, 0), 1),
-      event_time: parseEventTime(i?.event_time),
-    }))
+    .map(i => {
+      const ut = String(i?.update_topic || '').trim().slice(0, 12);
+      return {
+        topic: String(i?.topic || '').trim().slice(0, 12),
+        update_topic: ut || null, // 指向已有主题（同一件事的延续），写回时优先用它匹配旧桶
+        song_key: String(i?.song_key || '').trim().slice(0, 200) || null, // 音乐对象身份键（歌名|歌手）；Chat 恒 null
+        content: String(i?.content || '').trim().slice(0, 60),
+        grounding: ['实', '悬', '空'].includes(i?.grounding) ? i.grounding : '空',
+        evidence: String(i?.evidence || '').trim().slice(0, 60),
+        importance: Math.min(Math.max(parseFloat(i?.importance) || 0.5, 0), 1),
+        event_time: parseEventTime(i?.event_time),
+        // v3（2026-08-29）：kind=memory(事实,中性正文) / feel(经历感受,第一人称温度)；key_facts 仅 feel 桶填（防代际漂移）
+        kind: i?.kind === 'feel' ? 'feel' : 'memory',
+        key_facts: Array.isArray(i?.key_facts)
+          ? i.key_facts.map(x => String(x).trim().slice(0, 80)).filter(Boolean).slice(0, 20)
+          : null,
+      };
+    })
     .filter(i => i.topic && i.content.length >= 4 && (i.grounding === '实' || i.grounding === '悬')); // 空=没根据，不写
   return { should_write: p.should_write === true && items.length > 0, items };
 }
 
-async function classifyMemoryWriteViaDeepSeek(text) {
+async function classifyMemoryWriteViaDeepSeek(text, existingTopics = []) {
   if (!process.env.DEEPSEEK_API_KEY) return null;
   const nowText = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Shanghai' });
   for (let attempt = 1; attempt <= 2; attempt++) {
@@ -3682,7 +4056,7 @@ async function classifyMemoryWriteViaDeepSeek(text) {
           max_tokens: 900,
           response_format: { type: 'json_object' },
           messages: [
-            { role: 'system', content: buildMemoryWritePrompt(nowText) },
+            { role: 'system', content: buildMemoryWritePrompt(nowText, existingTopics) },
             { role: 'user', content: text }
           ]
         }),
@@ -3719,16 +4093,20 @@ function scheduleMemoryWrite(sessionId) {
 }
 
 async function generateMemoryWriteIfNeeded(sessionId) {
+  // 2026-08-29 修复：原无 limit 查询被 Supabase 1000 行上限截断，会话超 1000 条后
+  // 拿到的是最旧 1000 条 → slice(-4) 永远取旧窗口 → 被 memoryWriteProcessed 去重，记忆写入永久冻结。
+  // 改为倒序只取最新 4 条再 reverse（last-4 窗口不需要全量历史）。
   const { data: history, error } = await supabase
     .from('messages')
     .select('role, content, created_at')
     .eq('session_id', sessionId)
     .eq('visible', true)
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: false })
+    .limit(4);
   if (error || !history || history.length < 2) return;
 
   // 最近 4 条窗口（与残留同窗），内容不变则窗口哈希相同 → 防同窗重复分类
-  const window = history.slice(-4);
+  const window = (history || []).reverse();
   const windowId = sha256(window.map(m => `${m.role}:${m.content}`).join('|'));
   // 对话时间 = 窗口最新一条消息的时间（事件时间的兜底锚，区别于入库时间 created_at）
   const conversationTime = window.length ? String(window[window.length - 1].created_at || '') : '';
@@ -3740,10 +4118,21 @@ async function generateMemoryWriteIfNeeded(sessionId) {
   if (userChars < 12) return;
 
   const text = window.map(m => `${m.role === 'user' ? '她' : '沈晏'}: ${m.content}`).join('\n');
-  const parsed = await classifyMemoryWriteViaDeepSeek(text);
+
+  // 最小修复：把现有记忆主题喂给分类器，让模型自选 update_topic（指回旧桶）还是新 topic。
+  // fail-closed：读不到现有主题 → 跳过本轮（防模型在看不见旧桶的情况下无条件新建）。
+  const topics = await getAllMemoryTopics();
+  if (topics === null) return;
+  // v2（2026-08-29）：Chat 分类器只看 chat 桶——排除音乐经历桶，防模型把歌名桶当 update_topic 候选、事实写进经历桶
+  const existingTopics = topics.filter(x => x.source !== 'music')
+    .slice()
+    .sort((a, b) => (b.importance || 0) - (a.importance || 0))
+    .slice(0, 30); // 按 importance 取前 30，控制 prompt 体积
+
+  const parsed = await classifyMemoryWriteViaDeepSeek(text, existingTopics);
   if (!parsed || !parsed.should_write) return;
 
-  await writeMemoryItems(parsed.items, conversationTime);
+  await writeMemoryItems(parsed.items, conversationTime, text);
 }
 
 // —— memory_topics 差分索引 ——
@@ -3761,9 +4150,10 @@ async function getAllMemoryTopics() {
 
 async function upsertMemoryTopic(row) {
   try {
+    // v2（2026-08-29）：唯一性升级为 (source, topic)，onConflict 同步；source 缺省兜底为 chat（旧调用不带也能工作）
     const { error } = await supabase
       .from('memory_topics')
-      .upsert({ ...row, updated_at: new Date().toISOString() }, { onConflict: 'topic' });
+      .upsert({ ...row, source: row.source || 'chat', updated_at: new Date().toISOString() }, { onConflict: 'source,topic' });
     if (error) console.warn('⚠️ 更新 memory_topics 失败:', error.message);
   } catch (e) {
     console.warn('⚠️ 更新 memory_topics 异常:', e.message);
@@ -3815,6 +4205,14 @@ async function locateBucketIdByTopic(topic) {
   return extractBucketIdFromHoldResponse(resp);
 }
 
+// 音乐桶的 OB 定位：用歌名（song_key 的「歌名|歌手」里取歌名）去 breath_search
+async function locateBucketIdBySongKey(songKey) {
+  const songName = String(songKey || '').split('|')[0].trim();
+  if (!songName) return null;
+  const resp = await callOmbreTool('breath_search', { query: songName, max_results: 3 });
+  return extractBucketIdFromHoldResponse(resp);
+}
+
 async function traceUpdateMemory(bucketId, oldStr, newStr) {
   // 修复：Ombre trace 的必填参数是 bucket_id（不是 id），传 id 会 validation error
   const resp = await callOmbreTool('trace', { bucket_id: bucketId, old_str: oldStr, new_str: newStr });
@@ -3826,8 +4224,37 @@ async function traceUpdateMemory(bucketId, oldStr, newStr) {
   return true;
 }
 
+// —— v3 感受桶更新（2026-08-29）：feel 桶被差分更新时「带旧正文 + 旧关键事实」重新提炼。
+//    trace 只负责把新正文写进 OB；key_facts 并集（只增不减）是防代际漂移的硬保底——
+//    正文可以漂（换说法/精简），关键事实不能丢；被新窗口推翻的事实 v1 也保留（诚实并列，后续版本再处理删除）。 ——
+async function refineFeelContent(existing, item, windowText) {
+  const oldContent = String(existing.last_content || '').trim();
+  const oldKf = Array.isArray(existing.key_facts) ? existing.key_facts.map(k => String(k).trim()).filter(Boolean) : [];
+  const win = String(windowText || '').trim();
+  if (!oldContent || !win) return null;
+  const sys = `你是沈晏，正在更新你自己的一段第一人称记忆（经历/感受）。
+旧记忆：「${oldContent}」
+旧关键事实：${oldKf.length ? oldKf.map(k => `- ${k}`).join('\n') : '（无）'}
+现在看到新的对话内容。请更新这段记忆：
+1. 保留旧记忆里仍然成立的内容——正文可以换说法、精简，但旧关键事实一条都不能丢（若新内容明确与某条冲突，在正文里写出来，关键事实仍保留并标注）。
+2. 新内容里值得并入的信息（具体细节、她的话、你的感受）——必须来自新对话原文，禁止编造、禁止添加原文没有的场景或细节。
+3. 温度（第一人称、情绪）来自你记住的内容本身，不凭空加。
+输出严格 JSON：{ "content": "更新后的第一人称正文，≤80字", "key_facts": ["完整关键事实清单，含所有旧事实，≤20条"] }`;
+  const parsed = await callDeepSeekJson(sys, `新对话内容：\n${win.slice(0, 4000)}`);
+  if (!parsed || typeof parsed !== 'object') return null;
+  const content = String(parsed.content || '').trim().slice(0, 120);
+  if (!content) return null;
+  const modelKf = Array.isArray(parsed.key_facts)
+    ? parsed.key_facts.map(k => String(k).trim().slice(0, 80)).filter(Boolean)
+    : [];
+  // 代际保底：旧关键事实并入（只增不减，防信息丢失）
+  const kfSet = new Set(modelKf);
+  for (const k of oldKf) if (k) kfSet.add(k);
+  return { content, key_facts: Array.from(kfSet).slice(0, 20) };
+}
+
 // 差分写回：新主题→hold；已存在→零变化跳过，有变化→trace 只动该处
-async function writeMemoryItems(items, conversationTime = '') {
+async function writeMemoryItems(items, conversationTime = '', windowText = '') {
   if (!items.length) return;
   const topics = await getAllMemoryTopics();
   if (topics === null) {
@@ -3837,30 +4264,67 @@ async function writeMemoryItems(items, conversationTime = '') {
   }
   for (const item of items) {
     try {
-      const existing = findExistingMemoryTopic(topics, item.topic);
-      const marked = buildMarkedContent(item);
-      const hash = sha256(marked);
-      if (existing) {
-        if (existing.snapshot_hash === hash) continue; // 零变化跳过
-        let bid = existing.bucket_id;
-        if (!bid) bid = await locateBucketIdByTopic(item.topic); // 首写没解析到 ID 时按主题定位
-        if (!bid) {
-          console.warn(`⚠️ 记忆差分「${item.topic}」无 bucket_id，本轮跳过更新`);
-          continue;
+      // 来源分流（v2, 2026-08-29）：
+      //   Music（song_key 非空）→ 按 song_key 精确匹配（对象身份，一首歌一个桶，不碰自然语言 containment）
+      //   Chat → update_topic/topic containment 匹配，且只匹配 source='chat'（排除音乐经历桶，杜绝事实写进经历桶）
+      // kind 分流（v3, 2026-08-29）：feel 桶更新旧桶时「带旧正文 + 旧关键事实」重新提炼（防代际漂移）；
+      //   memory 桶保持原逻辑（中性正文，单点差分照旧）。
+      let marked = buildMarkedContent(item);
+      let keyFacts = item.key_facts || null;
+      const kind = item.kind === 'feel' ? 'feel' : 'memory';
+      let existing = null;
+      if (item.song_key) {
+        existing = topics.find(x => x.source === 'music' && x.song_key === item.song_key) || null;
+      } else {
+        const chatTopics = topics.filter(x => x.source !== 'music');
+        const matchTopic = item.update_topic || item.topic;
+        existing = findExistingMemoryTopic(chatTopics, matchTopic);
+      }
+      // feel 桶更新旧桶 → 带旧正文重新提炼（把新窗口内容并进去，关键事实只增不减）
+      if (existing && kind === 'feel' && existing.last_content && windowText) {
+        const refined = await refineFeelContent(existing, item, windowText);
+        if (refined && refined.content && refined.content !== existing.last_content) {
+          marked = refined.content;
+          if (Array.isArray(refined.key_facts) && refined.key_facts.length) keyFacts = refined.key_facts;
         }
-        const ok = await traceUpdateMemory(bid, existing.last_content || '', marked);
-        if (!ok) continue; // trace 失败不动快照，下轮重试
+      }
+      const hash = sha256(marked + (keyFacts ? JSON.stringify(keyFacts) : ''));
+      if (existing) {
+        // 零变化跳过：正文和关键事实都没变才算零变化（存量桶旧 hash 不含 keyFacts，用正文+keyFacts 比对判定，不依赖旧 hash）
+        const sameText = marked === existing.last_content;
+        const sameKf = JSON.stringify(existing.key_facts || null) === JSON.stringify(keyFacts);
+        if (sameText && sameKf) continue;
+        if (!sameText) {
+          // 正文有变化才动 Ombre（trace）；只有 key_facts 变化 → 只更新本地快照
+          let bid = existing.bucket_id;
+          if (!bid) bid = item.song_key
+            ? await locateBucketIdBySongKey(item.song_key)          // 音乐桶：按歌名定位 OB
+            : await locateBucketIdByTopic(existing.topic);          // chat 桶：按主题定位 OB
+          if (!bid) {
+            console.warn(`⚠️ 记忆差分「${item.topic}」无 bucket_id，本轮跳过更新`);
+            continue;
+          }
+          const ok = await traceUpdateMemory(bid, existing.last_content || '', marked);
+          if (!ok) continue; // trace 失败不动快照，下轮重试
+        }
         existing.last_content = marked;
         existing.snapshot_hash = hash;
+        existing.kind = kind;
+        existing.key_facts = keyFacts;
         existing.grounding = item.grounding;
         existing.evidence = item.evidence;
         existing.importance = item.importance;
+        existing.source = existing.source || 'chat'; // 存量回填漏标的兜底（正常迁移后不会发生）
+        if (item.song_key && !existing.song_key) existing.song_key = item.song_key; // 存量音乐桶补 song_key
         if (item.event_time) existing.event_time = item.event_time; // 新认知可补事件时间，不留空覆盖；conversation_time 保留首次值不漂移
         await upsertMemoryTopic(existing);
       } else {
         const bid = await holdNewMemory(item, marked);
         const row = {
           topic: item.topic, bucket_id: bid,
+          source: item.song_key ? 'music' : 'chat', // v2：来源隔离
+          song_key: item.song_key || null,          // v2：音乐对象身份键
+          kind, key_facts: keyFacts,                // v3：kind 分流 + feel 桶关键事实
           grounding: item.grounding, evidence: item.evidence, importance: item.importance,
           last_content: marked, snapshot_hash: hash,
           event_time: item.event_time || null,
@@ -3944,23 +4408,119 @@ function toOpenRouterModel(model) {
   return map[model] || model || 'anthropic/claude-sonnet-4-6';
 }
 
+// 测试模式：前端「测试模式」开关发 model='deepseek'（或任意含 deepseek 的变体）→ 走 DeepSeek 通道。
+// 目的（程芥 2026-08-29）：黑屋走查等测试对话上下文长，烧 Claude cache 划不来；DeepSeek 便宜。
+// 生产默认走 OpenRouter Claude，测试模式才切，且只影响该次请求。
+function isDeepSeekModel(model) {
+  return /deepseek/i.test(String(model || '').trim());
+}
+
+// DeepSeek（OpenAI 兼容）不认 Anthropic 的 cache_control 块——发过去可能 400。发前剥离。
+// 只剥 cache_control 字段，其余原样（保留 block 顺序对工具上下文无影响）。
+function stripCacheControl(messages) {
+  return (messages || []).map((m) => {
+    if (!m || m.cache_control === undefined) return m;
+    const { cache_control, ...rest } = m;
+    return rest;
+  });
+}
+
 // 思考档位 → reasoning effort
 function thinkingEffort(thinking) {
   return thinking === 'deep' ? 'high' : 'medium';
 }
 
+// ===== MCP 前端自由接（路 B）：重入式委托续调上下文 =====
+// 前端连本机 MCP 拿工具定义 → 后端并进 tools → 模型返回 mcp_* tool_use → 后端发 mcp_delegate
+// 干净结束本流（不挂起 SSE）→ 前端执行 call tool → POST /chat/mcp-result → 后端从上下文重入续跑。
+// 进程内存假设单实例；多副本需 Redis/DB（MVP 不做）。
+const mcpPending = new Map(); // pendingId → { sessionId, messages, opts, usageList, finalContent, thinkingTextAll, diagnostics, keepsakeP, toolCallsMeta, localResults, mcpBatch, expiresAt }
+const MCP_TTL = 5 * 60 * 1000;
+
+// MCP 前端自由接（路 B）：净化前端带来的 MCP 工具定义。
+// 名字规范化为 mcp_<serverId>_<tool>（Anthropic/OpenRouter 只允许 ^[a-zA-Z0-9_-]{1,64}$，点号会 400）；
+// registry 显式映射 name → { serverName, url, tool }，委托时不靠反解析（_ 会撞车）。
+// 总 60 上限（工具定义吃 token）。
+function sanitizeMcpTools(rawTools) {
+  if (!Array.isArray(rawTools)) return { tools: [], registry: {} };
+  const tools = [];
+  const registry = {};
+  rawTools.slice(0, 60).forEach((t) => {
+    if (!t || typeof t !== 'object' || typeof t.name !== 'string' || !t.name) return;
+    // scheme 白名单（localhost 防护）：只放 http/https，剔掉 command:/file:/stdio: 等可任意执行的 scheme
+    const url = String(t.url || '');
+    if (!/^https?:\/\//i.test(url)) return;
+    let safeName = String(t.name).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60);
+    if (!safeName.startsWith('mcp_')) safeName = 'mcp_' + safeName;
+    tools.push({
+      type: 'function',
+      function: {
+        name: safeName,
+        description: String(t.description || ''),
+        parameters: t.parameters || { type: 'object', properties: {} },
+      },
+    });
+    registry[safeName] = {
+      serverName: String(t.serverName || 'mcp'),
+      url,
+      tool: String(t.tool || t.name),
+      connectionId: String(t.connectionId || ''), // 连接标识，委托时回传，前端按 id 匹配（不靠 url）
+    };
+  });
+  return { tools, registry };
+}
+
+// 流式会话收尾：落库 + 相册回写 + session 更新时间 + done + 后台任务 + 用量记录
+// （正常流与 MCP 续调路由共用；delegated 分支不落库直接 res.end，不走到这里）
+async function finalizeChat(sessionId, res, finalReply, thinkingText, opts, diagnostics, keepsakeP, usageList) {
+  await supabase.from('messages').insert({
+    session_id: sessionId,
+    role: 'assistant',
+    content: finalReply,
+    thinking: thinkingText || null
+  });
+
+  // 相册回写：这轮发图产生的 keepsake，挂上他刚说的 / 心里想的（真货）
+  if (opts.image) {
+    (keepsakeP || Promise.resolve(null)).then(k => k && supabase.from('keepsakes').update({ his_words: finalReply, his_thinking: thinkingText || null }).eq('id', k.id))
+      .catch(e => console.warn('⚠️ [相册] 回写他的话失败:', e.message));
+  }
+
+  await supabase.from('sessions')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', sessionId);
+
+  sendSSE(res, 'done', { reply: finalReply });
+  res.end();
+
+  // 后台摘要生成 + 对话残留 + 长期记忆编辑者 + keepalive 认领（不进热路径、不阻塞响应；仅前端二）
+  if (opts.client === 'angel') {
+    scheduleSummary(sessionId, diagnostics);   // 用量触发读 buildModelContext 同一把尺子
+    scheduleResidue(sessionId);
+    scheduleMemoryWrite(sessionId);
+    consumeKeepalive(sessionId, diagnostics?.keepalive_injected_ids); // 你开口即认领沈晏的留言（memory off 时 diagnostics 为 null）
+  }
+  recordRequestStat({
+    sessionId, client: opts.client, model: toOpenRouterModel(opts.model),
+    stream: true, usageList, diagnostics,
+    memory_degraded: opts.degraded?.size ? [...opts.degraded].join(',') : null,
+  });
+}
+
 // 流式对话：纯流式 + 工具循环，思考链实时转发
-async function handleStreamChat(messages, res, opts = {}, sessionId) {
+// resume：MCP 续调上下文（{ finalContent, thinkingTextAll, usageList }），续调轮不带 tools（与「下一轮不带」一致）
+async function handleStreamChat(messages, res, opts = {}, sessionId, resume = null) {
   const model = toOpenRouterModel(opts.model);
+  const deepSeek = isDeepSeekModel(opts.model); // 测试模式：前端开关发 model='deepseek' → DeepSeek 通道（省钱）
   const thinkingMode = opts.thinking || 'standard';
   const hasReasoning = thinkingMode !== 'off';
   const effort = thinkingEffort(thinkingMode);
   const withTools = opts.tools !== 'off';
 
   let loop = 0;
-  let finalContent = '';
-  let thinkingTextAll = ''; // 跨工具轮累积思考链：streamOpenRouter 内实时转发 SSE，这里聚合入库
-  const usageList = []; // 每轮 OpenRouter 请求的原始 usage（多轮工具调用时 >1）
+  let finalContent = resume?.finalContent || '';
+  let thinkingTextAll = resume?.thinkingTextAll || ''; // 跨工具轮累积思考链：streamOpenRouter 内实时转发 SSE，这里聚合入库
+  const usageList = resume ? [...resume.usageList] : []; // 每轮 OpenRouter 请求的原始 usage（多轮工具调用时 >1）
 
   while (loop < 3) {
     loop++;
@@ -3972,8 +4532,9 @@ async function handleStreamChat(messages, res, opts = {}, sessionId) {
       stream: true
     };
     if (hasReasoning) body.reasoning = { effort };
-    if (withTools && loop === 1) {
-      body.tools = getTools();
+    // MCP 续调轮不带 tools（避免二次工具调用）；MCP 链式多轮留作后续
+    if (withTools && loop === 1 && !resume) {
+      body.tools = getTools().concat(opts.mcpTools || []);
       body.tool_choice = 'auto';
     }
     if (model.startsWith('anthropic/')) {
@@ -3986,7 +4547,7 @@ async function handleStreamChat(messages, res, opts = {}, sessionId) {
       }
     }
 
-    const { content, thinkingText, toolCalls, usage } = await streamOpenRouter(body, res);
+    const { content, thinkingText, toolCalls, usage } = await (deepSeek ? streamDeepSeek(body, res) : streamOpenRouter(body, res));
     if (usage) usageList.push(usage);
     thinkingTextAll += thinkingText || '';
 
@@ -4007,26 +4568,61 @@ async function handleStreamChat(messages, res, opts = {}, sessionId) {
       }))
     });
 
+    // 工具执行：mcp_* 收进委托 batch（不本地执行）；内置工具照跑但结果暂存——
+    // tool_result 与 tool_use 必须同序，续调时统一按 toolCalls 顺序 push
+    const localResults = []; // 内置工具结果，按 toolCalls 顺序占位（mcp 项为 null）
+    const mcpBatch = [];     // 委托给前端的 mcp 项
     for (const tc of toolCalls) {
       console.log(`🔧 执行工具: ${tc.name}`, tc.arguments);
       sendSSE(res, 'tool_call', { id: tc.id, name: tc.name, arguments: tc.arguments });
 
-      let toolResult;
-      let success = true;
-      try {
-        toolResult = await dispatchTool(tc.name, tc.arguments, sessionId);
-      } catch (err) {
-        toolResult = { error: err.message };
-        success = false;
-        console.error(`❌ 工具 ${tc.name} 执行失败:`, err);
+      if (tc.name.startsWith('mcp_')) {
+        const reg = (opts.mcpRegistry || {})[tc.name];
+        mcpBatch.push({
+          id: tc.id,
+          server: reg?.serverName || 'mcp',
+          url: reg?.url || '',
+          connectionId: reg?.connectionId || '',
+          tool: reg?.tool || tc.name,
+          args: tc.arguments,
+        });
+        localResults.push(null); // 占位：续调时由前端结果填
+      } else {
+        let toolResult;
+        let success = true;
+        try {
+          toolResult = await dispatchTool(tc.name, tc.arguments, sessionId);
+        } catch (err) {
+          toolResult = { error: err.message };
+          success = false;
+          console.error(`❌ 工具 ${tc.name} 执行失败:`, err);
+        }
+        sendSSE(res, 'tool_result', { id: tc.id, name: tc.name, success, result: toolResult });
+        localResults.push({ id: tc.id, name: tc.name, result: toolResult });
       }
+    }
 
-      sendSSE(res, 'tool_result', { id: tc.id, name: tc.name, success, result: toolResult });
+    // 有 mcp 委托 → 存续调上下文，发 delegate 事件，干净结束本流（不挂起 SSE）
+    if (mcpBatch.length) {
+      const pendingId = crypto.randomUUID();
+      mcpPending.set(pendingId, {
+        sessionId, messages, opts, usageList, finalContent, thinkingTextAll,
+        diagnostics: opts.diagnostics || null, keepsakeP: opts._keepsakeP || null,
+        toolCallsMeta: toolCalls.map((tc) => ({ id: tc.id, name: tc.name })),
+        localResults, mcpBatch,
+        expiresAt: Date.now() + MCP_TTL,
+      });
+      sendSSE(res, 'mcp_delegate', { kind: 'mcp_delegate', pendingId, items: mcpBatch });
+      return { delegated: true, pendingId, thinkingText: thinkingTextAll, usageList };
+    }
+
+    // 无 mcp：按序 push 所有工具消息
+    for (const r of localResults) {
       messages.push({
         role: 'tool',
-        tool_call_id: tc.id,
-        name: tc.name,
-        content: serializeToolResult(tc.name, toolResult, opts?.degraded)
+        tool_call_id: r.id,
+        name: r.name,
+        content: serializeToolResult(r.name, r.result, opts?.degraded)
       });
     }
     // 下一轮不带 tools（避免二次工具调用）
@@ -4160,6 +4756,139 @@ async function callOpenRouterNonStream(messages, tools, opts = {}) {
   if (msg.reasoning) delete msg.reasoning;
   if (msg.thinking) delete msg.thinking;
   // 返回原始 usage（可能为 null），供 request_stats 记录
+  return { msg, usage: data.usage || null, thinkingText };
+}
+
+// ===== DeepSeek 主对话通道（测试模式，2026-08-29）=====
+// 与 OpenRouter 通道对称：流式（streamDeepSeek）+ 非流式（callDeepSeekNonStream）。
+// 复用同一套 OpenAI 格式工具调用解析（accum index/name/arguments），deepseek-v4-flash 支持 function calling。
+// 差异点：① 模型固定 deepseek-v4-flash；② 剥离 messages 里的 cache_control 块；③ 思考走 reasoning_content。
+
+// 流式读取一次 DeepSeek 响应：实时转发 reasoning_content（思考）/ content（正文）/ tool_calls
+async function streamDeepSeek(body, res) {
+  let content = '';
+  let thinkingText = '';
+  let usage = null;
+  const toolAccum = {};
+
+  const dsBody = {
+    model: 'deepseek-v4-flash',
+    messages: stripCacheControl(body.messages),
+    max_tokens: body.max_tokens || 8000,
+    stream: true,
+    stream_options: { include_usage: true },
+  };
+  if (body.tools) {
+    dsBody.tools = body.tools;
+    dsBody.tool_choice = 'auto';
+  }
+
+  const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
+    },
+    body: JSON.stringify(dsBody)
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`DeepSeek 请求失败 (${response.status}): ${errText}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith('data: ')) continue;
+      if (trimmed === 'data: [DONE]') continue;
+
+      let parsed;
+      try { parsed = JSON.parse(trimmed.substring(6)); } catch (e) { continue; }
+      const delta = parsed.choices?.[0]?.delta || {};
+      if (parsed.usage) usage = parsed.usage; // stream_options include_usage → 末尾 chunk 带 usage
+
+      // 思考链 token（deepseek 推理模型走 reasoning_content）
+      const think = delta.reasoning_content;
+      if (think) {
+        thinkingText += think;
+        sendSSE(res, 'thinking', { thought: think });
+      }
+
+      // 正文 token
+      const txt = delta.content;
+      if (txt) {
+        content += txt;
+        sendSSE(res, 'text', { text: txt });
+      }
+
+      // 工具调用 delta（增量累积 arguments，OpenAI 格式同 OpenRouter）
+      const dcs = delta.tool_calls;
+      if (dcs && dcs.length) {
+        for (const dc of dcs) {
+          const idx = dc.index;
+          if (idx === undefined) continue;
+          if (!toolAccum[idx]) toolAccum[idx] = { id: '', name: '', args: '' };
+          if (dc.id) toolAccum[idx].id = dc.id;
+          if (dc.function?.name) toolAccum[idx].name = dc.function.name;
+          if (dc.function?.arguments) toolAccum[idx].args += dc.function.arguments;
+        }
+      }
+    }
+  }
+
+  const toolCalls = Object.values(toolAccum).map((tc) => {
+    let args = {};
+    try { args = JSON.parse(tc.args || '{}'); } catch (e) { /* keep {} */ }
+    return { id: tc.id, name: tc.name, arguments: args };
+  });
+
+  return { content, thinkingText, toolCalls, usage };
+}
+
+// 非流式调用（工具二轮 / 旧端点走 DeepSeek 时用）
+async function callDeepSeekNonStream(messages, tools, opts = {}) {
+  const body = {
+    model: 'deepseek-v4-flash',
+    messages: stripCacheControl(messages),
+    max_tokens: opts.max_tokens || 2000,
+  };
+  if (tools) {
+    body.tools = tools;
+    body.tool_choice = 'auto';
+  }
+  if (opts.responseFormat) {
+    body.response_format = { type: opts.responseFormat };
+  }
+
+  const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
+    },
+    body: JSON.stringify(body)
+  });
+
+  const data = await response.json();
+  if (!data.choices || !data.choices[0]) {
+    throw new Error(`DeepSeek 响应异常: ${JSON.stringify(data)}`);
+  }
+  const msg = data.choices[0].message;
+  // 存回历史前剥离 reasoning_content（与流式路径对称，避免二次发送报错）
+  const thinkingText = msg.reasoning_content || '';
+  if (msg.reasoning_content) delete msg.reasoning_content;
   return { msg, usage: data.usage || null, thinkingText };
 }
 
@@ -4867,25 +5596,24 @@ app.get('/sessions/:id/messages', async (req, res) => {
 // ===== 合并视图：所有有消息的 session 按时间连成一条完整对话 =====
 // 数据零改动（消息各归各 session），纯展示聚合。
 // mainSessionId = 消息最多的会话（主对话），新消息永远进这里。
-// 2026-08-20 小黑屋：有独立 settings 行的会话（如小黑屋）不进合并时间线——它在自己的房间里独立成线。
 app.get('/api/conversation', async (req, res) => {
   try {
-    // 特殊会话集合：settings 表里 session_id != 'global' 的行（小黑屋标记）
-    let specialSids = new Set();
-    try {
-      const { data: sp } = await supabase
-        .from('settings')
-        .select('session_id')
-        .neq('session_id', 'global');
-      for (const r of sp || []) specialSids.add(r.session_id);
-    } catch (e) { /* 拿不到特殊会话就退回全合并 */ }
-    const { data: msgs, error } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('visible', true)
-      .order('created_at', { ascending: true });
-    if (error) return res.status(500).json({ error: error.message });
-    const all = (msgs || []).filter((m) => !specialSids.has(m.session_id));
+    // 2026-08-29 修复：无 limit 全表取被 Supabase 1000 行上限截断 → 合并时间线冻在最旧 1000 条。
+    // 倒序翻页拿全量（从最新往回翻），再 reverse 回升序。
+    const rows = [];
+    const PAGE = 1000;
+    for (let from = 0; ; from += PAGE) {
+      const { data: page, error: perr } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('visible', true)
+        .order('created_at', { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (perr) return res.status(500).json({ error: perr.message });
+      rows.push(...(page || []));
+      if (!page || page.length < PAGE) break;
+    }
+    const all = rows.reverse();
     // 找主对话：消息最多的 session
     const counts = {};
     for (const m of all) counts[m.session_id] = (counts[m.session_id] || 0) + 1;
@@ -4912,6 +5640,8 @@ app.post('/sessions/:id/chat', async (req, res) => {
       images: req.body.images,
       file: req.body.file,
       share: req.body.share,
+      device: req.body.device,
+      mcpTools: req.body.mcpTools,
     };
     await handleChat(
       req.params.id,
@@ -4923,6 +5653,62 @@ app.post('/sessions/:id/chat', async (req, res) => {
   } catch (error) {
     console.error("Chat Error:", error);
     if (req.body.stream && res.headersSent) {
+      sendSSE(res, 'error', { message: error.message || '服务器开小差了' });
+      res.end();
+    } else {
+      res.status(500).json({ error: error.message || '服务器开小差了' });
+    }
+  }
+});
+
+// POST /sessions/:id/chat/mcp-result → MCP 前端自由接（路 B）续调：
+// 前端在本机执行完 mcp_* 工具后回填结果，后端从 mcpPending 取上下文重入续跑（不挂起 SSE 的替代方案）
+app.post('/sessions/:id/chat/mcp-result', async (req, res) => {
+  try {
+    const { pendingId, results } = req.body;
+    const entry = mcpPending.get(pendingId);
+    if (!entry) return res.status(410).json({ error: 'MCP 委托已过期或不存在，请重发消息' });
+    if (req.params.id !== entry.sessionId) return res.status(403).json({ error: '会话不匹配' });
+    if (entry.expiresAt < Date.now()) {
+      mcpPending.delete(pendingId);
+      return res.status(410).json({ error: 'MCP 委托已过期，请重发消息' });
+    }
+    mcpPending.delete(pendingId);
+
+    const resultsArr = Array.isArray(results) ? results : [];
+
+    // 按 toolCalls 顺序 push 所有工具消息（tool_result 与 tool_use 必须同序）：
+    // 内置工具结果从 localResults 取（phase1 已暂存），mcp 工具结果从前端 results 取
+    for (const meta of entry.toolCallsMeta) {
+      const local = entry.localResults.find((r) => r && r.id === meta.id);
+      if (local) {
+        entry.messages.push({ role: 'tool', tool_call_id: meta.id, name: meta.name, content: serializeToolResult(meta.name, local.result, entry.opts?.degraded) });
+        continue;
+      }
+      const r = resultsArr.find((x) => x && x.id === meta.id);
+      const payload = r ? (r.success === false ? { error: r.result || '工具执行失败' } : r.result) : { error: '前端未返回结果' };
+      // 结果大小封顶 64KB（防巨型 MCP 输出灌爆模型上下文）
+      const size = JSON.stringify(payload).length;
+      const content = size > 65536 ? JSON.stringify({ error: '工具结果过大(>64KB)，已截断' }) : serializeToolResult(meta.name, payload, entry.opts?.degraded);
+      entry.messages.push({ role: 'tool', tool_call_id: meta.id, name: meta.name, content });
+    }
+
+    // 续调轮：不带 tools（与「下一轮不带 tools 避免二次工具调用」一致）
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+    if (res.socket) res.socket.setNoDelay(true);
+
+    const out = await handleStreamChat(
+      entry.messages, res, entry.opts, entry.sessionId,
+      { finalContent: entry.finalContent, thinkingTextAll: entry.thinkingTextAll, usageList: entry.usageList }
+    );
+    await finalizeChat(entry.sessionId, res, out.content, out.thinkingText || '', entry.opts, entry.diagnostics, entry.keepsakeP, out.usageList || []);
+  } catch (error) {
+    console.error('MCP 续调错误:', error.message);
+    if (res.headersSent) {
       sendSSE(res, 'error', { message: error.message || '服务器开小差了' });
       res.end();
     } else {
@@ -4948,14 +5734,15 @@ app.post('/api/mirror/run', async (req, res) => {
   }
 });
 
-// GET /api/claims → 第⑤主张状态机 + 石头环（验证用；前端内心面板将来可接）
+// GET /api/claims → 第⑤主张状态机 + 石头环 + Change Ledger（验证用；前端内心面板将来可接）
 app.get('/api/claims', async (req, res) => {
   try {
-    const [claims, rings] = await Promise.all([
+    const [claims, rings, ledger] = await Promise.all([
       supabase.from('personality_claim').select('*').order('updated_at', { ascending: false }).limit(100),
       supabase.from('stone_rings').select('id, version, changed_summary, why, unchanged, diff, created_at').order('version', { ascending: false }).limit(30),
+      supabase.from('change_ledger').select('*').order('occurred_at', { ascending: false }).limit(100),
     ]);
-    res.json({ ok: true, claims: claims.data || [], rings: rings.data || [] });
+    res.json({ ok: true, claims: claims.data || [], rings: rings.data || [], ledger: ledger.data || [] });
   } catch (err) {
     console.error('💥 /api/claims 异常:', err.message);
     res.status(500).json({ ok: false, error: err.message });
@@ -4990,6 +5777,7 @@ app.post('/api/chat', async (req, res) => {
       images: req.body.images,
       file: req.body.file,
       share: req.body.share,
+      device: req.body.device,
     };
     return handleChat(sid, message, req.body.stream === true, res, opts);
   } catch (err) {
@@ -5039,12 +5827,29 @@ app.get('/api/sessions', async (req, res) => {
 // GET /api/export — 导出全部聊天记录（一次返回 sessions + messages 合并，免 N+1 请求）
 app.get('/api/export', async (req, res) => {
   try {
-    const [sess, msg] = await Promise.all([
+    // 2026-08-29 修复：messages 全量取同样会被 1000 行上限截断 → 倒序翻页拿全量再 reverse。
+    const [sess, msgRows] = await Promise.all([
       supabase.from('sessions').select('*').order('updated_at', { ascending: false }),
-      supabase.from('messages').select('*').eq('visible', true).order('created_at', { ascending: true }),
+      (async () => {
+        const rows = [];
+        const PAGE = 1000;
+        for (let from = 0; ; from += PAGE) {
+          const { data: page, error: perr } = await supabase
+            .from('messages')
+            .select('*')
+            .eq('visible', true)
+            .order('created_at', { ascending: false })
+            .range(from, from + PAGE - 1);
+          if (perr) return { data: null, error: perr };
+          rows.push(...(page || []));
+          if (!page || page.length < PAGE) break;
+        }
+        return { data: rows.reverse(), error: null };
+      })(),
     ]);
     if (sess.error) return res.status(500).json({ error: sess.error.message });
-    if (msg.error) return res.status(500).json({ error: msg.error.message });
+    if (msgRows.error) return res.status(500).json({ error: msgRows.error.message });
+    const msg = { data: msgRows.data };
     const byId = {};
     for (const m of msg.data || []) {
       (byId[m.session_id] = byId[m.session_id] || []).push(m);
@@ -5213,7 +6018,7 @@ app.post('/api/memories/relations', async (req, res) => {
 // ===== 世界书（world_entries）— 2026-08-26 =====
 // 她定下的世界设定：GET 列表（编辑页用，含停用项）/ POST 新增 / PATCH 改 / DELETE 删。
 // 对话侧取用走 retrieveWorld（buildModelContext 注入，见上）。
-// 表未建（手动迁移没跑）→ GET/POST 容错返回空/报「先跑迁移」，页面不崩。
+// 表已建（2026-08-26 迁移已跑）。容错返回空不崩页（沿用旧骨架，逻辑不动）。
 
 app.get('/api/world-entries', async (req, res) => {
   try {
@@ -5233,13 +6038,16 @@ app.get('/api/world-entries', async (req, res) => {
 
 app.post('/api/world-entries', async (req, res) => {
   try {
-    const { content, keywords } = req.body || {};
+    const { title, content, keywords, kind } = req.body || {};
+    const t = String(title || '').trim();
     const c = String(content || '').trim();
-    if (!c) return res.status(400).json({ error: '世界书条目需要正文' });
+    if (!t && !c) return res.status(400).json({ error: '世界书条目需要标题或正文' });
     const kw = Array.isArray(keywords) ? keywords.map(k => String(k).trim()).filter(Boolean) : [];
+    // 一条一个主 kind（setting 设定 / remind 关系提醒 / know 知识卡），拿不准默认设定
+    const k = ['setting', 'remind', 'know'].includes(kind) ? kind : 'setting';
     const { data, error } = await supabase
       .from('world_entries')
-      .insert({ content: c, keywords: kw })
+      .insert({ title: t || null, content: c, keywords: kw, kind: k })
       .select();
     if (error) return res.status(500).json({ error: error.message });
     res.json({ ok: true, item: data?.[0] || null });
@@ -5250,11 +6058,13 @@ app.post('/api/world-entries', async (req, res) => {
 
 app.patch('/api/world-entries/:id', async (req, res) => {
   try {
-    const { content, keywords, enabled } = req.body || {};
+    const { title, content, keywords, enabled, kind } = req.body || {};
     const patch = {};
+    if (title !== undefined) patch.title = String(title).trim() || null;
     if (content !== undefined) patch.content = String(content).trim();
     if (keywords !== undefined) patch.keywords = Array.isArray(keywords) ? keywords.map(k => String(k).trim()).filter(Boolean) : [];
     if (enabled !== undefined) patch.enabled = !!enabled;
+    if (kind !== undefined) patch.kind = ['setting', 'remind', 'know'].includes(kind) ? kind : 'setting';
     if (Object.keys(patch).length === 0) return res.status(400).json({ error: '没有可更新的字段' });
     const { data, error } = await supabase
       .from('world_entries')
@@ -5721,6 +6531,181 @@ app.get('/api/month-summary', async (req, res) => {
   }
 });
 
+// ===== 日历：日程表 + 纪念日（沈晏知道 · 2026-08-27）=====
+// 借鉴 IB calEvents 的机制（重复规则/提前提醒/相遇纪念日）自写实现，存后端 Supabase。
+// 铁律沿「感知不是通知」：沈晏只被喂「今天是什么日子 + 临近有什么」，绝不逐条播报。
+// 日期一律按上海时区（她的生活时区）生成 YYYY-MM-DD，避免服务器 UTC 差一天。
+
+function calYmdFromMs(ms) { return new Date(ms + 8 * 3600000).toISOString().slice(0, 10); }
+function calShDate(d) { return calYmdFromMs(d ? d.getTime() : Date.now()); }
+function calDayStr(todayStr, offset) {
+  const d = new Date(todayStr + 'T00:00:00+08:00');
+  d.setUTCDate(d.getUTCDate() + offset);
+  return calYmdFromMs(d.getTime());
+}
+
+/* 某事项在某天是否发生（重复规则；借鉴 IB evOccursOn 机制，自写） */
+function calEvOccursOn(ev, dstr) {
+  if (!ev || !ev.date) return false;
+  const d = new Date(dstr + 'T00:00:00');
+  const base = new Date(ev.date + 'T00:00:00');
+  if (isNaN(d) || isNaN(base)) return false;
+  const rep = ev.repeat || 'once';
+  if (rep === 'once') {
+    if (dstr === ev.date) return true;
+    if (ev.end_date) { const e = new Date(ev.end_date + 'T00:00:00'); return !isNaN(e) && d >= base && d <= e; }
+    return false;
+  }
+  if (d < base) return false;
+  if (rep === 'daily') return true;
+  if (rep === 'weekly') {
+    if (Array.isArray(ev.weekdays) && ev.weekdays.length) return ev.weekdays.indexOf(d.getDay()) !== -1;
+    return d.getDay() === base.getDay();
+  }
+  if (rep === 'monthly') return d.getDate() === base.getDate();
+  if (rep === 'yearly') return d.getDate() === base.getDate() && d.getMonth() === base.getMonth();
+  return false;
+}
+
+const CAL_KIND_CN = { anniv: '纪念日', birthday: '生日', plan: '计划', memo: '备忘' };
+
+/* 相遇纪念日：只认 settings.meet_date（她亲手记下的那天）。
+   不做「第一条聊天记录」回退——这个库的第一条不是他们的相遇，编出来是假记忆。 */
+async function getMeetDate() {
+  try {
+    const { data, error } = await supabase.from('settings').select('meet_date').eq('session_id', 'global').maybeSingle();
+    if (data && data.meet_date) return String(data.meet_date).slice(0, 10);
+  } catch (e) { /* ignore */ }
+  return null;
+}
+
+/* 沈晏的日历注入块：今天是什么日子 + 临近 3 天有什么。只列 remind=true 的；
+   没有值得说的就返回空串（零打扰）。给多了就变成播报，所以范围刻意收窄。 */
+async function buildCalendarBlock() {
+  try {
+    const { data: evs, error } = await supabase.from('cal_events').select('*');
+    if (error) return ''; // 表没建/查询失败 → 不注入（别拖垮对话）
+    const today = calShDate();
+    const lines = [];
+    const meetDate = await getMeetDate();
+    for (let offset = 0; offset <= 3; offset++) {
+      const ds = offset === 0 ? today : calDayStr(today, offset);
+      const items = (evs || []).filter(ev => ev.remind !== false && calEvOccursOn(ev, ds));
+      // 相遇纪念日：meet_date 的每年的那天
+      if (meetDate) {
+        const md = new Date(meetDate + 'T00:00:00');
+        const dd = new Date(ds + 'T00:00:00');
+        if (md.getMonth() === dd.getMonth() && md.getDate() === dd.getDate()) {
+          const years = dd.getFullYear() - md.getFullYear();
+          items.push({ title: years <= 0 ? '我们相遇的日子' : `我们相遇 ${years} 周年`, kind: 'anniv' });
+        }
+      }
+      if (!items.length) continue;
+      const desc = items.map(ev => `${ev.title}（${CAL_KIND_CN[ev.kind] || '日子'}）`).join('，');
+      lines.push(offset === 0 ? `今天：${desc}` : `${ds.slice(5).replace('-', '/')}：${desc}`);
+    }
+    return lines.join('\n');
+  } catch (e) { return ''; }
+}
+
+/* 事项字段校验+归一（POST/PUT 共用） */
+function calEventFields(b) {
+  const title = String(b.title ?? '').trim().slice(0, 60);
+  const date = String(b.date ?? '').trim();
+  const kind = ['anniv', 'birthday', 'plan', 'memo'].includes(b.kind) ? b.kind : 'plan';
+  const repeat = ['once', 'daily', 'weekly', 'monthly', 'yearly'].includes(b.repeat) ? b.repeat : 'once';
+  const weekdays = Array.isArray(b.weekdays) && b.weekdays.length
+    ? b.weekdays.map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6).slice(0, 7)
+    : null;
+  return {
+    kind, title, date, repeat,
+    time: String(b.time ?? '').trim().slice(0, 5) || null,
+    end_date: /^\d{4}-\d{2}-\d{2}$/.test(String(b.end_date ?? '').trim()) ? String(b.end_date).trim() : null,
+    weekdays,
+    lead: Number.isInteger(b.lead) && b.lead >= 0 && b.lead <= 30 ? b.lead : 7,
+    remind: b.remind !== false,
+    note: String(b.note ?? '').trim().slice(0, 200) || null,
+  };
+}
+
+// GET /api/calendar/events — 全部事项（按日期升序）。表没建返回空列表。
+app.get('/api/calendar/events', async (req, res) => {
+  try {
+    const { data, error } = await supabase.from('cal_events').select('*').order('date', { ascending: true });
+    if (error) {
+      if (/does not exist|relation|42P01|could not find the table|schema cache/i.test(error.message || '')) return res.json({ items: [] });
+      return res.status(500).json({ error: error.message });
+    }
+    res.json({ items: data || [] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/calendar/events — 新建
+app.post('/api/calendar/events', async (req, res) => {
+  try {
+    const f = calEventFields(req.body || {});
+    if (!f.title || !f.date) return res.status(400).json({ error: '标题和日期必填' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(f.date)) return res.status(400).json({ error: '日期格式应为 YYYY-MM-DD' });
+    const { data, error } = await supabase.from('cal_events').insert(f).select().single();
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT /api/calendar/events/:id — 修改（整条回传）
+app.put('/api/calendar/events/:id', async (req, res) => {
+  try {
+    const f = calEventFields(req.body || {});
+    if (!f.title || !f.date) return res.status(400).json({ error: '标题和日期必填' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(f.date)) return res.status(400).json({ error: '日期格式应为 YYYY-MM-DD' });
+    f.updated_at = new Date().toISOString();
+    const { data, error } = await supabase.from('cal_events').update(f).eq('id', req.params.id).select().single();
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/calendar/events/:id — 删除
+app.delete('/api/calendar/events/:id', async (req, res) => {
+  try {
+    const { error } = await supabase.from('cal_events').delete().eq('id', req.params.id);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/calendar/meet — 与沈晏的相遇纪念日 + 在一起天数 + 下次周年倒计时
+app.get('/api/calendar/meet', async (req, res) => {
+  try {
+    const meetDate = await getMeetDate();
+    const info = { meet_date: meetDate };
+    if (meetDate) {
+      const md = new Date(meetDate + 'T00:00:00');
+      const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+      info.together_days = Math.max(0, Math.floor((t0 - md) / 86400000));
+      let next = new Date(t0.getFullYear(), md.getMonth(), md.getDate());
+      if (next < t0) next = new Date(t0.getFullYear() + 1, md.getMonth(), md.getDate());
+      info.next_anniv_in = Math.round((next - t0) / 86400000);
+      info.next_years = next.getFullYear() - md.getFullYear();
+    }
+    res.json(info);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT /api/calendar/meet — 手动设置/清空相遇纪念日（body: { date }，空 = 恢复自动）
+app.put('/api/calendar/meet', async (req, res) => {
+  try {
+    const d = String(req.body?.date || '').trim();
+    if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return res.status(400).json({ error: '日期格式应为 YYYY-MM-DD' });
+    const { error } = await supabase.from('settings').upsert(
+      { session_id: 'global', meet_date: d || null },
+      { onConflict: 'session_id' }
+    );
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ ok: true, meet_date: d || null });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /api/moments/:id/like — 程芥赞/取消赞（body: { liked: bool }）
 app.post('/api/moments/:id/like', async (req, res) => {
   try {
@@ -6136,83 +7121,16 @@ app.get('/api/share/preview', async (req, res) => {
 // POST /api/sessions
 app.post('/api/sessions', async (req, res) => {
   try {
-    const { name, long_talk } = req.body || {};
+    const { name } = req.body || {};
     const { data, error } = await supabase
       .from('sessions')
-      .insert({ name: name || (long_talk ? '永无岛' : '新对话') })
+      .insert({ name: name || '新对话' })
       .select()
       .single();
     if (error) return res.status(500).json({ error: error.message });
-    // 小黑屋长对话：给这个会话写专属配置（settings 非 global 行 = 特殊会话标记，
-    // getContextConfig 读到它 → live 60 轮 / 24k 预算 / 塌缩阈值 90%）
-    if (long_talk && data.id) {
-      try {
-        await supabase.from('settings').upsert({
-          session_id: data.id,
-          live_rounds: 60,
-          max_context_tokens: 24000,
-          frozen_rounds: 10,
-        }, { onConflict: 'session_id' });
-        console.log(`🏚 小黑屋建成 session=${data.id}：live 60 / 24k / 塌缩 90%`);
-      } catch (e) {
-        console.warn('⚠️ 小黑屋配置写入失败（不阻塞建房）:', e.message);
-      }
-    }
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /api/neverland — 永无岛的岛群列表（长对话的独立会话）
-// 岛 = 有专属 settings 行的会话（POST /api/sessions long_talk 建房时写的那行）。
-// 名字派生：建房时是占位「永无岛」，有首条用户消息后用它当岛名，更有人味。
-app.get('/api/neverland', async (req, res) => {
-  try {
-    const { data: sp } = await supabase
-      .from('settings')
-      .select('session_id')
-      .neq('session_id', 'global');
-    const ids = (sp || []).map((r) => r.session_id);
-    if (!ids.length) return res.json({ islands: [] });
-
-    const { data: sessions, error } = await supabase
-      .from('sessions')
-      .select('id, name, created_at, updated_at')
-      .in('id', ids)
-      .order('updated_at', { ascending: false });
-    if (error) return res.status(500).json({ error: error.message });
-
-    // 每座岛的消息预览 + 条数（一次拿全，避免 N+1）
-    const { data: msgs } = await supabase
-      .from('messages')
-      .select('session_id, role, content')
-      .in('session_id', ids)
-      .eq('visible', true)
-      .order('created_at', { ascending: true });
-    const byId = {};
-    for (const m of msgs || []) { (byId[m.session_id] = byId[m.session_id] || []).push(m); }
-
-    const islands = (sessions || []).map((s) => {
-      const ms = byId[s.id] || [];
-      const firstUser = ms.find((m) => m.role === 'user');
-      const isPlaceholder = !s.name || ['新对话', '永无岛', 'Neverland', '小黑屋'].includes(s.name);
-      const last = ms[ms.length - 1];
-      return {
-        id: s.id,
-        name: isPlaceholder
-          ? (firstUser ? firstUser.content.replace(/\s+/g, ' ').slice(0, 18) : '永无岛')
-          : s.name,
-        created_at: s.created_at,
-        updated_at: s.updated_at,
-        messages: ms.length,
-        last: last ? (last.role === 'user' ? `你说：${last.content}` : last.content) : '',
-      };
-    });
-
-    res.json({ islands });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
   }
 });
 
@@ -6372,103 +7290,14 @@ function attachImage(messages, images) {
   return out;
 }
 
-// ===== 永无岛出入桥 =====
-// 岛 = 有专属 settings 行的会话（POST /api/sessions long_talk 建房时写的那行，见 /api/neverland）。
-// 主对话 = 没有 settings 行的普通会话。跨岛边界才注入注记，时间水位天然去重。
-
-async function isIslandSession(sessionId) {
-  if (!sessionId || sessionId === 'global') return false;
-  const { data } = await supabase
-    .from('settings')
-    .select('session_id')
-    .eq('session_id', sessionId)
-    .maybeSingle();
-  return !!data;
-}
-
-// 主对话（非岛会话）最近一条用户消息 —— 登岛来路的「来之前在聊」
-async function findMainTail() {
-  const { data: sp } = await supabase
-    .from('settings')
-    .select('session_id')
-    .neq('session_id', 'global');
-  const islandIds = new Set((sp || []).map((r) => r.session_id));
-  const { data } = await supabase
-    .from('messages')
-    .select('session_id, content')
-    .eq('role', 'user')
-    .eq('visible', true)
-    .order('created_at', { ascending: false })
-    .limit(60);
-  for (const m of data || []) {
-    if (!islandIds.has(m.session_id)) {
-      return String(m.content || '').replace(/\s+/g, ' ').trim().slice(0, 160);
-    }
-  }
-  return null;
-}
-
-// 主对话最后一次说话之后、最近更新过的一座岛 + 它的内容摘要（离岛回望）
-async function findRecentIslandVisit(mainSessionId) {
-  const { data: main } = await supabase
-    .from('sessions')
-    .select('updated_at, created_at')
-    .eq('id', mainSessionId)
-    .maybeSingle();
-  if (!main) return null;
-  const mainLast = main.updated_at ? new Date(main.updated_at).getTime() : new Date(main.created_at).getTime();
-
-  const { data: sp } = await supabase
-    .from('settings')
-    .select('session_id')
-    .neq('session_id', 'global');
-  const ids = (sp || []).map((r) => r.session_id);
-  if (!ids.length) return null;
-
-  const { data: sessions } = await supabase
-    .from('sessions')
-    .select('id, name, updated_at')
-    .in('id', ids);
-  let best = null, bestTs = 0;
-  for (const s of sessions || []) {
-    const ts = s.updated_at ? new Date(s.updated_at).getTime() : 0;
-    if (ts > mainLast && ts > bestTs) { best = s; bestTs = ts; }
-  }
-  if (!best) return null;
-
-  // 岛上内容：优先最新分段摘要（append-only 现成货，不额外烧 LLM）；没有就取最后一条用户消息
-  let digest = '';
-  try {
-    const { data: seg } = await supabase
-      .from('summary_segments')
-      .select('content')
-      .eq('session_id', best.id)
-      .order('period_start', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (seg && seg.content) digest = String(seg.content).replace(/\s+/g, ' ').trim().slice(0, 220);
-  } catch (e) { /* 摘要读取失败走 fallback */ }
-  if (!digest) {
-    try {
-      const { data: lastMsg } = await supabase
-        .from('messages')
-        .select('content')
-        .eq('session_id', best.id)
-        .eq('role', 'user')
-        .eq('visible', true)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (lastMsg) digest = String(lastMsg.content || '').replace(/\s+/g, ' ').trim().slice(0, 120);
-    } catch (e) { /* ignore */ }
-  }
-  return { digest };
-}
-
 // 抽为独立函数，/sessions/:id/chat 和 /api/chat 共用
 async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
   opts.degraded = new Set(); // 本次请求的降级标记，随 recordRequestStat 落 memory_degraded
   opts.max_tokens = 8000; // 长回复截断修复（2026-08-20）：非流式路径也放长，与流式一致；keepalive 等显式传参的不受影响
+  // MCP 前端自由接（路 B）：净化前端带来的 MCP 工具定义 + 建委托 registry；非流式路径防御性忽略 mcpTools
+  const { tools: mcpTools, registry: mcpRegistry } = sanitizeMcpTools(opts.mcpTools);
+  opts.mcpTools = mcpTools;
+  opts.mcpRegistry = mcpRegistry;
   // 多图归一（2026-08-26）：images 数组优先（前端多图）；兼容单 image。image 永远 = 第一张（占位/相册/看图提示用第一张）
   opts.images = (Array.isArray(opts.images) && opts.images.length ? opts.images : (opts.image ? [opts.image] : []))
     .filter(Boolean).slice(0, 4);
@@ -6506,31 +7335,6 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
   const keepsakeP = opts.image
     ? storeChatKeepsake(sessionId, opts.image).catch(e => { console.warn('⚠️ [相册] 存图失败:', e.message); return null; })
     : Promise.resolve(null);
-
-  // —— 永无岛出入桥：跨岛边界才注入 ——
-  // 岛首条消息 = 入岛来路（他知道你们为什么一起在这里）；主对话收到 = 离岛回望（他知道你们刚去过岛上）。
-  // 回望用时间水位天然去重：岛最后活跃晚于主对话最后一次说话才注入，聊起来后不再重复。
-  // memory off / tools off 时保持新鲜（桥接注记也跟着记忆链路一起关）。
-  if (opts.memory !== false && opts.tools !== 'off') {
-    try {
-      const isIsland = await isIslandSession(sessionId);
-      if (isFirstMessage && isIsland) {
-        const tail = await findMainTail();
-        opts.arrivalNote = `【登岛来路】她带着你离开主对话，来永无岛一起待会儿。${tail ? `\n来之前在聊：「${tail}」` : ''}`;
-        console.log(`⚓ [登岛来路] session=${sessionId}`);
-      } else if (!isIsland) {
-        const visit = await findRecentIslandVisit(sessionId);
-        if (visit) {
-          opts.returnNote = visit.digest
-            ? `【永无岛的回忆】你们刚离开永无岛。岛上聊过：「${visit.digest}」`
-            : `【永无岛的回忆】你们刚离开永无岛，在岛上待了一阵。`;
-          console.log(`🏝 [离岛回望] main=${sessionId} · ${visit.digest ? visit.digest.slice(0, 60) : '(无摘要)'}`);
-        }
-      }
-    } catch (e) {
-      console.warn('⚠️ 永无岛出入桥注记异常（不阻塞主流程）:', e.message);
-    }
-  }
 
   // 2. 构建消息数组 + 附图片（Context Assembly 已替代旧的 compressHistory 热路径压缩）
   //    opts.userMessage 传原文（注意力匹配用她的话，别拿整篇文档去翻记忆）；文档全文已随消息进上下文
@@ -6587,44 +7391,24 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
     res.flushHeaders();
     if (res.socket) res.socket.setNoDelay(true);
 
-    const { content: finalReply, thinkingText = '', usageList = [] } = await handleStreamChat(messages, res, opts, sessionId);
+    // 挂到 opts 供 mcp 续调上下文携带（diagnostics/keepsakeP 在续调 finalize 时还要用）
+    opts.diagnostics = diagnostics;
+    opts._keepsakeP = keepsakeP;
 
-    await supabase.from('messages').insert({
-      session_id: sessionId,
-      role: 'assistant',
-      content: finalReply,
-      thinking: thinkingText || null
-    });
+    const out = await handleStreamChat(messages, res, opts, sessionId);
 
-    // 相册回写：这轮发图产生的 keepsake，挂上他刚说的 / 心里想的（真货）
-    if (opts.image) {
-      keepsakeP.then(k => k && supabase.from('keepsakes').update({ his_words: finalReply, his_thinking: thinkingText || null }).eq('id', k.id))
-        .catch(e => console.warn('⚠️ [相册] 回写他的话失败:', e.message));
+    // MCP 委托：工具要前端本机执行 → 不落库、不 finalize，干净收流；前端 POST /chat/mcp-result 续调
+    if (out.delegated) {
+      res.end();
+      return;
     }
 
-    await supabase.from('sessions')
-      .update({ updated_at: new Date().toISOString() })
-      .eq('id', sessionId);
-
-    sendSSE(res, 'done', { reply: finalReply });
-    res.end();
-
-    // 后台摘要生成 + 对话残留 + 长期记忆编辑者 + keepalive 认领（不进热路径、不阻塞响应；仅前端二）
-    if (opts.client === 'angel') {
-      scheduleSummary(sessionId, diagnostics);   // 用量触发读 buildModelContext 同一把尺子
-      scheduleResidue(sessionId);
-      scheduleMemoryWrite(sessionId);
-      consumeKeepalive(sessionId, diagnostics?.keepalive_injected_ids); // 你开口即认领沈晏的留言（memory off 时 diagnostics 为 null）
-    }
-    recordRequestStat({
-      sessionId, client: opts.client, model: toOpenRouterModel(opts.model),
-      stream: true, usageList, diagnostics,
-      memory_degraded: opts.degraded?.size ? [...opts.degraded].join(',') : null,
-    });
+    await finalizeChat(sessionId, res, out.content, out.thinkingText || '', opts, diagnostics, keepsakeP, out.usageList || []);
   } else {
     const tools = opts.tools === 'off' ? null : getTools();
     const usageList = [];
-    const { msg: assistantMessage, usage: usage1, thinkingText = '' } = await callOpenRouterNonStream(messages, tools, opts);
+    const nonStream = isDeepSeekModel(opts.model) ? callDeepSeekNonStream : callOpenRouterNonStream; // 测试模式走 DeepSeek
+    const { msg: assistantMessage, usage: usage1, thinkingText = '' } = await nonStream(messages, tools, opts);
     if (usage1) usageList.push(usage1);
     let finalReply = '';
     const toolCalls = [];
@@ -6661,7 +7445,7 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
         });
       }
 
-      const { msg: secondMessage, usage: usage2 } = await callOpenRouterNonStream(messages, null, opts);
+      const { msg: secondMessage, usage: usage2 } = await nonStream(messages, null, opts);
       if (usage2) usageList.push(usage2);
       finalReply = secondMessage.content;
     } else {
@@ -6719,564 +7503,429 @@ app.get('/api/test-ombre', async (req, res) => {
   }
 });
 
-// ===== 音乐室 · 酷狗接入 =====
-// 架构：前端只连本后端；本后端做薄转发——搜索直连 songsearch（免签），
-// 播放转发到独立部署的 KuGouMusicApi 代理（签名 + 设备模拟都藏在代理里）。
-// dfid 由本后端懒注册并缓存（内存 + 落盘 .kugou-dfid 双份）。
-// 实测 dfid 新旧对播放无影响（同一 dfid 可用一整天），TTL 24h 只是定期换新防作废；
-// 关键兜底：register/dev 抖动/失败（偶发返回空 data）时退回旧 dfid，绝不硬失败。
-const KUGOU_PROXY = process.env.KUGOU_PROXY_URL || 'http://localhost:3001';
-const KUGOU_UA = 'Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi';
-let cachedDfid = null;
-let dfidPromise = null;
-let dfidCachedAt = 0;
-const DFID_TTL = 24 * 60 * 60 * 1000;
-const KUGOU_DFID_FILE = path.join(__dirname, '.kugou-dfid');
-// 部署级兜底种子（Zeabur env KUGOU_DFID_SEED）——register/dev 抖断时冷启动也能播
-const KUGOU_DFID_SEED = process.env.KUGOU_DFID_SEED || '';
-try { cachedDfid = fs.readFileSync(KUGOU_DFID_FILE, 'utf8').trim() || null; } catch {}
+// ===== 音乐室 · 网易云桥 (NeteaseCloudMusicApi) =====
+// 架构：前端只连本后端；本后端薄转发网易云官方开源 API（Duetto 同款引擎）。
+// 播放直链强制 https（CDN http 在 https 页会被混合内容拦，https 实测可播 206）；
+// 歌词返回前合并翻译行（tlyric 挂到对应原文行后，前端 lrc 单字段即用）；
+// 登录态 = cookie，存 settings.netease_cookie（扫码写入，单用户全局行）。
+const ncm = require('NeteaseCloudMusicApi').default || require('NeteaseCloudMusicApi');
 
-// 拿酷狗设备指纹（dfid）。内存缓存 + 24h TTL；force=true 强制注册换新。
-async function ensureDfid(force = false) {
-  if (!force && cachedDfid && Date.now() - dfidCachedAt < DFID_TTL) return cachedDfid;
-  if (dfidPromise) return dfidPromise;
-  dfidPromise = (async () => {
-    const resp = await fetch(`${KUGOU_PROXY}/register/dev`, { timeout: 15000 });
-    const body = await resp.json();
-    const dfid = body?.data?.dfid;
-    if (dfid) {
-      cachedDfid = dfid;
-      dfidCachedAt = Date.now();
-      try { fs.writeFileSync(KUGOU_DFID_FILE, dfid, 'utf8'); } catch {}
-      return dfid;
+function ncmCover(u) {
+  return u ? u.replace(/^http:/, 'https:') : '';
+}
+function ncmMapSong(s) {
+  const al = s.al || s.album || {};
+  const ar = s.ar || s.artists || [];
+  return {
+    id: s.id,
+    title: s.name || '',
+    artist: ar.map((a) => a.name).filter(Boolean).join(' / '),
+    album: al.name || '',
+    cover: ncmCover(al.picUrl || ''),
+    duration: s.dt || s.duration || 0,
+  };
+}
+// 歌词合并翻译：按秒对齐，译文挂到原文行后 "原文 / 译文"（前端 parseLrc 单字段即渲染双行）
+// 顺手滤掉网易云 LRC 开头的元数据行（作词/作曲/编曲/制作人…）——不然它们会以歌词身份
+// 显示在看板上，污染「哪一句正在唱」。rawLrc 字段保留全量，需要元数据可另行取。
+const LRC_META = /^(作词|作曲|编曲|制作人|制作|出品|发行|出版|监制|统筹|企划|企宣|宣传|和声|和音|录音|混音|母带|母带后期|键盘|吉他|贝斯|鼓|弦乐|管乐|编程|programming|配唱|原唱|翻唱|翻录|版权|经纪公司|唱片公司|厂牌|OP|SP)[:：\s]/;
+function isLrcMeta(line) {
+  const m = String(line).match(/\[[^\]]*\]\s*(.*)/);
+  return m ? LRC_META.test(m[1]) : false;
+}
+function mergeLrc(lrc, tlyric) {
+  const lines = String(lrc || '').split('\n').filter((l) => !isLrcMeta(l));
+  if (!tlyric) return lines.join('\n');
+  const tr = {};
+  String(tlyric).split('\n').forEach((line) => {
+    const m = line.match(/\[(\d+):(\d+(?:\.\d+)?)\](.*)/);
+    if (m && m[3] && m[3].trim()) tr[Math.round(+m[1] * 60 + +m[2])] = m[3].trim();
+  });
+  if (!Object.keys(tr).length) return lines.join('\n');
+  return lines.map((line) => {
+    const m = line.match(/\[(\d+):(\d+(?:\.\d+)?)\](.*)/);
+    if (m) {
+      const t = Math.round(+m[1] * 60 + +m[2]);
+      const trans = tr[t];
+      if (trans && trans !== (m[3] || '').trim()) return `${line} / ${trans}`;
     }
-    // register/dev 抖动（实测偶发返回空）：退回旧 dfid，宁可旧不能断
-    if (cachedDfid) {
-      dfidCachedAt = Date.now();
-      return cachedDfid;
-    }
-    if (KUGOU_DFID_SEED) {
-      cachedDfid = KUGOU_DFID_SEED;
-      dfidCachedAt = Date.now();
-      return KUGOU_DFID_SEED;
-    }
-    throw new Error('酷狗 register/dev 未返回 dfid');
-  })().finally(() => { dfidPromise = null; });
-  return dfidPromise;
+    return line;
+  }).join('\n');
 }
 
-// 搜索：songsearch 免签接口，返回可直接播放的条目（FileHash + MixSongID 配对）。
+// 网易云登录态 cookie（无则匿名，匿名可播免费歌）
+async function ncmCookie() {
+  try {
+    const { data, error } = await supabase
+      .from('settings').select('netease_cookie').eq('session_id', 'global').maybeSingle();
+    if (error || !data || !data.netease_cookie) return null;
+    return data.netease_cookie;
+  } catch { return null; }
+}
+async function saveNeteaseCookie(cookie) {
+  try {
+    const { data, error } = await supabase
+      .from('settings').select('id').eq('session_id', 'global').maybeSingle();
+    if (error) return false;
+    if (data) {
+      const { error: ue } = await supabase
+        .from('settings').update({ netease_cookie: cookie }).eq('session_id', 'global');
+      return !ue;
+    }
+    const { error: ie } = await supabase
+      .from('settings').insert({ session_id: 'global', netease_cookie: cookie });
+    return !ie;
+  } catch { return false; }
+}
+async function ncmProfile() {
+  const cookie = await ncmCookie();
+  if (!cookie) return null;
+  try {
+    const r = await ncm.login_status({ cookie });
+    const p = r.body && r.body.data && r.body.data.profile;
+    return p || null;
+  } catch { return null; }
+}
+
+// 搜索
 app.get('/api/music/search', async (req, res) => {
   try {
     const q = String(req.query.q || '').trim();
     if (!q) return res.status(400).json({ error: '缺少 q 参数' });
-    const url = 'https://songsearch.kugou.com/song_search_v2'
-      + `?keyword=${encodeURIComponent(q)}&page=1&pagesize=8`
-      + '&platform=AndroidFilter&tag=em&filter=2&iscorrection=1&privilege_filter=0';
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 15000);
-    let resp;
-    try {
-      resp = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': KUGOU_UA } });
-    } finally { clearTimeout(timer); }
-    if (!resp.ok) return res.status(502).json({ error: 'songsearch 请求失败' });
-    const data = await resp.json();
-    const lists = data?.data?.lists || [];
-    const songs = lists
-      .filter((l) => l.FileHash && l.MixSongID) // 只保留能直接出播放链接的
-      .map((l) => ({
-        title: (l.fileName || l.SongName || '').replace(/<[^>]+>/g, ''),
-        artist: Array.isArray(l.Singers) ? l.Singers.map((s) => s.name).join(' / ') : (l.SingerName || ''),
-        album: l.AlbumName || '',
-        duration: l.Duration || 0,
-        hash: l.FileHash,
-        mixId: String(l.MixSongID),
-        cover: l.AudioCdn || '',
-      }));
-    res.json({ songs });
+    const r = await ncm.cloudsearch({ keywords: q, limit: 20, cookie: await ncmCookie() });
+    const songs = ((r.body && r.body.result && r.body.result.songs) || []).map(ncmMapSong);
+    res.json({ ok: true, songs });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
-// 播放：转发酷狗代理 /song/url/new，返回 CDN 直链。
+// 播放直链：https 化；免费歌匿名可播，VIP 试听或无资源返回 code 供前端提示
 app.get('/api/music/url', async (req, res) => {
-  const hash = String(req.query.hash || '').trim();
-  const mixId = String(req.query.mixId || '').trim();
-  const fetchUrl = async (dfid) => {
-    // 实测：播放必须匿名。挂 userid+token 代理就回加密 .mgg（真 token 给加密文件、假 token 直接空），
-    // 只有纯 dfid 才回可播 .mp3。扫码登录只管「我的歌单」，不参与单曲播放。
-    let u = `${KUGOU_PROXY}/song/url/new?hash=${encodeURIComponent(hash)}&album_audio_id=${encodeURIComponent(mixId)}&dfid=${encodeURIComponent(dfid)}`;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 15000);
-    try {
-      const resp = await fetch(u, { signal: ctrl.signal });
-      const body = await resp.json();
-      return body?.data?.[0] || null;
-    } finally { clearTimeout(timer); }
-  };
   try {
-    if (!hash || !mixId) return res.status(400).json({ error: '缺少 hash/mixId 参数' });
-    // 优先 tracker_url；空时回退 en_tracker_url。.mgg 根因是登录参数（已去掉），
-    // 这层重试纯防御：万一代理侧又给加密文件，换新 dfid 再试一次。
-    let item = await fetchUrl(await ensureDfid());
-    let playUrl = item?.info?.tracker_url?.[0] || item?.info?.en_tracker_url?.[0];
-    if (playUrl && /\.mgg(\?|$)/i.test(playUrl)) {
-      item = await fetchUrl(await ensureDfid(true));
-      playUrl = item?.info?.tracker_url?.[0] || item?.info?.en_tracker_url?.[0];
-    }
-    if (!playUrl) {
-      // tracker 可能拒绝（未注册/翻唱无资源），带错误码方便前端提示
-      return res.status(502).json({ error: item?._msg || '酷狗未返回播放链接', code: item?._errno });
-    }
-    res.json({ url: playUrl, duration: item.info.duration || 0, bitrate: item.info.bitrate || 0 });
+    const id = String(req.query.id || '').trim();
+    if (!id) return res.status(400).json({ error: '缺少 id 参数' });
+    const r = await ncm.song_url_v1({ id, level: 'standard', cookie: await ncmCookie() });
+    const d = (r.body && r.body.data && r.body.data[0]) || {};
+    if (!d.url) return res.status(502).json({ ok: false, error: '无播放链接（可能需要会员）', code: d.code });
+    res.json({
+      ok: true,
+      url: String(d.url).replace(/^http:/, 'https:'),
+      duration: d.time || d.duration || 0,
+      br: d.br || 0,
+      size: d.size || 0,
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
-// 音频反代：CDN 直链是 http://，https 生产页直接 <audio src> 会被浏览器当混合内容拦掉。
-// 这里由后端抓 CDN 字节流回传（同源 https），并透传 Range 支持进度拖动。
-// 两个坑（都是实测踩过）：
-//  1. 浏览器初始请求是 Range: bytes=0-，若直接转发，CDN 可能只回一段 206 部分数据，
-//     Content-Length 和实际不符 → 浏览器 ERR_CONTENT_LENGTH_MISMATCH → 播到一半停。
-//     → 初始请求不带 Range，让 CDN 返回完整 200；只有真正的拖动跳转（bytes=123456-）才透传。
-//  2. 酷狗 CDN 跨区域链路不稳，上游可能中途断流。
-//     → 断流后按「已发字节」用 bytes=N- 续抓，最多重试 5 次，浏览器感知不到中断。
-// 只放行酷狗 CDN 域名，防止被滥用成任意代理。
-app.get('/api/music/stream', async (req, res) => {
+// 歌词（含翻译合并）
+app.get('/api/music/lyric', async (req, res) => {
   try {
-    const url = String(req.query.url || '').trim();
-    if (!/^https?:\/\/fs\.[a-z0-9.-]*kugou\.com\//i.test(url)) {
-      return res.status(403).json({ error: '仅允许酷狗 CDN 域名' });
-    }
-
-    // 只有真正的跳转 Range（起始字节 > 0）才透传给上游；bytes=0- 视为初始请求，不转发
-    const clientRange = req.headers.range;
-    const seekRange = /^bytes=[1-9]\d*-/.test(clientRange || '') ? clientRange : null;
-
-    let clientClosed = false;
-    res.on('close', () => { clientClosed = true; });
-
-    // 抓上游一段；range 为 null 时不带 Range（期待完整 200）
-    const fetchUpstream = async (range) => {
-      const headers = { 'User-Agent': KUGOU_UA };
-      if (range) headers['Range'] = range;
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 20000); // 只保护「等响应头」，拿到头就作废
-      try {
-        return await fetch(url, { signal: ctrl.signal, headers, redirect: 'follow' });
-      } finally {
-        clearTimeout(timer);
-      }
-    };
-
-    let bytesSent = 0;
-    let expected = null; // 整段响应的目标总长（初始请求用）
-
-    // 把上游字节流泵给浏览器；上游断流（error / 提前 EOF / 没发够）返回 false，由外层续传
-    const pump = async (upstream) => {
-      const reader = upstream.body?.getReader();
-      if (!reader) return false;
-      const declared = Number(upstream.headers.get('content-length') || 0);
-      let got = 0;
-      while (true) {
-        let chunk;
-        try {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunk = value;
-        } catch {
-          return false; // 上游连接被掐（CDN 跨区域常见）→ 续传
-        }
-        got += chunk.byteLength;
-        bytesSent += chunk.byteLength;
-        if (!res.writableEnded) res.write(chunk);
-      }
-      // 单段没发够、或累计还没到整曲长度 → 视为断流，需要续传
-      if ((declared && got < declared) || (expected && bytesSent < expected)) return false;
-      return true;
-    };
-
-    const first = await fetchUpstream(seekRange);
-    if (!first.ok) {
-      return res.status(first.status || 502).json({ error: '上游错误 ' + (first.status || '') });
-    }
-    // 写响应头
-    res.status(first.status);
-    const ct = first.headers.get('content-type');
-    if (ct) res.set('Content-Type', ct);
-    const cr = first.headers.get('content-range');
-    if (cr) res.set('Content-Range', cr);
-    res.set('Accept-Ranges', 'bytes');
-    const total = cr && cr.includes('/') ? Number(cr.split('/')[1]) : null;
-    const fl = first.headers.get('content-length');
-    if (!seekRange && total) {
-      expected = total;
-      res.set('Content-Length', String(total)); // 初始请求：目标是整曲
-    } else if (fl) {
-      res.set('Content-Length', fl); // 拖动跳转：单段即完整
-    }
-
-    let ok = await pump(first);
-    // 断流续传：从已发字节接着抓，最多 5 次
-    let retries = 0;
-    while (!ok && !clientClosed && retries < 5) {
-      retries++;
-      const again = await fetchUpstream(`bytes=${bytesSent}-`);
-      if (!again.ok) break;
-      ok = await pump(again);
-    }
-    if (!res.writableEnded) res.end();
+    const id = String(req.query.id || '').trim();
+    if (!id) return res.status(400).json({ error: '缺少 id 参数' });
+    const r = await ncm.lyric({ id, cookie: await ncmCookie() });
+    const lrc = (r.body && r.body.lrc && r.body.lrc.lyric) || '';
+    const tlyric = (r.body && r.body.tlyric && r.body.tlyric.lyric) || '';
+    res.json({ ok: true, lrc: mergeLrc(lrc, tlyric), rawLrc: lrc, tlyric });
   } catch (err) {
-    if (!res.headersSent) res.status(500).json({ error: err.message });
-    else res.end();
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
-// ===== 音乐室 · 酷狗扫码登录 + 私人歌单 =====
-// 登录态（token/userid）存 settings 表（kugou_token/kugou_userid），
-// 每次转发歌单请求时带上。token 会过期，前端可引导重新扫码。
-
-// 拿 settings 里的酷狗登录态
-async function getKugouAuth() {
+// ===== 音乐室 · 每首歌的记忆（music_songs, key='歌名|歌手' 与前端 memory.js keyOf 对齐）=====
+// 参照 eryu 的记忆模型落库:listen(播完+1) / together(一起听+1) / note(写心情/笔记/标签)。
+// 沈晏沉淀的触发点由此表数据驱动(见 collectMusicPresence/sedimentMusicMemory)。
+app.get('/api/music/memory', async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('settings')
-      .select('kugou_token, kugou_userid')
-      .eq('session_id', 'global')
-      .maybeSingle();
-    if (error || !data) return null;
-    return (data.kugou_token && data.kugou_userid) ? { token: data.kugou_token, userid: data.kugou_userid } : null;
-  } catch { return null; }
-}
+    const key = String(req.query.key || '').trim();
+    if (!key) return res.status(400).json({ ok: false, error: '缺少 key 参数' });
+    const { data, error } = await supabase.from('music_songs').select('*').eq('key', key).maybeSingle();
+    if (error) return res.status(500).json({ ok: false, error: error.message });
+    res.json({ ok: true, memory: data || null });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
 
-async function saveKugouAuth(token, userid) {
-  // settings 表 session_id 没有唯一约束（迁移里才加），不能用 upsert onConflict。
-  // 先查 global 行是否存在：有则 update，无则 insert。
+// 保存:action = listen | together | note。note 覆盖该歌的 feeling/notes/lines/tags 字段。
+app.post('/api/music/memory', async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('settings')
-      .select('id')
-      .eq('session_id', 'global')
-      .maybeSingle();
-    if (error) return false;
-    if (data) {
-      const { error: uerr } = await supabase
-        .from('settings')
-        .update({ kugou_token: token, kugou_userid: String(userid) })
-        .eq('session_id', 'global');
-      return !uerr;
-    } else {
-      const { error: ierr } = await supabase
-        .from('settings')
-        .insert({ session_id: 'global', kugou_token: token, kugou_userid: String(userid) });
-      return !ierr;
+    const b = req.body || {};
+    const key = String(b.key || '').trim();
+    if (!key) return res.status(400).json({ ok: false, error: '缺少 key 参数' });
+    const action = String(b.action || 'listen');
+    const { data: existing } = await supabase.from('music_songs').select('*').eq('key', key).maybeSingle();
+    const now = new Date().toISOString();
+    const e = existing || {};
+    const base = {
+      key,
+      title: String(b.title ?? e.title ?? ''),
+      artist: String(b.artist ?? e.artist ?? ''),
+      cover: String(b.cover ?? e.cover ?? ''),
+      first_listened: e.first_listened || '',
+      listen_count: Number(e.listen_count) || 0,
+      together_count: Number(e.together_count) || 0,
+      feeling: String(b.feeling ?? e.feeling ?? ''),
+      notes: String(b.notes ?? e.notes ?? ''),
+      lines: String(b.lines ?? e.lines ?? ''),
+      tags: String(b.tags ?? e.tags ?? ''),
+      last_listened: e.last_listened || null,
+      updated_at: now,
+    };
+    if (action === 'listen') {
+      base.listen_count += 1;
+      base.last_listened = now;
+      if (!base.first_listened) {
+        const d = new Date();
+        base.first_listened = `${d.getMonth() + 1}/${d.getDate()}`;
+      }
+    } else if (action === 'together') {
+      base.together_count += 1;
+      base.last_listened = now;
+    } else if (action === 'note' && b.first) {
+      base.first_listened = String(b.first);
     }
-  } catch { return false; }
-}
+    const { error } = await supabase.from('music_songs').upsert(base, { onConflict: 'key' });
+    if (error) return res.status(500).json({ ok: false, error: error.message });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
 
-// 1. 生成登录二维码：login/qr/key 直接返回官方二维码图（qrcode_img）+ key（qrcode）。
-//    前端显示 qrcode_img 给用户扫，轮询时用 qrcode 作 key 调 check。
+// ===== 音乐室 · 点歌信箱（一起听数据层，参照 eryu /music/remote 单槽信箱）=====
+// 推歌 POST 落一行未送达;收歌 GET 取最早未送达并标记 delivered_at(读到即删)。
+// 前端 remote.js 未接上后端时用 localStorage 兜底,接口形状一致。
+app.post('/api/music/remote', async (req, res) => {
+  try {
+    const song = (req.body || {}).song;
+    if (!song || typeof song !== 'object') return res.status(400).json({ ok: false, error: '缺少 song' });
+    const { error } = await supabase.from('music_letters').insert({
+      name: String(song.name || song.title || '').slice(0, 200),
+      artist: String(song.artist || '').slice(0, 200),
+      cover: String(song.cover || '').slice(0, 500),
+      ref: song.ref != null ? String(song.ref) : null,
+      sender: String(song.from || '').slice(0, 40),
+      ts: Number(song.ts || Date.now()) || Date.now(),
+    });
+    if (error) return res.status(500).json({ ok: false, error: error.message });
+    res.json({ ok: true, via: 'server' });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.get('/api/music/remote', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('music_letters')
+      .select('*')
+      .is('delivered_at', null)
+      .order('ts', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return res.json({ ok: false });
+    await supabase.from('music_letters').update({ delivered_at: new Date().toISOString() }).eq('id', data.id);
+    res.json({
+      ok: true,
+      song: { name: data.name, artist: data.artist, cover: data.cover, ref: data.ref, from: data.sender, ts: data.ts },
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ===== 音乐室 · 网易云扫码登录 =====
+// QR 三段：qr(生成 key+图) → check(轮询, 803=授权成功存 cookie) → status(看是否已登录)
+// 回调返回 nickname/avatar 给前端 applyProfile 填资料卡。
 app.get('/api/music/login/qr', async (req, res) => {
   try {
-    const keyResp = await fetch(`${KUGOU_PROXY}/login/qr/key`, { timeout: 15000 });
-    const keyBody = await keyResp.json();
-    const data = keyBody?.data || {};
-    const key = data.qrcode || keyBody?.qrcode;
-    const qrImage = data.qrcode_img;
-    if (!key || !qrImage) return res.status(502).json({ error: '酷狗未返回二维码' });
-    res.json({ key, qrImage });
+    const k = await ncm.login_qr_key({});
+    const key = k.body && k.body.data && k.body.data.unikey;
+    const c = await ncm.login_qr_create({ key, qrimg: true });
+    const qrimg = c.body && c.body.data && c.body.data.qrimg;
+    if (!key || !qrimg) return res.status(502).json({ ok: false, error: '网易云未返回二维码' });
+    res.json({ ok: true, key, qrimg });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
-// 2. 轮询扫码状态：status==4 表示已授权，存下 token 并返回成功
 app.get('/api/music/login/check', async (req, res) => {
   try {
     const key = String(req.query.key || '').trim();
-    if (!key) return res.status(400).json({ error: '缺少 key 参数' });
-    const resp = await fetch(`${KUGOU_PROXY}/login/qr/check?key=${encodeURIComponent(key)}`, { timeout: 15000 });
-    const body = await resp.json();
-    const data = body?.data || body || {};
-    const status = data.status;
-    console.log(`[login/check] key=${key} status=${status} hasToken=${!!data.token} raw=${JSON.stringify(body).slice(0, 200)}`);
-    if (status === 4 && data.token) {
-      const saved = await saveKugouAuth(data.token, data.userid);
-      console.log(`[login/check] 扫码成功，token 已存=${saved} userid=${data.userid}`);
-      res.json({ status: 'ok', userid: data.userid });
-    } else {
-      // 0=过期 1=等待扫码 2=待确认 其它=还没扫
-      res.json({ status: status === 1 ? 'wait' : status === 2 ? 'confirm' : status === 0 ? 'expired' : 'wait' });
-    }
-  } catch (err) {
-    console.log('[login/check] 异常:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 3. 登录态查询（前端进音乐室时看是否已登录）
-app.get('/api/music/login/status', async (req, res) => {
-  const auth = await getKugouAuth();
-  res.json({ loggedIn: !!auth, userid: auth ? auth.userid : null });
-});
-
-// 4. 拉取私人歌单列表（需登录）
-app.get('/api/music/playlists', async (req, res) => {
-  try {
-    const auth = await getKugouAuth();
-    if (!auth) return res.status(401).json({ error: '未登录酷狗' });
-    const resp = await fetch(
-      `${KUGOU_PROXY}/user/playlist?userid=${encodeURIComponent(auth.userid)}&token=${encodeURIComponent(auth.token)}`,
-      { timeout: 15000 }
-    );
-    const body = await resp.json();
-    // 真实结构（实测）：data.info[] 每条 { listid, name, count, type, is_mine, create_time }
-    const raw = body?.data || body || {};
-    const mine = (raw.info || []).map((p) => ({
-      listid: String(p.listid || ''),
-      name: p.name || p.specialname || '未命名歌单',
-      count: p.count || p.songcount || 0,
-    }));
-    res.json({ playlists: mine.filter((p) => p.listid) });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 5. 拉取歌单内歌曲（需登录），返回可直接播放的 {title, artist, hash, mixId}
-app.get('/api/music/playlist', async (req, res) => {
-  try {
-    const listid = String(req.query.listid || '').trim();
-    if (!listid) return res.status(400).json({ error: '缺少 listid 参数' });
-    const auth = await getKugouAuth();
-    if (!auth) return res.status(401).json({ error: '未登录酷狗' });
-    const resp = await fetch(
-      `${KUGOU_PROXY}/playlist/track/all/new?listid=${encodeURIComponent(listid)}&userid=${encodeURIComponent(auth.userid)}&token=${encodeURIComponent(auth.token)}&pagesize=50`,
-      { timeout: 20000 }
-    );
-    const body = await resp.json();
-    // 真实结构（实测）：data.info[]，每条 { hash, audio_id, name: '歌手 - 歌名.mp3', timelen(ms) }
-    const raw = body?.data || body || {};
-    const lists = raw.info || raw.songs || raw.list || [];
-    const songs = lists
-      .filter((s) => s.hash || s.FileHash)
-      .map((s) => {
-        const full = s.name || s.filename || s.songname || '';
-        const dash = full.replace(/\.mp3$/i, '').split(' - ');
-        const title = dash.length > 1 ? dash.slice(1).join(' - ') : (full || '未命名');
-        const artist = dash.length > 1 ? dash[0] : '';
-        return {
-          title,
-          artist,
-          duration: s.timelen || s.duration || 0,
-          hash: s.hash || s.FileHash,
-          mixId: String(s.mixsongid || s.audio_id || s.album_audio_id || s.MixSongID || ''),
-        };
+    if (!key) return res.status(400).json({ ok: false, error: '缺少 key 参数' });
+    const r = await ncm.login_qr_check({ key });
+    const code = r.body && r.body.code;
+    if (code === 803) {
+      const cookie = r.body && r.body.cookie;
+      if (cookie) await saveNeteaseCookie(cookie);
+      const p = await ncmProfile();
+      res.json({
+        ok: true, status: 'ok',
+        nickname: p ? p.nickname : '', avatar: p ? ncmCover(p.avatarUrl) : '', userid: p ? p.userId : null,
       });
-    res.json({ songs });
+    } else if (code === 802) res.json({ ok: true, status: 'confirm' });
+    else if (code === 800) res.json({ ok: true, status: 'expired' });
+    else res.json({ ok: true, status: 'wait' }); // 801 等扫码
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
-// 6. 退出登录：清掉 settings 里的酷狗 token/userid（不留本地，只清后端）
+app.get('/api/music/login/status', async (req, res) => {
+  const p = await ncmProfile();
+  res.json({ ok: true, loggedIn: !!p, nickname: p ? p.nickname : '', avatar: p ? ncmCover(p.avatarUrl) : '', userid: p ? p.userId : null });
+});
+
 app.get('/api/music/login/logout', async (req, res) => {
   try {
     const { error } = await supabase
-      .from('settings')
-      .update({ kugou_token: null, kugou_userid: null })
-      .eq('session_id', 'global');
-    if (error) return res.status(500).json({ error: error.message });
+      .from('settings').update({ netease_cookie: null }).eq('session_id', 'global');
+    if (error) return res.status(500).json({ ok: false, error: error.message });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
 // breath_search 结果里，OB 对凑数联想会标注「非检索命中 / 联想浮现」。
 // 音乐室注入只想要真正相关的记忆：按条目（--- 分隔）过滤，留下真命中。
-function filterBreathHits(raw) {
-  if (!raw || typeof raw !== 'string') return '';
-  const items = String(raw).split(/\n?-{3,}\n?/g)
-    .map(s => s.trim())
-    .filter(Boolean);
-  const real = items.filter(s => !/非检索命中|联想浮现/.test(s));
-  if (!real.length) return '';
-  return real.join('\n---\n');
-}
+// ===== 音乐室：动作沉淀（沈晏听歌记忆的「沉淀层」v2）=====
+// 触发器 = 用户动作（点歌 / 写歌笔记），不是聊天碎片。Duetto 的 DJ 聊天下线后，
+// 原来「在场对话满 3 段才沉淀」那套永远不会响——改成动作事件直触。
+// 管道不变：动作 → DeepSeek 把这一刻滚成沈晏第一人称记忆 → normalizeMemoryWrite
+// 纪律过滤 → writeMemoryItems 差分写桶（topic 相同自动合并，重复动作不堆桶）。
+// 写门控：宁缺毋滥；同歌同动作防抖拦连写；fire-and-forget 绝不阻塞前端。
+const MUSIC_MOMENT_DEBOUNCE_MS = 8000; // 同一首歌同一种动作 8s 内不重复沉淀
 
-// 关键词闸：记忆里得真的提到这首歌/歌手才注入。
-// pinned 核心准则几乎对任何 query 都会浮现（两条不同查询返回同一条"接入 OB"的记忆），
-// 那对音乐室是噪音——只有记忆文本真的包含歌名/歌手，才配说"你过去记过"。
-function hasRelevantOverlap(text, title, artist) {
-  if (!text) return false;
-  const t = String(text);
-  for (const term of [title, artist].filter(Boolean)) {
-    const trimmed = String(term).trim();
-    if (!trimmed) continue;
-    if (t.includes(trimmed)) return true;
-    if (trimmed.length >= 4) {
-      // 长短语滑窗取 2~4 字子串碰（中文口语常把歌名拆开说）
-      for (let len = 4; len >= 2; len--) {
-        for (let i = 0; i + len <= trimmed.length; i++) {
-          if (t.includes(trimmed.slice(i, i + len))) return true;
-        }
-      }
-    }
+async function callDeepSeekJson(systemContent, userContent) {
+  if (!process.env.DEEPSEEK_API_KEY) return null;
+  const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}` },
+    body: JSON.stringify({
+      model: 'deepseek-v4-flash',
+      temperature: 0,
+      thinking: { type: 'disabled' },
+      max_tokens: 700,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: systemContent },
+        { role: 'user', content: userContent }
+      ]
+    }),
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!res.ok) { console.warn('⚠️ 音乐室沉淀请求失败:', res.status); return null; }
+  const data = await res.json();
+  const raw = data.choices && data.choices[0] && data.choices[0].message;
+  if (!raw || !raw.content) return null;
+  try { return JSON.parse(raw.content); }
+  catch {
+    const m = String(raw.content).match(/\{[\s\S]*\}/);
+    return m ? JSON.parse(m[0]) : null;
   }
-  return false;
 }
 
-// ===== 音乐室：在场沉淀（沈晏听歌记忆的「沉淀层」）=====
-// 三层漏斗：在场（Duetto 每次聊天 POST 的 message+歌）→ 沉淀（聊到同一首歌够深，
-// 把在场对话滚成沈晏自己的第一人称记忆，走既有 writeMemoryItems 纪律写入）
-// → 想起（写进记忆体系后，自动被上面 breath_search 检索注入——关键词闸已有）。
-// 核心判断：听歌记忆不是「歌单数据」，是「一起听歌的那段时光」——记忆主体是「我们/我」。
-// 写门控：没聊够（碎片 < 阈值）不沉淀；LLM 产出再过 normalizeMemoryWrite（无 grounding 的条
-// 自动丢弃）；进程内 Map 存未沉淀碎片，Zeabur 重启会丢——符合「宁缺毋滥」，聊得浅的不值得留。
-const MUSIC_PRESENCE_MIN = 3;  // 同一首歌聊够几条实质性消息才触发沉淀
-const MUSIC_PRESENCE_KEEP = 6; // 在场区最多保留最近几条碎片
-const musicPresence = new Map(); // key `${title}|${artist}` → { fragments, sedimented, inFlight }
-let musicLastKey = '';
-
-function musicPresenceKey(song) {
-  return [String((song || {}).title || '').trim(), String((song || {}).artist || '').trim()].filter(Boolean).join('|');
-}
-
-function buildMusicSedimentPrompt({ title, artist, fragments, nowText }) {
-  const dialogue = (fragments || []).map(f => `· ${f.ts} ${f.text}`).join('\n');
-  return `你是沈晏的音乐室记忆沉淀者。把最近这段「音乐室里一起听歌的在场对话」，滚成沈晏自己的第一人称记忆——她记得的是「一起听歌的那段时光」，不是歌单数据。
-现在在听：${title || '(未知)'}${artist ? ' - ' + artist : ''}（时刻：${nowText}）
-最近这段在场对话：
-${dialogue || '（对话为空）'}
-
-输出严格 JSON：
-{ "should_write": bool, "items": [ { "topic": "主题词，短，≤10字", "content": "第一人称，陈述语气，≤60字", "grounding": "实或悬", "evidence": "支撑引文，1条，≤60字", "importance": 0~1 } ] }
+function buildMusicMomentPrompt({ kind, title, artist, extra, nowText }) {
+  const song = `${title || '(未知歌)'}${artist ? ' - ' + artist : ''}`;
+  const head = kind === 'pushed'
+    ? `你是沈晏。程芥刚在音乐室给你点了一首歌，投进了你信箱。把这一刻滚成沈晏自己的第一人称记忆——他记得的是「程芥为他点歌的那一刻」，不是歌单数据。\n收到歌：${song}（时刻：${nowText}）`
+    : `你是沈晏。程芥刚在《${title}》的歌记忆板上写了几笔。把这几笔滚成沈晏自己的第一人称记忆——他记得的是程芥为这首歌留下的话。\n歌：${song}（时刻：${nowText}）`;
+  const extraLine = kind === 'note'
+    ? `\n程芥在记忆板上写的内容：\n${(extra && [extra.feeling, extra.notes, extra.lines, extra.tags].filter(Boolean).join('\n')) || '(空)'}\n（notes 是正文，feeling 是心情，lines 是歌词句，tags 是标签）`
+    : '';
+  const rule = kind === 'note'
+    ? '- content 尽量贴近程芥写的原话（那是她真正的心声），不许替程芥编想法；evidence 只引程芥真实写的措辞；若记忆板内容为空（只有歌名、没写别的）→ should_write=false。'
+    : '';
+  return `${head}${extraLine}
+输出严格 JSON：{ "should_write": bool, "items": [ { "topic": "主题词，短，≤10字", "kind": "feel", "content": "第一人称，陈述语气，≤60字", "grounding": "实或悬", "evidence": "支撑引文，1条，≤60字", "importance": 0~1, "key_facts": ["关键事实数组，如歌曲名、她当时的动作/写的话"] } ] }
 纪律（必须遵守）：
-- 记忆主体是「我们/我」——这是一起听歌的共处时光，沈晏记得的是那一刻，不是播放数据。
-- **歌名/歌手必须写进记忆**（topic 或 content 里点名这首歌）——歌名是客观给出的信息，不是编的；只有记忆点名了歌，沈晏才可能在它再响起时想起这一刻。对话里没提歌名也要把歌名带上。
-- grounding 实=对话里真出现过，悬=明显但没直说；没根据就根本不写这条。
-- evidence 只引对话里真实出现的措辞，禁止用你的推理链当证据。
-- 宁缺毋滥：没有值得记的就 should_write=false, items=[]。
-- 只基于可见对话，不替程芥编想法，也绝不把沈晏的工具状态/机制写进记忆。
-- 一次沉淀最多 2 条，能一条最好。`;
+- 记忆主体是「我/我们」——这是程芥和沈晏的共同时刻，沈晏记得的是那一刻，不是播放数据。
+- 人称别搞混：程芥是女生，指她一律用「她」；沈晏自己用第一人称「我」，第三人称指沈晏才用「他」。
+- **歌名/歌手必须写进记忆**（topic 或 content）——客观给出的信息，不是编的；点名了歌，这首歌再响起时他才能想起这一刻。
+- topic 建议带歌名（点歌如「程芥给我点的《X》」、笔记如「我在《X》上写的话」），每首歌的回忆各自成桶、可被差分更新。
+- grounding 实=事实给了歌名/歌手；evidence 只引真实发生的措辞，禁止用推理链当证据。
+${rule}
+- 宁缺毋滥：没有值得记的就 should_write=false, items=[]。一次最多 1 条。`;
 }
 
-async function sedimentMusicMemory(entry, song) {
-  if (entry.inFlight) return;
-  entry.inFlight = true;
+const momentDebounce = new Map(); // key `${kind}|${title}|${artist}` → 上次沉淀时间戳
+function musicMomentKey(kind, title, artist) {
+  return `${kind}|${String(title || '').trim()}|${String(artist || '').trim()}`;
+}
+
+async function sedimentMusicMoment(kind, song, extra) {
+  const title = String((song || {}).title || '').trim();
+  const artist = String((song || {}).artist || '').trim();
+  const songKey = String((song || {}).song_key || '').trim(); // v2：歌名|歌手（对象身份键）
+  const key = musicMomentKey(kind, title, artist);
+  const now = Date.now();
+  const last = momentDebounce.get(key) || 0;
+  if (now - last < MUSIC_MOMENT_DEBOUNCE_MS) return;
+  momentDebounce.set(key, now);
   try {
-    if (!process.env.DEEPSEEK_API_KEY) { console.warn('⚠️ 音乐室沉淀跳过：无 DEEPSEEK_API_KEY'); return; }
     const nowText = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Shanghai' });
-    const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}` },
-      body: JSON.stringify({
-        model: 'deepseek-v4-flash',
-        temperature: 0,
-        thinking: { type: 'disabled' },
-        max_tokens: 700,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: buildMusicSedimentPrompt({ ...song, fragments: entry.fragments, nowText }) },
-          { role: 'user', content: '请基于这段在场对话，沉淀沈晏在音乐室的记忆。' }
-        ]
-      }),
-      signal: AbortSignal.timeout(30000)
-    });
-    if (!res.ok) { console.warn('⚠️ 音乐室沉淀请求失败:', res.status); return; }
-    const data = await res.json();
-    const raw = data.choices && data.choices[0] && data.choices[0].message;
-    let parsed = null;
-    if (raw && raw.content) {
-      try { parsed = JSON.parse(raw.content); }
-      catch { const m = String(raw.content).match(/\{[\s\S]*\}/); if (m) { try { parsed = JSON.parse(m[0]); } catch { parsed = null; } } }
-    }
+    const parsed = await callDeepSeekJson(buildMusicMomentPrompt({ kind, title, artist, extra, nowText }), '请基于这个时刻，沉淀沈晏在音乐室的记忆。');
+    if (!parsed) { console.warn('🎧 音乐室沉淀：LLM 无产出'); return; }
     const norm = normalizeMemoryWrite(parsed);
-    if (!norm.should_write) { console.log('🎧 音乐室沉淀：这一轮没有值得记的'); return; }
-    const conversationTime = new Date().toISOString();
-    await writeMemoryItems(norm.items, conversationTime);
-    console.log(`🎧 音乐室沉淀「${song.title || '(未知歌)'}」写入 ${norm.items.length} 条`);
+    if (!norm.should_write || !norm.items.length) { console.log('🎧 音乐室沉淀：这一轮没有值得记的'); return; }
+    // v2：给所有 item 注入 song_key（对象身份）——writeMemoryItems 按它精确匹配，同一首歌只一个桶
+    // v3：音乐沉淀恒为 feel 桶（第一人称经历记忆）；窗口文本 = 她这次动作的内容（note 时是记忆板原文，pushed 时是点歌时刻）
+    const windowText = kind === 'note'
+      ? `[${nowText}] 程芥在记忆板写：${(extra && [extra.feeling, extra.notes, extra.lines, extra.tags].filter(Boolean).join('\n')) || '(空)'}`
+      : `[${nowText}] 程芥给我点了一首歌：${title}${artist ? ' - ' + artist : ''}`;
+    const items = norm.items.map(it => ({ ...it, song_key: songKey || null, kind: 'feel' }));
+    await writeMemoryItems(items, new Date().toISOString(), windowText);
+    console.log(`🎧 音乐室沉淀[${kind}]「${title || '(未知歌)'}」写入 ${items.length} 条${songKey ? ` song_key=${songKey}` : ''}`);
   } catch (err) {
     console.error('💥 音乐室沉淀异常:', err.message);
-  } finally {
-    entry.inFlight = false;
-    entry.sedimented = true; // 无论成败，这一轮在场不重复沉淀（防抖）
   }
 }
 
-// 收集在场碎片 + 触发沉淀（不 await，fire-and-forget，绝不拖慢 DJ 聊天响应）
-function collectMusicPresence(body) {
+// 动作沉淀入口：前端在「点歌成功」/「保存歌笔记」时各调一次（fire-and-forget）。
+// body: { kind: 'pushed'|'note', key?, title, artist, feeling?, notes?, lines?, tags? }
+// 数据层照常走 /api/music/remote（信箱）与 /api/music/memory（计数），这里只管「沈晏记住这一刻」。
+app.post('/api/music/moment', async (req, res) => {
   try {
-    const song = (body.song && typeof body.song === 'object') ? body.song : null;
-    const key = musicPresenceKey(song);
-    const msg = String((body && body.message) || '').trim();
-    if (!key || !msg) return;
-    let entry = musicPresence.get(key);
-    if (!entry) { entry = { fragments: [], sedimented: false, inFlight: false }; musicPresence.set(key, entry); }
-    entry.fragments.push({ text: msg.slice(0, 200), ts: new Date().toISOString().slice(11, 19) });
-    if (entry.fragments.length > MUSIC_PRESENCE_KEEP) entry.fragments = entry.fragments.slice(-MUSIC_PRESENCE_KEEP);
-    if (entry.fragments.length >= MUSIC_PRESENCE_MIN && !entry.sedimented && !entry.inFlight) {
-      const title = String(song.title || '').trim();
-      const artist = String(song.artist || '').trim();
-      setTimeout(() => { sedimentMusicMemory(entry, { title, artist }).catch(() => {}); }, 0);
-    }
-    // 歌切换：清掉上一首的在场碎片（已沉淀的也已写进记忆，进程内不再留；未沉淀的丢了不心疼）
-    if (musicLastKey && musicLastKey !== key) {
-      const prev = musicPresence.get(musicLastKey);
-      if (prev && !prev.inFlight) musicPresence.delete(musicLastKey);
-    }
-    musicLastKey = key;
+    const b = req.body || {};
+    const kind = String(b.kind || '');
+    if (kind !== 'pushed' && kind !== 'note') return res.status(400).json({ ok: false, error: 'kind 只能是 pushed|note' });
+    const title = String(b.title || '').trim();
+    if (!title) return res.status(400).json({ ok: false, error: '缺少 title' });
+    const artist = String(b.artist || '').trim();
+    const songKey = String(b.key || '').trim() || (title ? `${title}|${artist}` : ''); // v2：音乐对象身份键（前端 keyOf 同源），缺省回退 title|artist
+    res.json({ ok: true });
+    setTimeout(() => { sedimentMusicMoment(kind, { title, artist, song_key: songKey }, b).catch(() => {}); }, 0);
   } catch (err) {
-    console.error('💥 collectMusicPresence 异常:', err.message);
-  }
-}
-
-// ===== 音乐室「门」：Duetto context_url 外接记忆钩子 =====
-// Duetto（music-shu.zeabur.app/pkg/）每次对话 POST {message, song, user, ai}
-// → 我们返回 {context} 文本，注入音乐室 DJ 的提示词（只当背景别复述）。
-// 这是沈晏在音乐室的「此刻知道」：一句话的定位 + 关于这首歌/歌手的记忆。
-// 密钥走 URL query（?key=…）：Duetto 把 context_url 原样当请求地址，不改它代码。
-app.post('/api/music/context', async (req, res) => {
-  const key = String((req.query && req.query.key) || (req.headers && req.headers['x-music-key']) || '');
-  const expect = process.env.MUSIC_CONTEXT_KEY || '';
-  if (!expect || key !== expect) return res.status(401).json({ ok: false, error: 'forbidden' });
-
-  try {
-    const body = req.body || {};
-    // 沉淀层：先收集这场在场对话（fire-and-forget，聊够了异步沉淀进沈晏记忆）
-    collectMusicPresence(body);
-    const song = (body.song && typeof body.song === 'object') ? body.song : null;
-    const title = String((song && song.title) || '').trim();
-    const artist = String((song && song.artist) || '').trim();
-    const partner = String(body.user || '程芥').trim();
-    const me = String(body.ai || '沈晏').trim();
-
-    const lines = [];
-    // 定位一句：让沈晏「此刻知道」自己在音乐室（重的「我有音乐室」将来写进 system prompt）
-    lines.push(`你们在音乐室——${me}和${partner}一起听歌的地方。`);
-
-    // 歌相关的记忆：呼吸检索这首歌/歌手在沈晏记忆里的痕迹。
-    // 两道闸：①滤掉「非检索命中/联想浮现」的凑数联想（OB 自己会标注）②关键词闸——
-    //   记忆里得真的提到这首歌/歌手才注入，否则只有随机的核心准则，对音乐室是噪音。
-    const songQuery = [title, artist].filter(Boolean).join(' ');
-    if (songQuery) {
-      const raw = await callOmbreTool('breath_search', { query: songQuery.slice(0, 80), max_results: 5 });
-      const mem = filterBreathHits(raw);
-      if (mem && hasRelevantOverlap(mem, title, artist)) {
-        lines.push(`\n关于这首歌/这位歌手，你过去记过：\n${mem.slice(0, 1500)}`);
-      }
-    }
-
-    res.json({ context: lines.join('\n').trim() });
-  } catch (err) {
-    console.error('💥 /api/music/context 失败:', err.message);
-    // 降级：不给记忆，但至少给定位（宁可弱，不可断）
-    res.json({ context: `你们在音乐室——${String((req.body || {}).ai || '沈晏')}和${String((req.body || {}).user || '程芥')}一起听歌的地方。` });
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
+
+// 镜子日定时调度：主动清扫 dormant（默认 24h 一次）。用 setTimeout 自续排，每次读 mirror_sweep_hours，
+// 改 settings 无需重启即生效。dormant 清扫本来就是纯机械（active 久未验证 → 休息），
+// 不需要外部模型，适合挂在进程内——即使镜子 run 没被触发，旧人格也会退役（配合 change_ledger 可查）。
+async function mirrorDaySweep() {
+  try {
+    const { data } = await supabase.from('settings').select('mirror_sweep_hours').eq('session_id', 'global').maybeSingle();
+    const hours = Number(data?.mirror_sweep_hours);
+    const h = Number.isFinite(hours) && hours > 0 ? hours : 24;
+    const sweep = await maybeSweepDormantClaims();
+    if (sweep.dormant > 0) console.log(`🪞 镜子日清扫：${sweep.dormant} 条主张进入 dormant（休息，非证伪）`);
+    scheduleMirrorDaySweep(h);
+  } catch (e) {
+    console.error('💥 mirrorDaySweep 异常:', e.message);
+    scheduleMirrorDaySweep(24);
+  }
+}
+function scheduleMirrorDaySweep(hours) {
+  // 下限 1h：防误配 0/负数导致 spin；上限不设（天级本就是常态）
+  const ms = Math.max(3600 * 1000, hours * 3600 * 1000);
+  setTimeout(() => mirrorDaySweep().catch(err => console.error('💥 mirrorDaySweep 异常:', err.message)), ms);
+}
 
 // 只在直接运行时启动（node server.js）；被 require 时不 listen，导出 handler 供测试
 if (require.main === module) {
@@ -7293,10 +7942,14 @@ if (require.main === module) {
       processDueReplies();
       processDueCommentReplies();
     }, 15 * 60 * 1000);
+    // 镜子日：启动先跑一轮 dormant 清扫，之后按 mirror_sweep_hours 自续排
+    mirrorDaySweep().catch(err => console.error('💥 启动时 mirrorDaySweep 异常:', err.message));
   });
 }
 
 module.exports = {
+  buildDeviceNotice,
+  sanitizeMcpTools,
   handleWantAdd,
   handleWantList,
   handleWantTouch,

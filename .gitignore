@@ -13,3 +13,6 @@ _*.json
 
 # 记忆清洗前备份（一次性清洗产物，不进 git）
 backup_memories_before_clean.json
+
+# 全量数据备份（敏感，不进 git）
+backup/
