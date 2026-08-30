@@ -3021,6 +3021,21 @@ function countCacheControlBlocks(messages) {
   return n;
 }
 
+// 显式尾断点（2026-08-31 修）：把断点推到最后一个 user 消息（对话尾巴），
+// 让 middle+live 进缓存。兜底场景=OpenRouter chat_completions 通道对 system 内逐块 cache_control
+// 可能「accepted but not write」（hermes-agent #20957），只靠顶层不够时，尾巴上必须有一个显式 1h 断点。
+// 只标 user 消息：assistant/tool 消息 content 可能为 null 或含 tool_calls，withCacheControl 会包坏。
+// 每请求消息数组由 buildModelContext 从 DB 重拼（DB 不带 cache_control），不会跨轮累积断点数。
+function markCacheTail(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m && m.role === 'user' && m.content) {
+      messages[i] = withCacheControl(m);
+      return;
+    }
+  }
+}
+
 // —— 记录一次 chat 请求的真实 usage 到 request_stats（失败只告警，不阻断） ——
 // usage 语义（OpenRouter）：OpenAI 风格 cached_tokens 是 prompt_tokens 的子集；
 // Anthropic 风格 cache_read/creation 是独立的桶。两者可能并存，语义可能随 provider 变化——
@@ -5046,12 +5061,18 @@ async function handleStreamChat(messages, res, opts = {}, sessionId, resume = nu
     }
     if (model.startsWith('anthropic/')) {
       // OpenRouter 顶层 cache_control —— 自动缓存到最后一个可缓存块、随对话推进断点。
+      // 2026-08-31 修命中率 60%：顶层原来不带 ttl → 默认 5 分钟，两条消息之间就过期，
+      //   只剩 1h 的 system/frozen 断点（22414），middle+live 每轮全价重写（实测 write≈15k）。
+      //   ①顶层补 ttl:'1h'（与稳定段一致，无 1h-after-5m 排序冲突）；②显式尾断点兜底
+      //   （chat_completions 对 system 内逐块可能 ignored，尾巴 user 消息必须自带 1h 断点）。
       // 仅逐块 cache_control 在 OpenAI 兼容通道「accepted but not write」→ 必须加顶层提示。
       // 但 Anthropic 原生通道逐块已生效，且内容块上限 4：显式断点已满（system/frozen/anchor/latest）
       // 时再加顶层 = 第 5 块 → 400。满则跳过，前缀缓存不受影响（断点本身就能续）。
+      markCacheTail(messages);
       if (countCacheControlBlocks(messages) < 4) {
-        body.cache_control = { type: 'ephemeral' };
+        body.cache_control = { type: 'ephemeral', ttl: '1h' };
       }
+      console.log(`🧊 [cache] session=${sessionId} blocks=${countCacheControlBlocks(messages)} top=${!!body.cache_control} last_role=${messages[messages.length - 1]?.role} tools=${body.tools ? body.tools.length : 0}`);
     }
 
     const { content, thinkingText, toolCalls, usage } = await (deepSeek ? streamDeepSeek(body, res) : streamOpenRouter(body, res));
@@ -5243,9 +5264,11 @@ async function callOpenRouterNonStream(messages, tools, opts = {}) {
   }
   if (body.model.startsWith('anthropic/')) {
     // OpenRouter 顶层 cache_control（自动缓存），见 handleStreamChat 处注释
+    // 2026-08-31 修命中率 60%：顶层补 ttl:'1h'（原 5m 默认在两条消息之间过期）+ 显式尾断点兜底
     // 显式断点已满 4 块时跳过，否则 OpenRouter 再物化一个 = 400「Found 5」
+    markCacheTail(body.messages);
     if (countCacheControlBlocks(body.messages) < 4) {
-      body.cache_control = { type: 'ephemeral' };
+      body.cache_control = { type: 'ephemeral', ttl: '1h' };
     }
   }
 
