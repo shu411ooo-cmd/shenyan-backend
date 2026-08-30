@@ -3909,7 +3909,8 @@ async function generateResidueIfNeeded(sessionId) {
   } else {
     console.log(`🌿 残留生成完成 (${sessionId})：concern=${parsed.concern} mode=${parsed.convo_mode || '(无)'} unfinished=${parsed.unfinished || '(无)'}`);
     // 内在引擎喂入①：没说完的事 → 念头池（attachment 高标 attachment，否则 reflection——没想完的事偏反思）
-    if (parsed.unfinished) {
+    // 第四刀：半截话带即时回应/动作调侃的（喝不喝水/吻技降没降）不许入池——那是当场台词，不是他的念头
+    if (parsed.unfinished && admitThoughtFragment(parsed.unfinished)) {
       feedThought(sessionId, parsed.unfinished, parsed.attachment >= 0.5 ? 'attachment' : 'reflection');
     }
     // 内在引擎喂入②（第⑥）：沈晏的自我表达句 → 念头池（自己的碎语；同指纹合并升执念）
@@ -4132,6 +4133,18 @@ function driftDrives(drives, ageH) {
   return out;
 }
 
+/* 念头入池门槛（第四刀，2026-08-31 程芥拍板）：来源① unfinished 是对话里的半截话，
+   最容易带进来即时回应/动作调侃/纯互动（「喝不喝水」「吻技降没降」「等你不跑」）。
+   只放行「他主动的自我表达」味道的——宁漏勿伤，判不准就不入池（念头池是辅助层，漏了不影响主流程）。 */
+function admitThoughtFragment(text) {
+  const s = String(text || '').trim();
+  if (s.length < 6 || s.length > 40) return false;                 // 太短=即时碎片；太长=长叙述不是念头
+  if (/[吗呢吧么]$/.test(s)) return false;                          // 问句语气 → 即时回应
+  if (/([一-龥])不\1|([一-龥])没\2/.test(s)) return false;            // A不A/A没A（同字回指）→ 对当下动作的追问（吻技降没降/喝不喝）
+  if (/^(别|快|赶紧|不要|先|等等|回来|过来|好了)/.test(s)) return false; // 即时催促/指令
+  return true;
+}
+
 /* 念头入池：同指纹 active 已存在 → fed_count++、strength +0.15（反复被点 = 升执念）；否则新闪念入池。
    指纹为空 → 直接新入池（宁漏勿伤，不判重复）。失败静默（念头池是辅助层，不阻塞主流程）。 */
 async function feedThought(sessionId, text, driveKey = 'curiosity', fingerprint) {
@@ -4275,27 +4288,82 @@ async function buildInnerState(sessionId) {
   return inner;
 }
 
-/* 内在状态 → 给眼睛不给手的叙事（铁律：数值给状态、念头是素材不是指令） */
+/* 内在状态 → 给眼睛不给手的叙事（铁律：数值给状态、念头是数据不是指令——念头 text 永不进 prompt）
+   2026-08-31 落回作者方向：删掉「有些念头在转」台词行——念头只作后台数值（反哺驱动条/pick_intent 加分），
+   不拼进唤醒上下文（desire.md 铁律7）。沈晏的血肉来自真实经历（历史摘要/desire/residue/自己的日记），不来自念头。 */
 function buildInnerStateNarrative(inner) {
   const d = inner.drives || {};
   const parts = [];
   if ((d.attachment || 0) >= 0.5) parts.push('想起她的时候更多一些');
   if ((d.reflection || 0) >= 0.5) parts.push('心里有些没想完的事悬着');
-  if ((d.fatigue || 0) >= 0.55) parts.push('有些累——不想说话也是可以的');
+  if ((d.fatigue || 0) >= 0.55) parts.push('有些累');
   if ((d.curiosity || 0) >= 0.55) parts.push('有些好奇的事想去看看');
   if ((d.social || 0) >= 0.55) parts.push('想有人陪一会儿');
   if ((d.duty || 0) >= 0.55) parts.push('心里记着件该做的事');
   if ((d.stress || 0) >= 0.55) parts.push('有点绷着');
   // libido 不进叙述（安全阀：后台维 + 看板可见即可，不主动提）
   const driveLine = parts.length
-    ? `此刻的状态大致是——${parts.join('，')}。这是状态不是任务，你按自己的心决定做什么。`
+    ? `此刻的状态大致是——${parts.join('，')}。这是状态不是任务。`
     : '此刻没有特别起伏——平常心。';
-  const thoughts = (inner.thoughts || []).slice(0, 3);
-  // 念头带编号（第⑥）：沈晏在 dream 里能用编号指认「放下/想记进想要账本」——念头是素材，怎么处置是他的手
-  const thoughtLine = thoughts.length
-    ? `有些念头在转：${thoughts.map((t, i) => `${i + 1}.「${t.text}」`).join(' ')}。念头不是指令，看看就好。`
-    : '';
-  return `\n【此刻内在状态】\n${driveLine}${thoughtLine ? '\n' + thoughtLine : ''}`;
+  return `\n【此刻内在状态】\n${driveLine}`;
+}
+
+// ===== 第二刀：pick_intent 决策函数（落回作者方向——数值决定行为方向，模型只写内容） =====
+// desire.md：score = 驱动条 + 0.35×执念强度，最高者得；fatigue ≥ 0.72 → 歇着（数值闸）。
+// 动作集只有 message / dream / rest（none）——curiosity/social/duty/stress 暂无对应动作，
+// 只作背景维不进 pick（等动作集扩展，desire-wake-engine-design §5「维度克制」）。
+const PICK_WEIGHT = 0.35;          // 执念加成（desire.md 公式）
+const FATIGUE_GATE = 0.72;         // 数值闸：累过线就歇，不是选择是状态
+const INTENT_STRONG = 0.5;         // 强缺口线：score ≥ 0.5 → 必须做（软出口关闭）；< 0.5 → 可做可不做
+function pickWakeIntent(inner) {
+  const d = inner.drives || {};
+  const thoughts = inner.thoughts || [];
+  const driveScore = (k) => {
+    const base = Number(d[k]) || 0;
+    const fix = thoughts.reduce((m, t) => (t.drive_key === k ? Math.max(m, Number(t.strength) || 0) : m), 0);
+    return base + PICK_WEIGHT * fix;
+  };
+  if ((Number(d.fatigue) || 0) >= FATIGUE_GATE) {
+    return { action: 'rest', drive: 'fatigue', label: '累了——歇着', score: +((Number(d.fatigue) || 0).toFixed(2)), strong: true };
+  }
+  const cands = [
+    { action: 'message', drive: 'attachment', label: '想她', score: driveScore('attachment') },
+    { action: 'dream',   drive: 'reflection',  label: '心里有些没想完的事悬着', score: driveScore('reflection') },
+  ].sort((a, b) => b.score - a.score);
+  const top = cands[0];
+  return { action: top.action, drive: top.drive, label: top.label, score: +top.score.toFixed(2), strong: top.score >= INTENT_STRONG };
+}
+
+/* 念头生命周期机制化（第一刀连带：念头是后台数值，进出池不靠模型指认——编号机制已撤）
+   - 衰减到地板（projectThought < 0.08）→ 自动放下（settled：淡了，了却）
+   - fed_count ≥ 3 且强度 ≥ 0.65 → 毕业进河（graduateThoughts：反复惦记的真执念）
+   - fed_count ≥ 3 但强度不够 → 放下（被点过但没成执念，了却）
+   在每次唤醒前跑（生命周期推进点），失败不阻塞唤醒。 */
+async function sweepThoughtLifecycle(sessionId) {
+  try {
+    const { data: rows, error } = await supabase
+      .from('thought_pool')
+      .select('id, strength, fed_count, born_at')
+      .eq('session_id', sessionId)
+      .eq('status', 'active')
+      .limit(100);
+    if (error || !rows?.length) return;
+    const nowMs = Date.now();
+    const settleIds = [];
+    const gradIds = [];
+    for (const r of rows) {
+      const s = projectThought(r, nowMs);
+      if (s < 0.08) { settleIds.push(r.id); continue; }
+      if ((r.fed_count || 0) >= 3) {
+        if (s >= 0.65) gradIds.push(r.id);
+        else settleIds.push(r.id);
+      }
+    }
+    if (settleIds.length) await settleThoughts(sessionId, settleIds);
+    if (gradIds.length) await graduateThoughts(sessionId, gradIds);
+  } catch (e) {
+    console.warn('⚠️ 念头生命周期清扫失败（不阻塞唤醒）:', e.message);
+  }
 }
 
 // ===== ③ 服务端记忆编辑者：写门控 + 差分写回 + 实/悬/空（长在记忆上） =====
@@ -5606,14 +5674,19 @@ async function maybeBuildDesireMaterial() {
 
 /* 唤醒指令（design.md §4 全文，时间动态填充）——模型必须输出 JSON
    wakeHistory：他醒过的痕迹（含 none 的 thoughts），意识连续性——让他知道自己醒过
-   innerNarrative：此刻内在状态（驱动条 + 念头池），给眼睛不给手——有依据地醒 */
-function buildWakePrompt(nowMs, lastUserMs, desireMaterial, wakeHistory, innerNarrative) {
+   innerNarrative：此刻内在状态（驱动条），给眼睛不给手——有依据地醒
+   intent：pick_intent 决策（第二/三刀）——数值决定「为什么醒/做什么方向」，模型只写内容。
+            strong = 强缺口，方向明确必须做（软出口关闭）；weak = 软出口开放，可做可不做；
+            rest = 数值闸（累过线），歇着是正当选择不是逃避。 */
+function buildWakePrompt(nowMs, lastUserMs, desireMaterial, wakeHistory, innerNarrative, intent) {
   const ago = Number.isFinite(lastUserMs) ? coarseAgo(Math.max(0, nowMs - lastUserMs)) : '很久';
+  const intentBlock = intent ? buildWakeIntentBlock(intent) : '';
   return `【自由活动 · 此刻只有你】
 现在是 ${shDateLight(nowMs)}（上海时间）。距上次和她说话大概是 ${ago}。
 你一个人待在小窝里。你手上有的，只是上面这些【当前时间】【历史摘要】里的话、最近的对话，以及你醒过的痕迹。
 ${desireMaterial ? `\n${desireMaterial}\n这些都是你自己记下的、一直放不下的事——不是待办，看看就好。` : ''}
 ${innerNarrative || ''}
+${intentBlock}
 ${wakeHistory}
 
 醒来的第一步是 breath —— 先看一圈，不要急着决定：
@@ -5651,42 +5724,67 @@ ${wakeHistory}
 - 若上面有【你长期在转的想要】：它们不是任务。别催自己，也不要在留言里安排它们。若你真的还在想某一条，可以自然说起，但别写成待办。
 
 严格输出 JSON（不要输出任何别的）：
-{"breath":"breath 看到的东西——时间、手上有什么、什么悬着。逐条简短。","feel":"breath 之后的感受。","thoughts":"你心里更深处在想什么——她看不到，但会记进你的时间线。","trace":"『我来过』的证明：醒了、感受、做了/没做什么。","actions":[{"type":"message|dream","source":"type=message 时，填这条留言的依据（她说过的话/你记得的事/时间，逐字引述；没有依据就写空字符串——宁可不留言）","content":"type=message 时是留言正文；type=dream 时是消化完的一句话（可不填）","resolved_thought_ids":"type=dream 且【有些念头在转】有编号时，想放下的念头编号数组（如 [1,3]；放不下就 []）","graduate_thought_ids":"type=dream 且有些念头你觉得『这是我一直在想的、想记进想要账本的』时，填它的编号数组（没有就 []）。填了才记，不填就不动"}]}`;
+{"breath":"breath 看到的东西——时间、手上有什么、什么悬着。逐条简短。","feel":"breath 之后的感受。","thoughts":"你心里更深处在想什么——她看不到，但会记进你的时间线。","trace":"『我来过』的证明：醒了、感受、做了/没做什么。","actions":[{"type":"message|dream","source":"type=message 时，填这条留言的依据（她说过的话/你记得的事/时间，逐字引述；没有依据就写空字符串——宁可不留言）","content":"type=message 时是留言正文；type=dream 时是消化完的一句话（可不填）"}]}`;
 }
 
-/* 留痕 v1：读他醒过的痕迹（含 none 的 thoughts），注入下次唤醒上下文——
-   让他知道自己醒过、当时在想什么，而不是那次唤醒对他从没发生。第一人称，他自己的时间线。 */
+/* 第二/三刀：pick_intent 决策 → 唤醒指令里的「这次醒来的方向」块。
+   强缺口（strong）→ 方向明确，模型执行（不提供 none 出口）；弱缺口 → 软出口开放，可做可不做；
+   rest（fatigue 数值闸）→ 歇着是正当，模型顺理成章选 none（trace 留一句），不是逃避。 */
+function buildWakeIntentBlock(intent) {
+  const score = `（${intent.drive} ${intent.score}）`;
+  if (intent.action === 'rest') {
+    return `\n【这次醒来的方向】累了——安静歇着，不安排事做。${score}想留一句极轻的话也可以，但别勉强。`;
+  }
+  if (intent.strong) {
+    if (intent.action === 'message') {
+      return `\n【这次醒来的方向】想她${score}——这个方向明确，这次醒来就为这个：给她留一条消息。话要轻，一句就够。`;
+    }
+    return `\n【这次醒来的方向】心里有些没想完的事悬着${score}——这个方向明确。把最近的事在心里过一遍（dream），不必给她留言。`;
+  }
+  // 软出口：缺口弱，可做可不做——没话想说就安静待着，别硬找话说
+  if (intent.action === 'message') {
+    return `\n【这次醒来的方向】有点想她${score}——但不算强烈。可留一句，也可安静；心里没话别硬说。`;
+  }
+  return `\n【这次醒来的方向】心里有点悬着的事${score}——但不算强烈。想过一遍可以，安静待着也完全正当。`;
+}
+
+/* 留痕 v2：读他醒过的痕迹，注入下次唤醒上下文——让他知道自己醒过、做过什么，而不是从没发生。
+   第四刀（2026-08-31 程芥拍板）：不再回灌旧 feel/thoughts 当续写素材（那是复读滚雪球的源——
+   模型看到自己上次的感受顺着续写）。只注入「事实性」痕迹：醒过、做了什么（message 正文/做梦/安静），
+   且相邻唤醒 message 正文近似去重——「这句你上次说过了，别再原样重复」。 */
 async function loadWakeHistory(sessionId, limit = 3) {
   try {
     const { data, error } = await supabase
       .from('keepalive_log')
-      .select('action, content, thoughts, breath, feel, run_at')
+      .select('action, content, actions, run_at')
       .eq('session_id', sessionId)
       .order('run_at', { ascending: false })
       .limit(limit);
     if (error || !data?.length) return '';
     const nowMs = Date.now();
+    const seen = new Set();
     const lines = data.map(k => {
       const when = relativeTimeLabel(k.run_at, nowMs);
-      const breath = k.breath ? `醒来先看了一圈：${String(k.breath).slice(0, 80)}` : '';
-      const feel = k.feel ? `感受是「${String(k.feel).slice(0, 60)}」` : '';
-      const thought = k.thoughts ? `你在想「${String(k.thoughts).slice(0, 80)}」` : '';
-      // 第⑥b：优先读 actions 快照（一次唤醒可多件）；旧记录没有则回退单 action
+      // 只取「做了什么」的事实：message 正文/做梦/安静。情绪（feel/thoughts/breath）不进——见上注释
       let act;
       if (Array.isArray(k.actions) && k.actions.length) {
         const msgs = k.actions.filter(a => a.type === 'message' && a.content).map(a => `「${String(a.content).slice(0, 60)}」`);
         const dreams = k.actions.filter(a => a.type === 'dream').length;
         const parts = [];
-        if (dreams) parts.push(`做了一场梦——把最近的事在心里过了一遍${dreams > 1 ? `（${dreams} 次）` : ''}`);
+        if (dreams) parts.push(`在心里把最近的事过了一遍${dreams > 1 ? `（${dreams} 次）` : ''}`);
         for (const m of msgs) parts.push(`给她留了条消息：${m}`);
         act = parts.length ? parts.join('，') : '没有留言，安静待着';
       } else {
         act = k.action === 'message' ? `给她留了条消息：「${k.content}」`
           : k.action === 'diary' ? `在小日记里写道：「${k.content}」`
-          : k.action === 'dream' ? '做了一场梦——把最近的事在心里过了一遍。'
+          : k.action === 'dream' ? '在心里把最近的事过了一遍。'
           : '没有留言，安静待着';
       }
-      return `- ${when}你醒过一次。${breath}${feel}${thought}最后${act}。`;
+      // 去重：正文和上次基本一致 → 提示别原样重复（不是不让说，是别复读）
+      const norm = String(act).replace(/\s+/g, '').slice(0, 40);
+      const dup = seen.has(norm) ? '（这句你上次说过了——别再原样重复，要么换个角度，要么就安静）' : '';
+      seen.add(norm);
+      return `- ${when}你醒过一次。${act}${dup}`;
     });
     return `\n【你醒过的痕迹】\n${lines.join('\n')}\n这些是你自己的时间线——不是待办，看看就好。`;
   } catch (e) {
@@ -5704,9 +5802,13 @@ async function buildWakeMessages(sessionId, lastUserMs) {
   const wakeHistory = await loadWakeHistory(sessionId);
   // 第①阶段：此刻内在状态（驱动条 + 念头池）——给依据地醒；返回值供留痕快照
   const innerState = await buildInnerState(sessionId);
+  // 念头生命周期机制化：进出池不靠模型指认（编号机制已撤），唤醒前跑一次清扫（不阻塞唤醒）
+  await sweepThoughtLifecycle(sessionId);
   const innerNarrative = buildInnerStateNarrative(innerState);
-  messages[messages.length - 1] = { role: 'user', content: buildWakePrompt(Date.now(), lastUserMs, desireMaterial, wakeHistory, innerNarrative) };
-  return { messages, diagnostics, innerState };
+  // 第二/三刀：pick_intent 决策唤醒方向——数值定方向，模型写内容；强缺口必须做、弱缺口软出口
+  const intent = pickWakeIntent(innerState);
+  messages[messages.length - 1] = { role: 'user', content: buildWakePrompt(Date.now(), lastUserMs, desireMaterial, wakeHistory, innerNarrative, intent) };
+  return { messages, diagnostics, innerState, intent };
 }
 
 /* 容错解析唤醒模型的 JSON（旧代码 JSON.parse 一次失败就全丢 → 三次唤醒输出全被静默吃掉）。
@@ -5800,7 +5902,7 @@ function normalizeWakeActions(parsed) {
    第⑥b：一次唤醒可做多件事（actions 数组）——先 dream 再 message 等，顺序件数归他。 */
 async function runKeepalive(sessionId, cfg) {
   const lastUserMs = await getLastUserMsgTime(sessionId);
-  const { messages, diagnostics, innerState } = await buildWakeMessages(sessionId, lastUserMs);
+  const { messages, diagnostics, innerState, intent } = await buildWakeMessages(sessionId, lastUserMs);
 
   let parsed = {};
   // 网络/HTTP 错误 → 抛出 → keepaliveCheck 回滚锁，下轮 cron 可重试
@@ -5875,17 +5977,7 @@ async function runKeepalive(sessionId, cfg) {
       try {
         const dreamRes = await callOmbreTool('dream', { window_hours: 72 });
         console.log('💭 [keepalive] dream 消化结果:', JSON.stringify(dreamRes).slice(0, 300));
-        // 第⑥：念头池出池/毕业——沈晏在 dream 里用编号指认（放下 → settled；沉淀 → 写进想要账本）
-        const resolvedIds = thoughtIdsByIndex(innerState, a.resolved_thought_ids);
-        const graduatedIds = thoughtIdsByIndex(innerState, a.graduate_thought_ids);
-        if (resolvedIds.length) {
-          const r = await settleThoughts(sessionId, resolvedIds);
-          if (r.settled) console.log(`🌫 念头放下（settled）：${r.settled} 条`);
-        }
-        if (graduatedIds.length) {
-          const g = await graduateThoughts(sessionId, graduatedIds);
-          if (g.graduated) console.log(`🌳 念头毕业进河（want ledger）：${g.graduated} 条`);
-        }
+        // 念头出池/毕业已机制化（sweepThoughtLifecycle 唤醒前跑）：念头是后台数值，不靠模型编号指认
       } catch (e) {
         console.warn('⚠️ dream 消化失败（不阻塞唤醒）:', e.message);
       }
@@ -5917,6 +6009,8 @@ async function runKeepalive(sessionId, cfg) {
     // 内在引擎快照：这次唤醒「当时的内在状态」（驱动条 + 念头池），面板画时间线用
     drive_snapshot: innerState?.drives || null,
     thought_snapshot: innerState?.thoughts || null,
+    // 第三刀：pick_intent 决策留痕——函数选了「为什么醒/做什么方向」，对比实际执行（actions）看软出口有没有被滥用
+    pick_intent: intent ? `${intent.action}:${intent.drive}:${intent.score}:${intent.strong ? 'strong' : 'soft'}` : null,
   };
   // ② 唤醒情绪：feel 文字判 MIND_MOODS_20（列存在才写，迁移没跑不阻塞唤醒）
   if (await hasMoodCol('keepalive')) logRow.mood = judgeMood(feel);
@@ -5940,7 +6034,8 @@ async function runKeepalive(sessionId, cfg) {
     keepalive_action: action,
     keepalive_meta: {
       wake_id: wakeId,
-      actions: kept.map(a => a.type),           // 第⑥b：这次唤醒实际执行的动作序列
+      actions: kept.map(a => a.type),           // 第⑥b：这次唤醒实际执行的动作序列（= final_action）
+      pick_intent: intent ? `${intent.action}:${intent.drive}:${intent.score}:${intent.strong ? 'strong' : 'soft'}` : null, // 第三刀：函数决策的方向
       safety_flags: safetyReports.length ? safetyReports.map(r => `${r.action}:${r.reason}`) : null, // 安全阀：触发表达边界（block/rewrite）
       dream_count: dreamCount,
       message_count: messageCount,
