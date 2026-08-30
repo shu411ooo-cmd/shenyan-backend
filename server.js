@@ -2824,8 +2824,12 @@ function selectWorldHits(hits, curMode) {
 // 2026-08-29 失忆修复：max_context_tokens 8000→24000。根因=基础开销（人格 prompt+tools+首句注入）
 // 本身就有 ~8.5k，8k 预算连基础都不够，长会话(497·630轮)只能把 live 裁到只剩当前 1 轮，
 // 上一轮完整对话被裁 → 沈晏每轮看不到自己上一句（程芥亲历「他不记得自己最新的一句话」）。
+// 2026-08-31 阈值一致性修正：live_max_tokens 20000→40000。根因=15 轮 live 实测≈18.3k，
+// 20k 阈值让塌缩在 live 刚攒到 15 轮就触发（每 1~2 轮塌一次）→ 锚定攒的批永远攒不起来 → 命中率
+// 退回滚动 55%。设计稿 §3② 明确轮数阈值(30 轮)才是周期、token 阈值是安全线；40k 让轮数先触发，
+// 安全线仍在（防单条巨物撑爆）。若塌缩后预算裁剪开始裁 live（trimmed_turns 上升）再调 max_context_tokens。
 async function getContextConfig(sessionId) {
-  const defaults = { frozen_rounds: 10, live_rounds: 15, max_context_tokens: 24000, live_max_tokens: 20000 };
+  const defaults = { frozen_rounds: 10, live_rounds: 15, max_context_tokens: 24000, live_max_tokens: 40000 };
   const pick = (row) => row ? ({
     frozen_rounds: Number.isInteger(row.frozen_rounds) ? row.frozen_rounds : defaults.frozen_rounds,
     live_rounds: Number.isInteger(row.live_rounds) ? row.live_rounds : defaults.live_rounds,
@@ -3026,7 +3030,7 @@ async function recordRequestStat({ sessionId, client, model, stream, usageList =
     const raw = usageList.filter(Boolean);
     const sum = (f) => raw.reduce((s, u) => s + (f(u) || 0), 0) || null;
     const d = diagnostics || {};
-    const { error } = await supabase.from('request_stats').insert({
+    const fullRow = {
       session_id: sessionId,
       client: client || 'legacy',
       model,
@@ -3069,8 +3073,35 @@ async function recordRequestStat({ sessionId, client, model, stream, usageList =
       keepalive_action,
       keepalive_meta,
       memory_degraded,
-    });
-    if (error) console.warn('⚠️ 写入 request_stats 失败:', error.message);
+    };
+    let { error } = await supabase.from('request_stats').insert(fullRow);
+    if (error) {
+      // 2026-08-31 韧性：诊断列可能没迁移（live_collapsed/live_tokens_est/live_anchor_turn 等，
+      // 见 migrations/2026-08-31-request-stats-columns.sql）——PostgREST 对未知列整行 400，
+      // 一整行都不进。降级成基础行：核心 token 计数照记、诊断列宁丢，stats 数字继续流动。
+      const baseRow = {
+        session_id: sessionId,
+        client: client || 'legacy',
+        model,
+        stream: !!stream,
+        tool_rounds: raw.length || 1,
+        usage_raw: raw.length ? raw : null,
+        prompt_tokens: fullRow.prompt_tokens,
+        completion_tokens: fullRow.completion_tokens,
+        total_tokens: fullRow.total_tokens,
+        cached_tokens: fullRow.cached_tokens,
+        cache_write_tokens: fullRow.cache_write_tokens,
+        cache_read_input_tokens: fullRow.cache_read_input_tokens,
+        cache_creation_input_tokens: fullRow.cache_creation_input_tokens,
+        reasoning_tokens: fullRow.reasoning_tokens,
+        keepalive_action,
+        keepalive_meta,
+        memory_degraded,
+      };
+      const { error: baseErr } = await supabase.from('request_stats').insert(baseRow);
+      if (baseErr) console.warn('⚠️ 写入 request_stats 失败（含降级）:', baseErr.message);
+      else console.warn('⚠️ request_stats 诊断列缺失，已降级记基础行（跑 2026-08-31-request-stats-columns.sql 后自动全量）:', error.message);
+    }
   } catch (err) {
     console.warn('⚠️ 写入 request_stats 异常:', err.message);
   }
@@ -5153,8 +5184,9 @@ async function streamOpenRouter(body, res) {
       const delta = parsed.choices?.[0]?.delta || {};
       if (parsed.usage) usage = parsed.usage; // OpenRouter 在末尾 chunk 给出 usage
 
-      // 思考链 token
-      const think = delta.reasoning || delta.thinking;
+      // 思考链 token（2026-08-31：OpenRouter 对 Anthropic 的 deferred 模式把推理发成
+      // reasoning_summary 而非 reasoning——只读 reasoning 会丢整条思考链。已收到全文则不再叠加 summary 防重复）
+      const think = delta.reasoning || (thinkingText ? '' : delta.reasoning_summary) || delta.thinking;
       if (think) {
         thinkingText += think;
         sendSSE(res, 'thinking', { thought: think });
@@ -5232,8 +5264,10 @@ async function callOpenRouterNonStream(messages, tools, opts = {}) {
   }
   const msg = data.choices[0].message;
   // 存回历史前剥离思考字段，避免二次发送报错；但先捕获，供思考链入库（与流式路径对称）
-  const thinkingText = msg.reasoning || msg.thinking || '';
+  // 2026-08-31：补 reasoning_summary（OpenRouter deferred 模式）——与流式路径同一兜底
+  const thinkingText = msg.reasoning || msg.reasoning_summary || msg.thinking || '';
   if (msg.reasoning) delete msg.reasoning;
+  if (msg.reasoning_summary) delete msg.reasoning_summary;
   if (msg.thinking) delete msg.thinking;
   // 返回原始 usage（可能为 null），供 request_stats 记录
   return { msg, usage: data.usage || null, thinkingText };
