@@ -4,7 +4,8 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "migrate": "node scripts/migrate.js"
   },
   "repository": {
     "type": "git",
@@ -27,6 +28,7 @@
     "js-tiktoken": "^1.0.21",
     "mammoth": "^1.12.1",
     "NeteaseCloudMusicApi": "^4.32.0",
-    "pdf-parse": "^1.1.1"
+    "pdf-parse": "^1.1.1",
+    "pg": "^8.23.0"
   }
 }

@@ -1,6 +1,7 @@
 .env
 node_modules/
-scripts/
+scripts/*
+!scripts/migrate.js
 .env.zeabur
 # 运行时产物（dfid 有环境变量 KUGOU_DFID_SEED 兜底，不需要进 git）
 .kugou-dfid
