@@ -2825,16 +2825,17 @@ function selectWorldHits(hits, curMode) {
 // 本身就有 ~8.5k，8k 预算连基础都不够，长会话(497·630轮)只能把 live 裁到只剩当前 1 轮，
 // 上一轮完整对话被裁 → 沈晏每轮看不到自己上一句（程芥亲历「他不记得自己最新的一句话」）。
 async function getContextConfig(sessionId) {
-  const defaults = { frozen_rounds: 10, live_rounds: 15, max_context_tokens: 24000 };
+  const defaults = { frozen_rounds: 10, live_rounds: 15, max_context_tokens: 24000, live_max_tokens: 20000 };
   const pick = (row) => row ? ({
     frozen_rounds: Number.isInteger(row.frozen_rounds) ? row.frozen_rounds : defaults.frozen_rounds,
     live_rounds: Number.isInteger(row.live_rounds) ? row.live_rounds : defaults.live_rounds,
     max_context_tokens: Number.isInteger(row.max_context_tokens) ? row.max_context_tokens : defaults.max_context_tokens,
+    live_max_tokens: Number.isInteger(row.live_max_tokens) ? row.live_max_tokens : defaults.live_max_tokens,
   }) : defaults;
   try {
     const { data, error } = await supabase
       .from('settings')
-      .select('frozen_rounds, live_rounds, max_context_tokens')
+      .select('frozen_rounds, live_rounds, max_context_tokens, live_max_tokens')
       .eq('session_id', 'global')
       .maybeSingle();
     if (error) return defaults;
@@ -3099,13 +3100,37 @@ function buildDeviceNotice(device) {
   return parts.length ? `她的手机：${parts.join('，')}。` : '';
 }
 
-// —— 2026-08-30 缓存锚定：live 段从「每轮滚动」改「锚定攒批 + 定期塌缩」——
+// —— 2026-08-30 缓存锚定：live 段从「每轮滚动」改「锚定攒批 + 双阈值塌缩」——
 // 滚动滑窗每轮头部掉一轮+尾部加一轮 → 前缀在 live 头部必断 → 动态尾巴(middle+live≈45%)全价支付。
-// 锚定：liveStart 钉在「上次塌缩点」，live 只追加；攒到 live_rounds×2 轮塌一次
-// （锚点前移回当前起点，多出的轮自然进 middle，middle 由预算裁剪兜底）。塌缩轮断前缀是低频，其余轮前缀连续。
-// 内存 Map 存锚点：单实例足够（keepalive 定时器同进程长驻）；重启丢锚点=退化为一次滚动，下一轮重建。
-// 不用 DB 列：避免 select 缺列连坐 state（resumeGap/residue 静默失效），零迁移零副作用。
-const liveAnchors = new Map(); // sessionId -> live 段第一轮 turn（1-based）
+// 锚定：liveStart 钉在「上次塌缩点」，live 只追加；塌缩前两触发=轮数超 live_rounds×2
+// 或 live 估算 token 超 live_max_tokens（安全线不是目标值：在预算主动裁剪 live 前先塌，
+// 否则 middle 裁光后 live 每轮被裁 → 重新制造 cache miss，退化回滚动）。塌缩轮断前缀是低频，其余轮前缀连续。
+// 锚点 canonical = sessions.live_anchor_turn（DB，跨重启/多实例一致）；进程内 Map 只是 fast path，
+// 重启后从 DB 恢复，不再人为制造 cache miss。DB 列单独读写（不复用 getSessionState）：
+// 缺列/失败仅锚定退化为进程内/滚动，不连坐 state（resumeGap/residue 不静默失效）。
+const liveAnchors = new Map(); // sessionId -> live 段第一轮 turn（1-based，进程内 fast path）
+
+async function loadLiveAnchor(sessionId) {
+  if (liveAnchors.has(sessionId)) return liveAnchors.get(sessionId);
+  try {
+    const { data, error } = await supabase
+      .from('sessions').select('live_anchor_turn').eq('id', sessionId).maybeSingle();
+    if (!error && data && Number.isInteger(data.live_anchor_turn)) {
+      liveAnchors.set(sessionId, data.live_anchor_turn);
+      return data.live_anchor_turn;
+    }
+  } catch (e) { /* DB 列未建/不可用 → 锚定退化为进程内 */ }
+  return null;
+}
+
+async function saveLiveAnchor(sessionId, turn) {
+  liveAnchors.set(sessionId, turn);
+  try {
+    await supabase.from('sessions').update({ live_anchor_turn: turn }).eq('id', sessionId);
+  } catch (e) {
+    console.warn('⚠️ saveLiveAnchor DB 失败（锚定仅在进程内）:', e.message);
+  }
+}
 
 // —— 核心组装：System → Frozen → Summary → Live → 当前消息 ——
 async function buildModelContext(sessionId, opts = {}) {
@@ -3125,21 +3150,32 @@ async function buildModelContext(sessionId, opts = {}) {
   const segments = await loadSummarySegments(sessionId);
   const segWatermark = segments.length ? segments[segments.length - 1].period_end : null;
 
+  // —— token 估算（锚定塌缩判断要用，定义提到切片前）——
+  const msgTokens = (m) => Array.isArray(m.content)
+    ? estimateTokens(m.content.map(b => b.text || JSON.stringify(b)).join('\n'))
+    : estimateTokens(m.content);
+  const turnTokens = (t) => msgTokens({ role: 'user', content: t.user.content }) +
+    t.replies.reduce((s, r) => s + msgTokens(r), 0);
+
   // liveStart = live 段第一轮（1-based）。默认滚动，有锚点则钉住 → 非塌缩轮纯追加。
   let liveStart = totalTurns - config.live_rounds + 1;
-  const anchor = liveAnchors.get(sessionId);
+  const anchor = await loadLiveAnchor(sessionId);
   // 锚点死条件：无锚 / 越界 / 被摘要水位线吞掉（segWatermark 前的轮已摘要，不该逐字重复进 live）
   const anchorDead = anchor == null || anchor < 1 || anchor >= totalTurns
     || (segWatermark != null && anchor <= segWatermark);
   if (anchorDead) {
     liveStart = totalTurns - config.live_rounds + 1; // 重置到当前滚动起点
-    liveAnchors.set(sessionId, liveStart);
+    await saveLiveAnchor(sessionId, liveStart);
   } else {
     liveStart = anchor; // 锚定：live 从锚点持续追加，前缀不断
-    if (totalTurns - liveStart + 1 > config.live_rounds * 2) {
-      // 攒批到 live_rounds×2 轮 → 机械塌缩：锚点前移回当前起点，多出的轮让给 middle
+    // —— 双阈值塌缩：谁先到谁触发。轮数控「别让周期无限延长」，token 控「别撑爆预算」——
+    // token 阈值是安全线不是目标值：在预算主动裁剪 live 之前先塌（否则 middle 裁光后
+    // live 每轮被裁 → 重新制造 cache miss，退化回滚动）。锚点前移回当前起点，多出的轮让给 middle。
+    const tmpLiveTokens = turns.slice(liveStart - 1).reduce((s, t) => s + turnTokens(t), 0);
+    if (totalTurns - liveStart + 1 > config.live_rounds * 2
+        || tmpLiveTokens > config.live_max_tokens) {
       liveStart = totalTurns - config.live_rounds + 1;
-      liveAnchors.set(sessionId, liveStart);
+      await saveLiveAnchor(sessionId, liveStart);
     }
   }
   let frozenTurns = [], middleTurns = [], liveTurns = [];
@@ -3168,12 +3204,6 @@ async function buildModelContext(sessionId, opts = {}) {
   let anchorSeg = null;
 
   // —— token 预算 ——
-  const msgTokens = (m) => Array.isArray(m.content)
-    ? estimateTokens(m.content.map(b => b.text || JSON.stringify(b)).join('\n'))
-    : estimateTokens(m.content);
-  const turnTokens = (t) => msgTokens({ role: 'user', content: t.user.content }) +
-    t.replies.reduce((s, r) => s + msgTokens(r), 0);
-
   const stablePrompt = await buildStableSystemPrompt() + `
 【背景纪律】
 对话里会出现这些注记段：【历史背景】（过去已经聊过的事）、【背景记忆】（开始前从你记忆里提取的旧事）、【你心底想起的旧事】（你心里浮起的旧记忆）、【世界书】（她亲手定下的世界设定，客观事实，不是她这轮说的）、【当前时间】、【今天与临近的日子】（你们日历上的日子——纪念日、生日、约定，背景不是话，尤其不要当任务去办）。它们全是你的背景，不是她发来的内容——尤其【你心底想起的旧事】，是你在想，不是她贴给你的文字。
