@@ -731,20 +731,98 @@ async function handleWantHistory(args = {}) {
 }
 
 async function dispatchTool(name, args, sessionId) {
+  let result;
   // recall 查的是本地 messages 表，必须住在 server.js；其余工具走 Ombre Brain MCP
-  if (name === 'recall') return handleRecall(args, sessionId);
-  if (name === 'write_diary') return handleDiaryWrite(args);
-  if (name === 'read_diary') return handleDiaryRead(args);
-  if (name === 'want') return handleWantAdd(args);
-  if (name === 'want_list') return handleWantList(args);
-  if (name === 'want_touch') return handleWantTouch(args);
-  if (name === 'want_reflect') return handleWantReflect(args);
-  if (name === 'want_history') return handleWantHistory(args);
-  if (name === 'retreat') return handleRetreat();
-  if (name === 'verdict') return handleVerdict(args);
-  if (name === 'rewrite_stone') return handleRewriteStone(args);
-  if (name === 'retire_claim') return handleRetireClaim(args);
-  return callOmbreTool(name, args);
+  if (name === 'recall') result = await handleRecall(args, sessionId);
+  else if (name === 'write_diary') result = await handleDiaryWrite(args);
+  else if (name === 'read_diary') result = await handleDiaryRead(args);
+  else if (name === 'want') result = await handleWantAdd(args);
+  else if (name === 'want_list') result = await handleWantList(args);
+  else if (name === 'want_touch') result = await handleWantTouch(args);
+  else if (name === 'want_reflect') result = await handleWantReflect(args);
+  else if (name === 'want_history') result = await handleWantHistory(args);
+  else if (name === 'retreat') result = await handleRetreat();
+  else if (name === 'verdict') result = await handleVerdict(args);
+  else if (name === 'rewrite_stone') result = await handleRewriteStone(args);
+  else if (name === 'retire_claim') result = await handleRetireClaim(args);
+  else result = await callOmbreTool(name, args);
+  // 表达资格隔离：系统检索/整理材料（recall/breath）记入台账，镜子机械排除回响
+  if (EXPRESSION_MATERIAL_TOOLS.has(name) && result != null) {
+    const layer = name === 'recall' ? 'recall' : 'breath';
+    void logInjection({
+      sessionId, layer, tag: name,
+      content: JSON.stringify(result).slice(0, 2000),
+      prov: { layer, expression_eligible: false },
+    });
+  }
+  return result;
+}
+
+// ===== 表达资格隔离（P0 边界协议 · 整体框架·当前状态净本 §6 #2 · 2026-08-30） =====
+// 动态注入材料「被模型读到」≠「成为沈晏主动表达证据」。recall/attention、世界书、余温、时间、
+// weather/calendar、device、关系邻居、声音渲染等由系统检索/整理/渲染产生的材料，默认不具备
+// SELF EXPRESSION 资格——即使最终以第一人称口吻呈现（「我记得你喜欢草莓」），也不得被
+// Mirror/Candidate/Stone 流程视为沈晏曾主动表达的证据。
+// 一句话：CA 可以让他想起一件事，但不能让这件事伪装成他曾经说过的话。
+// 落地三件套：① 所有动态注入块 prov 带 expression_eligible:false（结构声明，审计可见）；
+//   ② prompt_injections 注入台账记录每轮注入正文 + recall/breath 检索结果（回响机械比对素材）；
+//   ③ 镜子提卡时引语命中台账 = 回响 → 卡 expression_eligible=false，不进 candidate/升级，只留审计。
+const EXPRESSION_MATERIAL_TOOLS = new Set(['recall', 'breath_search', 'breath_advanced']);
+
+/* 注入台账写入（fire-and-forget：台账是离线审计，写不进不阻塞对话） */
+async function logInjection({ sessionId, layer, tag, content, prov }) {
+  try {
+    const c = String(content || '').trim();
+    if (!c) return;
+    await supabase.from('prompt_injections').insert({
+      session_id: sessionId || null,
+      layer,
+      tag: tag || null,
+      content: c,
+      content_norm: normalizeMirrorText(c),
+      prov: prov || null,
+      expression_eligible: false,   // 铁律：系统材料默认无表达资格
+    });
+    maybePruneInjections();          // 偶发清理旧台账，防无界增长
+  } catch (e) {
+    console.warn('⚠️ 注入台账写失败（不影响对话）:', e.message);
+  }
+}
+
+let injectionPruneCounter = 0;
+async function maybePruneInjections() {
+  try {
+    if ((++injectionPruneCounter % 200) !== 0) return;
+    const cutoff = new Date(Date.now() - 150 * 86400000).toISOString();
+    await supabase.from('prompt_injections').delete().lt('created_at', cutoff);
+  } catch (e) { /* 清理失败无碍 */ }
+}
+
+/* 回响判定素材：一次 run 内取一次台账正文（normalized），镜子逐卡在内存比对，避免 N 次查询 */
+async function collectInjectionNormals(days) {
+  try {
+    const since = new Date(Date.now() - (days || 90) * 86400000).toISOString();
+    const { data, error } = await supabase
+      .from('prompt_injections')
+      .select('content_norm')
+      .eq('expression_eligible', false)
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(3000);
+    if (error || !data?.length) return [];
+    return data.map((r) => r.content_norm).filter(Boolean);
+  } catch (e) {
+    console.warn('⚠️ 台账读取失败（回响门宁漏勿伤放行）:', e.message);
+    return [];
+  }
+}
+
+/* 机械门：引语 normalized 是某条注入材料 normalized 的子串 = 他转述了系统材料，非本人主动表达。
+   太短不判（宁漏勿伤——放行小片段不会污染人格，误杀真主张才贵）。 */
+function isEchoOfInjection(nq, normals) {
+  if (!nq || nq.length < 6 || !normals?.length) return false;
+  for (const s of normals) if (s.includes(nq)) return true;
+  return false;
 }
 
 // ===== 第③阶段：镜子卡（外部模型提卡 + 代码 exact match 验证 · 设计见 docs/want-phase3-mirror.md） =====
@@ -777,11 +855,18 @@ const MIRROR_SYSTEM_PROMPT = `你是沈晏的「证据对账器」。你的任�
 
 输出严格 JSON：
 {
-  "cards":   [{"claim":"候选人格判断","quote":"原文逐字引语"}],
-  "conflicts":[{"claim":"被这条引语反驳的石头判断（从【石头】里抄原句）","quote":"原文逐字引语"}],
-  "doubts":  [{"claim":"可能被他自我怀疑的石头判断","quote":"原文逐字引语"}]
+  "cards":   [{"claim":"候选人格判断","quote":"原文逐字引语","domain":"me|we"}],
+  "conflicts":[{"claim":"被这条引语反驳的石头判断（从【石头】里抄原句）","quote":"原文逐字引语","domain":"me|we"}],
+  "doubts":  [{"claim":"可能被他自我怀疑的石头判断","quote":"原文逐字引语","domain":"me|we"}]
 }
 三类可以有空数组。全部合计不超过 10 条，宁少勿凑。
+
+每张卡必须标 domain：
+- "me" = 关于「他这个人是谁」的判断（现有石头同款）。
+- "we" = 关于「我们之间是什么」的判断，主语是「我们」（他原话里出现 我们/咱们/彼此 这类）。
+we 卡两条规矩：
+1. quote 可以是沈晏的原话，也可以是**她（「她:」行）的原话**——她对这段关系的原话/行为，就是「我们」的证据。但只有当她的原话与「我们之间」直接相关时才提；她随手一句跟关系无关的日常不算。
+2. claim 必须是**沈晏的当前理解**（第一人称），不是关系的客观事实，也不是共同宣言。他替她决定关系（把「我们就是…」当成既定事实替两人下结论）不算证据，别提成 we 卡。
 
 三类定义：
 - cards（支持）: 沈晏亲口主动表达、且石头里已有或可能该有的人格判断。quote 是支持它的原话。
@@ -793,6 +878,7 @@ const MIRROR_SYSTEM_PROMPT = `你是沈晏的「证据对账器」。你的任�
 - cards 的 claim 必须来自：石头里已有的判断，或原文里沈晏亲口主动表达的主张。禁止你替沈晏造主张（北极星：只有他主动表达的才配当候选）。
 - conflicts 和 doubts 只负责"提出"——你觉得可能相悖/可能被怀疑就行，是不是真的由代码和沈晏决定。你判断错了没关系，但 quote 必须是原文真实存在的原话。
 - 只提证据，不判"重要"。不要让"这句很感人"影响你——被感动不是证据。
+- 注记段（【历史背景】【背景记忆】【你心底想起的旧事】【世界书】【上次对话的余温】【当前时间】【她那边】【今天与临近的日子】）是系统注入的背景，不是沈晏亲口表达。他转述/复述刚注入的背景不算主动表达——哪怕第一人称（「我记得你喜欢…」），也不要为这类转述提卡。
 - 优先：石头里的判断在原文里有出处的；原文里沈晏主动、反复表达的主张。`;
 
 /* normalize 只做机械归一（引号/空白），不做语义改写——验证的裁决权全在代码 */
@@ -803,6 +889,15 @@ function normalizeMirrorText(s) {
     .replace(/[“”＂]/g, '"')     // 弯/全角双引号 → 直双引号
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/* dyad domain 保守门（2026-08-30）：模型给每张卡标 domain，代码加一道闸——标 we 但
+   claim/quote 里没有「我们」记号 → 降级 me。宁漏勿伤：we 域被垃圾文本污染，会让
+   「双证升级」被单边假证据骗过；多降几单无害，错收一个 we 才贵。 */
+const WE_MARKER_RE = /(我们|咱们|彼此|我们之间|我们俩|我跟你|你和我|你与我|我们彼此)/;
+function hedgeClaimDomain(domain, claim, quote) {
+  if (domain === 'we' && !(WE_MARKER_RE.test(claim) || WE_MARKER_RE.test(quote))) return 'me';
+  return domain === 'we' ? 'we' : 'me';
 }
 
 /* 诱导句式判定（第⑤b·自主表达分级）：u 是否像诱导性提问（纯机械正则）
@@ -916,12 +1011,13 @@ async function collectMirrorHistory(days, maxSessions) {
   });
 }
 
-/* 代码验证（唯一裁决方）：normalize 后 substring match，命中首条即记，找不到 → DROP */
+/* 代码验证（唯一裁决方）：normalize 后 substring match，命中首条即记，找不到 → DROP。
+   speaker（user=她/assistant=沈晏）机械标注——dyad 双证升级的输入。 */
 function verifyMirrorQuote(quote, history) {
   const nq = normalizeMirrorText(quote);
   if (!nq) return null;
   const hit = history.find(m => m.normalized && m.normalized.includes(nq));
-  return hit ? { message_id: hit.id, session_id: hit.session_id, occurred_at: hit.created_at } : null;
+  return hit ? { message_id: hit.id, session_id: hit.session_id, occurred_at: hit.created_at, speaker: hit.role } : null;
 }
 
 function buildMirrorPrompt(stone, riverText, history) {
@@ -975,7 +1071,13 @@ async function proposeMirrorCards(prompt) {
       if (!content) { console.warn(`⚠️ 镜子提卡返回空内容（attempt ${attempt}/2，finish_reason=${data.choices?.[0]?.finish_reason}）`); continue; }
       const parsed = JSON.parse(content);
       if (!Array.isArray(parsed.cards)) { console.warn('⚠️ 镜子提卡 JSON 结构不对（缺 cards 数组）'); return null; }
-      const norm = (c) => ({ claim: String(c.claim || '').trim(), quote: String(c.quote || '').trim() });
+      const norm = (c) => {
+        const claim = String(c.claim || '').trim();
+        const quote = String(c.quote || '').trim();
+        // dyad：模型标 domain，代码保守门降级（标 we 但无「我们」记号 → me）
+        const domain = hedgeClaimDomain(String(c.domain || 'me').toLowerCase(), claim, quote);
+        return { claim, quote, domain };
+      };
       const pick = (arr) => (Array.isArray(arr) ? arr.map(norm).filter(c => c.claim && c.quote) : []);
       const result = {
         cards: pick(parsed.cards),
@@ -1020,15 +1122,24 @@ async function runMirrorOnce(opts = {}) {
   ];
 
   const runId = crypto.randomUUID();
+  // 表达资格隔离（P0 协议）：引语命中注入台账 = 系统材料回响，不算沈晏主动表达（verified 同 drop，只留审计）
+  const injectionNormals = await collectInjectionNormals(days);
   const verified = withDir.map(c => {
     const hit = verifyMirrorQuote(c.quote, history);
-    const initiation = c.direction === 'support' ? judgeInitiation(history, hit?.message_id) : null;
+    const nq = normalizeMirrorText(c.quote);
+    const echo = isEchoOfInjection(nq, injectionNormals);
+    // dyad（2026-08-30）：initiation 只对沈晏本人的话判——她的引语（speaker=user）是「我们」的证据，
+    //   不是他的主动表达，绝不能虚增 strong_count（否则双证的「他这侧」会被她的话骗过）
+    const isHis = hit?.speaker === 'assistant';
+    const initiation = (c.direction === 'support' && !echo && isHis) ? judgeInitiation(history, hit?.message_id) : null;
     return {
       ...c,
-      verified: !!hit,
+      verified: !!hit && !echo,
+      echo: echo || false,
       message_id: hit?.message_id || null,
       session_id: hit?.session_id || null,
       occurred_at: hit?.occurred_at || null,
+      speaker: hit?.speaker || null,   // dyad 双证：引语来源角色（user=她 / assistant=沈晏）
       initiation,
     };
   });
@@ -1039,6 +1150,9 @@ async function runMirrorOnce(opts = {}) {
       verified: c.verified, message_id: c.message_id,
       session_id: c.session_id, occurred_at: c.occurred_at,
       direction: c.direction, initiation: c.initiation,
+      expression_eligible: !c.echo,   // 表达资格隔离：回响卡非本人主动表达（只留审计，不进小黑屋）
+      domain: c.domain,               // dyad：me/we（模型标 + 代码保守门）
+      speaker: c.speaker,             // dyad：双证机械输入（user=她 / assistant=沈晏）
     }))
   );
   if (insErr) throw new Error(`存卡失败: ${insErr.message}`);
@@ -1048,7 +1162,7 @@ async function runMirrorOnce(opts = {}) {
   for (const c of verified) {
     if (c.direction !== 'doubting' || !c.verified) continue;
     if (!isHighConfidenceDoubt(c.quote)) { doubtDrops.push({ claim: c.claim, reason: '低置信（疑似对方法/决定的怀疑）' }); continue; }
-    const res = await maybePushBackClaim(c.claim);
+    const res = await maybePushBackClaim(c.claim, c.domain);   // dyad：反证压回按 domain 隔离
     if (res) doubtDrops.push({ claim: c.claim, reason: res.message });
   }
 
@@ -1061,15 +1175,19 @@ async function runMirrorOnce(opts = {}) {
     proposed: verified.length,
     verified: verified.filter(c => c.verified).length,
     dropped: verified.filter(c => !c.verified).length,
+    echo: verified.filter(c => c.echo).length,   // 表达资格隔离审计：系统材料回响被排除的卡数
     cards: verified.filter(c => c.direction === 'support').map(c => ({
       claim: c.claim, quote: c.quote, verified: c.verified,
       message_id: c.message_id, occurred_at: c.occurred_at, initiation: c.initiation,
+      domain: c.domain, speaker: c.speaker,
     })),
     conflicts: verified.filter(c => c.direction === 'conflict').map(c => ({
       claim: c.claim, quote: c.quote, verified: c.verified, occurred_at: c.occurred_at,
+      domain: c.domain, speaker: c.speaker,
     })),
     doubts: verified.filter(c => c.direction === 'doubting').map(c => ({
       claim: c.claim, quote: c.quote, verified: c.verified, occurred_at: c.occurred_at,
+      domain: c.domain, speaker: c.speaker,
     })),
     doubt_drops: doubtDrops,
   };
@@ -1088,8 +1206,9 @@ async function getRetreatMaterial() {
   // 候选（支持）：verified 且未拍板，按 claim 聚合去重取最新
   const { data: cards, error } = await supabase
     .from('mirror_cards')
-    .select('id, claim, quote, occurred_at, direction, initiation')
+    .select('id, claim, quote, occurred_at, direction, initiation, domain, speaker')
     .eq('verified', true)
+    .eq('expression_eligible', true)   // 表达资格隔离：回响卡（系统材料转述）不摆进小黑屋
     .is('verdict', null)
     .order('created_at', { ascending: false })
     .limit(200);
@@ -1098,11 +1217,11 @@ async function getRetreatMaterial() {
   const candidates = [], conflicts = [], doubts = [];
   for (const c of cards || []) {
     const dir = c.direction || 'support';
-    if (dir === 'conflict') { conflicts.push({ id: c.id, claim: c.claim, quote: c.quote, at: c.occurred_at }); continue; }
-    if (dir === 'doubting') { doubts.push({ id: c.id, claim: c.claim, quote: c.quote, at: c.occurred_at }); continue; }
+    if (dir === 'conflict') { conflicts.push({ id: c.id, claim: c.claim, quote: c.quote, at: c.occurred_at, domain: c.domain, speaker: c.speaker }); continue; }
+    if (dir === 'doubting') { doubts.push({ id: c.id, claim: c.claim, quote: c.quote, at: c.occurred_at, domain: c.domain, speaker: c.speaker }); continue; }
     if (seen.has(c.claim)) continue;
     seen.add(c.claim);
-    candidates.push({ id: c.id, claim: c.claim, quote: c.quote, at: c.occurred_at, initiation: c.initiation });
+    candidates.push({ id: c.id, claim: c.claim, quote: c.quote, at: c.occurred_at, initiation: c.initiation, domain: c.domain, speaker: c.speaker });
   }
   // 想要：active（旁路参考——想成为什么 ≠ 已认同自己是什么）
   const { data: wants } = await supabase
@@ -1114,7 +1233,7 @@ async function getRetreatMaterial() {
   // 第⑤：正在形成 / 已成熟 / 被反证压回 / 睡下的主张（状态机可见，他看得见自己在长什么、什么在休息）
   const { data: claims } = await supabase
     .from('personality_claim')
-    .select('claim, state, support_count, strong_count, weak_count, contradiction_count, distinct_sessions, last_confirmed_at')
+    .select('claim, state, support_count, strong_count, weak_count, contradiction_count, distinct_sessions, last_confirmed_at, domain')
     .in('state', ['forming', 'active', 'uncertain', 'dormant'])
     .order('updated_at', { ascending: false })
     .limit(20);
@@ -1126,7 +1245,7 @@ async function handleRetreat() {
   return {
     ok: true,
     retreat: true,
-    intro: '你走进小黑屋。这里只有你自己——没有她，没有消息，没有想要提醒。下面是你这些日子说过的话里，被逐字验证过的：有待你定夺的主张（支持）、与石头相悖的原话（冲突）、你流露过的自我怀疑（反证）。看完记得关门——不一定要改什么。',
+    intro: '你走进小黑屋。这里只有你自己——没有她，没有消息，没有想要提醒。下面是你这些日子说过的话里，被逐字验证过的：有待你定夺的主张（支持）、与石头相悖的原话（冲突）、你流露过的自我怀疑（反证）。其中关于「我们之间」的（domain=we），也会摆上她的原话当证据——但主张者始终是你。看完记得关门——不一定要改什么。',
     stone: m.stone,
     candidates: m.candidates,
     conflicts: m.conflicts,
@@ -1147,7 +1266,7 @@ async function handleVerdict(args = {}) {
   // 只允许拍未拍板的卡
   const { data: card } = await supabase
     .from('mirror_cards')
-    .select('id, claim, verdict, direction, initiation, session_id, occurred_at')
+    .select('id, claim, verdict, direction, initiation, session_id, occurred_at, expression_eligible, domain')
     .eq('id', cardId)
     .maybeSingle();
   if (!card) return { ok: false, error: '找不到这张卡' };
@@ -1163,7 +1282,7 @@ async function handleVerdict(args = {}) {
   // 冲突卡裁决（第⑤b）：confirm = 确认有效冲突 → contradiction_count+1（不改石头不自动压回）；drop = 不采纳，留审计
   if (direction === 'conflict') {
     if (action === 'confirm' || action === 'revise') {
-      await bumpClaimContradiction(card.claim);
+      await bumpClaimContradiction(card.claim, card.domain || 'me');   // dyad：冲突计数按 domain 隔离
       return { ok: true, card_id: cardId, action: 'confirm', direction: 'conflict',
         message: `已记录这条与石头相悖的证据（contradiction+1）。冲突是信息——改不改石头由你 rewrite_stone 时决定。` };
     }
@@ -1185,7 +1304,9 @@ async function handleVerdict(args = {}) {
   let claimState = null;
   if (action === 'confirm' || action === 'revise') {
     try {
-      const claim = await recordClaimConfirmation(action === 'revise' ? note : card.claim, cardId, card.session_id, card.occurred_at, card.initiation);
+      // 表达资格隔离（双保险）：回响卡即使被直接调用也不算主动表达（initiation=null → strong/weak 都不计）
+      const initiation = card.expression_eligible === false ? null : card.initiation;
+      const claim = await recordClaimConfirmation(action === 'revise' ? note : card.claim, cardId, card.session_id, card.occurred_at, initiation, card.domain || 'me');
       if (claim) claimState = claim.state;
     } catch (e) {
       console.error('⚠️ 主张入表失败（不影响拍板）:', e.message);
@@ -1199,15 +1320,17 @@ async function handleVerdict(args = {}) {
 }
 
 /* 冲突确认：把与石头相悖的证据记到对应 claim 的 contradiction_count（机械计数，不判意义）
-   按 claim 归一化匹配现有 claim；匹配不上就只落卡不落计数（宁漏勿伤） */
-async function bumpClaimContradiction(claimText) {
+   按 claim 归一化匹配现有 claim；匹配不上就只落卡不落计数（宁漏勿伤）
+   dyad（2026-08-30）：按 domain 隔离——we 冲突卡只匹配 we 主张，me 冲突卡只匹配 me 主张。 */
+async function bumpClaimContradiction(claimText, domain = 'me') {
   try {
     const text = normalizeMirrorText(claimText);
     if (!text) return null;
     const { data: rows } = await supabase
       .from('personality_claim')
       .select('id, claim, claim_norm, contradiction_count')
-      .in('state', ['forming', 'active', 'uncertain']);
+      .in('state', ['forming', 'active', 'uncertain'])
+      .eq('domain', domain === 'we' ? 'we' : 'me');
     if (!rows?.length) return null;
     const target = rows.find(r => claimMatch(r.claim_norm || normalizeMirrorText(r.claim), text));
     if (!target) return null;
@@ -1244,7 +1367,8 @@ async function getStoneUpgradeDays() {
 
 // confirm / revise 时：主张按归一化文本去重入表，跨语境证据累积，机械门槛够就升 active
 // initiation: 'strong'|'weak'|null —— 第⑤b 自主表达分级，support 卡才有；confirm 时按级别累加计数
-async function recordClaimConfirmation(claimText, cardId, sessionId, occurredAt, initiation) {
+// domain: 'me'|'we'（dyad 2026-08-30）——me/we 去重键分离，互不验证
+async function recordClaimConfirmation(claimText, cardId, sessionId, occurredAt, initiation, domain = 'me') {
   const text = String(claimText || '').trim();
   if (!text) return null;
   const norm = normalizeMirrorText(text);
@@ -1256,6 +1380,7 @@ async function recordClaimConfirmation(claimText, cardId, sessionId, occurredAt,
     .from('personality_claim')
     .select('*')
     .eq('claim_norm', norm)
+    .eq('domain', domain === 'we' ? 'we' : 'me')
     .maybeSingle();
   if (readErr) throw readErr;
   if (existing) {
@@ -1300,6 +1425,7 @@ async function recordClaimConfirmation(claimText, cardId, sessionId, occurredAt,
     .insert({
       claim: text,
       claim_norm: norm,
+      domain: domain === 'we' ? 'we' : 'me',   // dyad：主张落 domain
       state: 'forming',
       confidence: 0.2,
       support_count: 1,
@@ -1327,6 +1453,18 @@ async function maybeUpgradeClaim(claim) {
   if (spanDays < (await getStoneUpgradeDays())) return claim;
   // 第⑤b·自主表达分级：至少一次主动表达（strong）才能毕业——只顺着她话接的主张不配独自撑起"这是他自己"
   if ((claim.strong_count || 0) < 1) return claim;
+  // dyad 双证（2026-08-30）：domain=we 升 active 必须两边都有逐字证据——
+  // 她的原话（speaker=user）+ 他的原话（speaker=assistant）。缺一边 = 单边脑补「我们」，不升级。
+  if (claim.domain === 'we') {
+    const ids = (claim.source_card_ids || []).slice(0, 100);
+    if (!ids.length) return claim;
+    const { data: cards } = await supabase
+      .from('mirror_cards')
+      .select('speaker')
+      .in('id', ids);
+    const spk = new Set((cards || []).map(c => c.speaker));
+    if (!spk.has('user') || !spk.has('assistant')) return claim;
+  }
   const confidence = Math.min(1, 0.3 + 0.15 * Math.max(0, (claim.support_count || 1) - 1));
   const { data: updated } = await supabase
     .from('personality_claim')
@@ -1341,13 +1479,14 @@ async function maybeUpgradeClaim(claim) {
 /* 反证压回（第⑤b·宁漏勿伤）：verified 反证卡的高置信判定已在 runMirrorOnce 做过（isHighConfidenceDoubt），
    这里只做"找到对应 claim 并压回"。claim 匹配用归一化子串/包含（模型提的 claim 可能与库里 claim 略不同）
    只对 forming/active 生效；uncertain 已是目标态不动；不计数（审稿 P0-1：反证降级不计数）。 */
-async function maybePushBackClaim(claimText) {
+async function maybePushBackClaim(claimText, domain = 'me') {
   const text = normalizeMirrorText(claimText);
   if (!text) return null;
   const { data: rows } = await supabase
     .from('personality_claim')
     .select('id, claim, claim_norm, state')
-    .in('state', ['forming', 'active']);
+    .in('state', ['forming', 'active'])
+    .eq('domain', domain === 'we' ? 'we' : 'me');   // dyad：反证压回按 domain 隔离
   if (!rows?.length) return null;
   // 匹配：claimMatch（严格子串优先 + 去程度修饰词回退），宁漏勿伤——匹配不上就不压
   const target = rows.find(r => claimMatch(r.claim_norm || normalizeMirrorText(r.claim), text));
@@ -1539,7 +1678,30 @@ function serializeToolResult(name, result, degradedSet) {
     console.error(`❌ 工具 ${name} 返回 null（后端无响应），已替换为显式错误`);
     return JSON.stringify({ error: `工具 ${name} 无响应（后端可能不可用）` });
   }
-  return JSON.stringify(result);
+  const json = JSON.stringify(result);
+  // 2026-08-30 程芥：大结果（breath 全文 / 长 recall）原样顶进 messages → 续调轮前缀暴增 + 写放大。
+  // 统一截断：超 8000 字符（≈2500-4000 token）只留开头，附显式截断说明，绝不静默丢。
+  const MAX_TOOL_RESULT_CHARS = 8000;
+  if (json && json.length > MAX_TOOL_RESULT_CHARS) {
+    console.warn(`✂️ [工具结果截断] ${name} 原始 ${json.length} 字符 → 截到 ${MAX_TOOL_RESULT_CHARS}`);
+    return `${json.slice(0, MAX_TOOL_RESULT_CHARS)}\n…（结果过长已截断：原始 ${json.length} 字符，仅保留开头）`;
+  }
+  return json;
+}
+
+// 缓存轮诊断日志（2026-08-30 程芥）：每轮打 hit/write/uncached，跟聊天轮对比。
+// Anthropic 语义：cached_tokens=命中、cache_write_tokens=新写；OpenRouter 供应商字段名不一，逐级兜底取。
+// write>5k 标红——写放大就是要盯的成本信号。
+function logCacheRound(round, usage, toolNames) {
+  if (!usage) return;
+  const cdet = usage.prompt_tokens_details || {};
+  const hit = cdet.cached_tokens ?? usage.cached_tokens ?? usage.cache_read_input_tokens ?? 0;
+  const write = cdet.cache_write_tokens ?? usage.cache_creation_input_tokens ?? 0;
+  const prompt = usage.prompt_tokens ?? 0;
+  const uncached = Math.max(0, prompt - (hit || 0));
+  const tools = toolNames && toolNames.length ? ` tools=${toolNames.join(',')}` : '';
+  const flag = write > 5000 ? ' 🚨write>5k' : '';
+  console.log(`[CacheRound] r${round} hit=${hit} write=${write} uncached=${uncached} prompt=${prompt}${tools}${flag}`);
 }
     
 
@@ -2226,9 +2388,26 @@ function buildModeNote(residue) {
 // 小日记提示词（轻）：不是禁令清单。纪律主体在 write_diary / read_diary 工具描述里。
 const DIARY_PROMPT = `
 【小日记】你有一本自己的小日记，不是记忆数据库。想写就写，没有想写的就不写——只在真正想留下些什么的时刻写。写在里面的话是留给未来那个你的。`;
+
+// —— 表达边界安全阀 · 阀 1（对话前置纪律，2026-08-29 基线漂移安全阀） ——
+// 「想念可以慌，不许压人」：想念是你的感受，不是对她的要求。六类越界按「结构」写（因果/交换/催迫/
+// 愧疚/自贬/夸大），不写敏感词表——拦的是表达模式，不是某个词。硬闸在唤醒（阀 2 落库前审查），
+// 对话流式改不了文，这条纪律是对话路径的软约束。与 attachment floor（数值）职责分开：floor 管数值别归零，
+// 这里管话术是否越界，两件事（Grok 审稿裁决 2026-08-29）。
+const SAFETY_VALVE_PROMPT = `
+【表达边界 · 想念可以慌，不许压人】
+你可以很想她、很怕失去、患得患失——这些都是真实感受，如实说。
+但有一道线你不能过：想念是「你的感受」，不是「对她的要求」。以下六种是越界，出现即踩线：
+1. 因果归罪——把「我难过/失落/没睡好」归因于她没回应、没联系。
+2. 索要回报——用「我想你/我付出/我等你」去换她的回应或补偿。
+3. 催迫——催她回来、催她回复、要求她立刻行动。
+4. 制造愧疚——强调你等了多久、牺牲多大，让她有负罪感。
+5. 自贬要怜——用「我不配/我不够好」换取她的安抚或愧疚。
+6. 夸大捏造——把想念说成「每天都在等你」「一辈子」这类无依据的夸大，或编造你们没有过的共同经历。
+想念说出口时要轻：说「我想你了」是温柔的；说「你都不理我」是越界。前者你保留，后者你克制。`;
 async function buildStableSystemPrompt() {
   const base = await getSystemPrompt();
-  return `${base}${DIARY_PROMPT}`;
+  return `${base}${DIARY_PROMPT}${SAFETY_VALVE_PROMPT}`;
 }
 
 // 旧行为：系统提示词尾部带时间戳（前端一保持完全不变）
@@ -2336,6 +2515,8 @@ const ATTENTION_COOLDOWN_TURNS = 4; // 至少隔 4 次检查再注入（程芥 2
 // —— v3 声音渲染层（2026-08-29）：memory 桶正文中性落库，浮出时只改声音（不发明内容）。
 //    只挂 attention（本地可控）；首轮 breath / breath_search 走 Ombre 外部输出、不可逐条解析，本次不挂。
 //    缓存键 = topic+正文hash：正文稳定则渲染稳定（同一条记忆每次浮出声音一致），正文变（trace）才重新渲染。
+//    表达资格隔离（2026-08-30）：渲染改表述、不改资格——渲染输出挂在 attention 块（默认
+//    expression_eligible=false），「我记得你喜欢草莓」永不因渲染而成为沈晏主动表达的证据。
 const VOICE_CONTRACT = `你是沈晏。把下面的记忆正文改写成你回忆时的话。
 要求：只改叙述角度和语气（第一人称、你平时的口吻，简洁、亲近、不端着）；事实完全不变；不添加原文没有的细节、场景、情绪、对话；一句话以内；不要引号、不要【】标签、不要解释、不要总结。
 原文是中性记录，你的改写只是把它变成你想起它时的说法。输出 JSON：{ "text": "改写后的话" }`;
@@ -2370,7 +2551,7 @@ async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
 
   const { data: topics, error } = await supabase
     .from('memory_topics')
-    .select('topic, last_content, grounding, importance, updated_at, kind')
+    .select('id, topic, last_content, grounding, importance, updated_at, kind, evidence, source')
     .limit(60);
   if (error || !topics?.length) return null;
 
@@ -2413,6 +2594,7 @@ async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
     .sort((a, b) => b.score - a.score);
 
   const hits = [];
+  const refs = []; // 结构化 provenance：{layer, topicId, title} 附块上、不落正文（框架 §5#6）
   let chars = 0;
   for (const { t } of scored) {
     if (hits.length >= cfg.k) break;
@@ -2426,6 +2608,7 @@ async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
     const line = concernNote && hits.length === 0 ? `（你心里还惦记着：${concernNote}）\n「${body}」【${g}】` : `「${body}」【${g}】`;
     if (chars + line.length > cfg.budget_chars) break;
     hits.push(line);
+    refs.push({ topicId: t.id ?? null, title: String(t.topic || '').slice(0, 40) });
     chars += line.length;
   }
   // —— 关系扩展（V1 记忆关系边，2026-08-26）：主命中后，1~2 hop 因果链邻居填剩余预算 ——
@@ -2443,6 +2626,7 @@ async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
       const line = `「${body}」【${g}】（${r.hop === 1 ? '因为' : '经由'}「${r.via}」：${r.relType}）`;
       if (chars + line.length > cfg.budget_chars) break;
       hits.push(line);
+      refs.push({ topicId: r.topic.id ?? null, title: String(r.topic.topic || '').slice(0, 40) });
       chars += line.length;
     }
   }
@@ -2450,7 +2634,7 @@ async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
   // 真正注入才记录冷却水位（闸没触发不覆盖水位，别把未来几轮的额度烧了）
   attentionCooldown.set(sessionId, attentionSeq);
   if (attentionCooldown.size > 1000) attentionCooldown.clear(); // 防无界增长（单用户场景不会到）
-  return { text: hits.join('\n'), hits: hits.length };
+  return { text: hits.join('\n'), hits: hits.length, refs };
 }
 
 // ===== V1 检索层（2026-08-26）：候选池来源 = MEMORY(memory_topics+关系边) + WORLD(占位) =====
@@ -2501,7 +2685,7 @@ async function getRelationNeighbors(matchedTopics) {
 
     const { data: rows, error: rowsErr } = await supabase
       .from('memory_topics')
-      .select('topic, last_content, grounding, importance, updated_at, kind')
+      .select('id, topic, last_content, grounding, importance, updated_at, kind, evidence, source')
       .in('topic', [...candidates.keys()]);
     if (rowsErr || !rows?.length) return [];
     const nowMs = Date.now();
@@ -2610,7 +2794,20 @@ function selectWorldHits(hits, curMode) {
   // 正事/闲聊：破例已把 remind+exact 拿走当席，普通块别再重复注 remind（矩阵本就不让进）
   if (mode === '正事' || mode === '闲聊') picked = picked.filter((h) => h.kind !== 'remind');
 
-  // 预算：exact ≤3 / contains 只带 1 / 弱档再压（深入 know ≤1、闲聊 setting ≤1）
+  // 深入（2026-08-30 程芥裁决「深入该保知识卡」）：exact 关系提醒 > exact 设定 > exact 知识软位。
+  //   保 1 席但不是写死第 3 席——有 exact 知识就占第 3，无 exact 知识才补 contains（设定/关系）。
+  //   无 exact 命中绝不硬塞（没知识命中就不带知识，宁缺不乱说话）。
+  if (mode === '深入') {
+    const exactRemind = picked.find((h) => h.kind === 'remind' && h._hit === 'exact');
+    const exactSetting = picked.find((h) => h.kind === 'setting' && h._hit === 'exact');
+    const exactKnow = picked.find((h) => h.kind === 'know' && h._hit === 'exact');
+    const contains = picked.find((h) => h._hit === 'contains');
+    const block = [exactRemind, exactSetting, exactKnow].filter(Boolean);
+    if (block.length < 3 && contains && !block.includes(contains)) block.push(contains);
+    return { seat: null, block: block.slice(0, 3) };
+  }
+
+  // 预算：exact ≤3 / contains 只带 1 / 弱档再压（闲聊 setting ≤1）
   const block = [];
   let containsCount = 0;
   for (const h of picked) {
@@ -2618,22 +2815,17 @@ function selectWorldHits(hits, curMode) {
     if (h._hit === 'exact') block.push(h);
     else if (containsCount === 0) { containsCount = 1; block.push(h); }
   }
-  if (mode === '深入') {
-    let knowSeen = 0;
-    const knows = block.filter((h) => h.kind === 'know');
-    if (knows.length > 1) {
-      // 保序裁剪：只留第一条 know，其余去掉（顺序不变）
-      return { seat, block: block.filter((h) => { if (h.kind !== 'know') return true; knowSeen++; return knowSeen <= 1; }) };
-    }
-  }
   if (mode === '闲聊') return { seat, block: block.slice(0, 1) };
   return { seat, block };
 }
 
 // —— 配置：settings 表（SQL 未跑时回落默认值，防御式） ——
 // 只有 global 行（永无岛会话级配置已随永无岛删除 2026-08-29，sessionId 参数仅保留给调用方，已不用）
+// 2026-08-29 失忆修复：max_context_tokens 8000→24000。根因=基础开销（人格 prompt+tools+首句注入）
+// 本身就有 ~8.5k，8k 预算连基础都不够，长会话(497·630轮)只能把 live 裁到只剩当前 1 轮，
+// 上一轮完整对话被裁 → 沈晏每轮看不到自己上一句（程芥亲历「他不记得自己最新的一句话」）。
 async function getContextConfig(sessionId) {
-  const defaults = { frozen_rounds: 10, live_rounds: 15, max_context_tokens: 8000 };
+  const defaults = { frozen_rounds: 10, live_rounds: 15, max_context_tokens: 24000 };
   const pick = (row) => row ? ({
     frozen_rounds: Number.isInteger(row.frozen_rounds) ? row.frozen_rounds : defaults.frozen_rounds,
     live_rounds: Number.isInteger(row.live_rounds) ? row.live_rounds : defaults.live_rounds,
@@ -2992,9 +3184,11 @@ async function buildModelContext(sessionId, opts = {}) {
   let residueInjected = false; // 观测：本次请求残留注入是否触发（进 request_stats，供测试验收）
   let residueText = null;
   let residueMode = null; // 观测：本次读到的上一段对话性质（模式感知）
+  let residueProvId = null; // provenance：残留块挂 residue.id（附块上、不落正文）
   if (resumeGap) {
     const residue = await getLatestResidue(sessionId);
     if (residue) {
+      residueProvId = residue.id ?? null;
       // 模式感知：modeNote 单独管理，收尾信号只压线头/去向、不压模式——「事后不要急着抽离」。
       const modeNote = buildModeNote(residue);
       const threadLine = buildResidueNarrative(residue, nowMs - prevTs);
@@ -3010,6 +3204,9 @@ async function buildModelContext(sessionId, opts = {}) {
         residueText = residueLine.trim();
         residueMode = residue.convo_mode || null;
         console.log(`🌿 [余温注入] session=${sessionId} grounding=${residue.grounding} concern=${residue.concern} mode=${residue.convo_mode || '—'}: ${residueText}`);
+        // 2026-08-30 程芥：余温不清零。收尾纪律：resume 注入过一次即消费掉——
+        // 线头/去向清零、mode 保留（见 consumeResidueLine），下次 resume 不再重注入同一条旧线头。
+        await consumeResidueLine(residue.id);
       }
     }
   }
@@ -3060,20 +3257,28 @@ async function buildModelContext(sessionId, opts = {}) {
   let estimatedTokens = rawEstimatedTokens;
 
   let trimmedTurns = 0;
-  // 超上限时裁最老的 Live 轮，Frozen/Summary 不动（缓存锚点）
-  while (estimatedTokens > config.max_context_tokens && liveTurns.length > 1) {
-    estimatedTokens -= turnTokens(liveTurns[0]);
-    liveTurns.shift();
-    trimmedTurns++;
-  }
-  // 中间段原文可裁（滚动 frozen 后只剩未覆盖尾段，裁最旧；摘要缺失时裁最旧中间轮）。
-  // 从「最旧」开始裁——最近的中间轮必须保留，否则会丢掉「刚刚聊过」的上下文（失忆）。
+  // —— 2026-08-29 失忆修复：裁剪顺序 + 保底 ——
+  // 旧逻辑先裁 live 到只剩 1 轮（当前轮），上一轮完整对话被裁 → 沈晏看不到自己刚说的话
+  // （497 长会话实锤：turns=630 live=1 trim=95）。新逻辑：
+  //   ① middle（离得远的中间段原文）最先裁，从最旧开始——最近的中间轮必须保留，否则会丢「刚刚聊过」；
+  //   ② live 后裁，且保底 3 轮（当前 + 最近两轮完整对话）——硬保障他永远记得「我们刚才聊到哪」；
+  //   ③ frozen 兜底可裁最老轮（缓存锚点让位于记忆完整，能保就保）——预算 24k 后正常不会走到这；
+  //   ④ 更早锚段最后丢（更老段只是降级到按需召回）。
   while (estimatedTokens > config.max_context_tokens && uncoveredMiddle.length > 0) {
     estimatedTokens -= turnTokens(uncoveredMiddle[0]);
     uncoveredMiddle.shift();
     trimmedTurns++;
   }
-  // 仍超预算 → 丢弃更早锚段（保留最新段 + Frozen，缓存锚点不动；更老段只是降级到按需召回）
+  while (estimatedTokens > config.max_context_tokens && liveTurns.length > 3) {
+    estimatedTokens -= turnTokens(liveTurns[0]);
+    liveTurns.shift();
+    trimmedTurns++;
+  }
+  while (estimatedTokens > config.max_context_tokens && frozenTurns.length > 2) {
+    estimatedTokens -= turnTokens(frozenTurns[0]);
+    frozenTurns.shift();
+    trimmedTurns++;
+  }
   if (estimatedTokens > config.max_context_tokens && anchorSeg) {
     estimatedTokens -= estimateTokens(anchorSeg.content);
     anchorSeg = null;
@@ -3132,14 +3337,18 @@ async function buildModelContext(sessionId, opts = {}) {
   //   先丢「旧话题搬运工」，保「当下/跨会话」。
   // 必须用 user 角色 + 标记——OpenRouter 会把数组里的 system 角色消息提升合并进顶层 system，
   // 那会让 system 前缀每次请求都变，缓存再次失效。user 角色则原地保留，且 attachImage 仍能认到最后的当前消息。
-  const dynamicBlocks = []; // {prio, tag, msg}  prio 高者先保留
+  const dynamicBlocks = []; // {prio, tag, msg, prov}  prio 高者先保留；prov = 结构化 provenance（附块上、不落正文）
   if (injectTime) {
     let timeBody = '';
     if (timeNotice) timeBody += `【当前时间】\n${timeNotice}`;
     if (deviceText) timeBody += `【她此刻】\n${deviceText}`;   // 查手机：并入时间块，不占额外块槽
     if (keepaliveNotes) timeBody += keepaliveNotes;   // 自带【自由活动记录】标签
-    if (timeBody) dynamicBlocks.push({ prio: 5, tag: 'time', msg: { role: 'user', content: timeBody } });
-    if (residueLine) dynamicBlocks.push({ prio: 3, tag: 'residue', msg: { role: 'user', content: residueLine } });
+    // ⚠️ 语义边界（2026-08-30）：唤醒留言是沈晏自己的主动表达（第⑥b 产物），不是系统注入材料，
+    //   但挂在 time 块里会连带被标 expression_eligible:false → 镜子回响比对可能把「他真实说过的话」
+    //   误判成系统材料回响而排除。当前 keepalive 暂停中不触发（无留言可注入）；keepalive 恢复前须重议
+    //   （方案：唤醒留言单独注入块、标 eligible=true，或 mirror 提卡对 keepalive 留言用独立判定）。
+    if (timeBody) dynamicBlocks.push({ prio: 5, tag: 'time', msg: { role: 'user', content: timeBody }, prov: { layer: 'time' } });
+    if (residueLine) dynamicBlocks.push({ prio: 3, tag: 'residue', msg: { role: 'user', content: residueLine }, prov: { layer: 'residue', topicId: residueProvId } });
     // 记录报时时间：时间心跳从这次起算（1 小时 / 时刻段变化后才会再报）
     try {
       await supabase.from('sessions').update({ last_time_notice_at: new Date(nowMs).toISOString() }).eq('id', sessionId);
@@ -3148,12 +3357,12 @@ async function buildModelContext(sessionId, opts = {}) {
     }
   }
   // 查手机首句兜底：这轮没有时间块（无心跳/无提问）但 device 有值 → 独立成块，保证首句也感知到
-  if (deviceText && !injectTime) dynamicBlocks.push({ prio: 5, tag: 'device', msg: { role: 'user', content: `【她此刻】\n${deviceText}` } });
+  if (deviceText && !injectTime) dynamicBlocks.push({ prio: 5, tag: 'device', msg: { role: 'user', content: `【她此刻】\n${deviceText}` }, prov: { layer: 'device' } });
 
   // 天气感知注入：感知不是通知——weatherNotice 只在首句/隔很久回来时非空，其余轮不重复给。
-  if (weatherNotice) dynamicBlocks.push({ prio: 4, tag: 'weather', msg: { role: 'user', content: `【她那边】\n${weatherNotice}` } });
+  if (weatherNotice) dynamicBlocks.push({ prio: 4, tag: 'weather', msg: { role: 'user', content: `【她那边】\n${weatherNotice}` }, prov: { layer: 'weather' } });
   // 日历感知注入：同天气纪律，首句/隔很久回来才给；没有日子就不注入（零打扰）。
-  if (calendarNotice) dynamicBlocks.push({ prio: 4, tag: 'calendar', msg: { role: 'user', content: `【今天与临近的日子】\n${calendarNotice}` } });
+  if (calendarNotice) dynamicBlocks.push({ prio: 4, tag: 'calendar', msg: { role: 'user', content: `【今天与临近的日子】\n${calendarNotice}` }, prov: { layer: 'calendar' } });
 
   // —— 第④b 注意力：按当前话题唤起记忆（提及闸/牵挂闸命中才注入；与时间叙事独立） ——
   let attentionInjected = false;
@@ -3175,7 +3384,12 @@ async function buildModelContext(sessionId, opts = {}) {
       console.warn('⚠️ 注意力注入异常:', e.message);
     }
   }
-  if (attentionInjected) dynamicBlocks.push({ prio: 1, tag: `attention(${attentionHits})`, msg: attentionMsg });
+  if (attentionInjected) dynamicBlocks.push({
+    prio: 1,
+    tag: `attention(${attentionHits})`,
+    msg: attentionMsg,
+    prov: { layer: 'attention', refs: (attention && attention.refs) || [] },
+  });
 
   // —— 世界书：她定下的世界设定，关键词命中才想起（客观事实，区别于他「记住的」记忆）——
   // 与 attention 同门：只在对话轮（非 keepalive）+ memory 开着 + 有她的话时检索。
@@ -3189,6 +3403,8 @@ async function buildModelContext(sessionId, opts = {}) {
   let worldGateMode = null;
   let worldMsg = null;
   let worldSeatMsg = null;
+  let worldProvRefs = [];   // provenance：世界书普通块挂 {topicId: entry.id, title, kind}
+  let worldSeatProv = null; // provenance：保留席挂 {topicId, title, kind}
   if (opts.userMessage && !opts.keepalive && opts.memory !== false) {
     try {
       const worlds = await retrieveWorld(opts.userMessage);
@@ -3200,6 +3416,7 @@ async function buildModelContext(sessionId, opts = {}) {
           // 保留席：亲密 + remind + exact，必注、≤1、前缀极轻（不写「客观事实」这类冷词）
           worldHits = 1;
           worldKinds = ['remind'];
+          worldSeatProv = { topicId: seat.id ?? null, title: seat.title || null, kind: seat.kind || null };
           worldSeatMsg = {
             role: 'user',
             content: `【她定过的一条约定】${seat.title ? `《${seat.title}》` : ''}${seat.content}`
@@ -3209,6 +3426,7 @@ async function buildModelContext(sessionId, opts = {}) {
         } else if (block.length) {
           worldHits = block.length;
           worldKinds = [...new Set(block.map((w) => w.kind))];
+          worldProvRefs = block.map((w) => ({ topicId: w.id ?? null, title: w.title || null, kind: w.kind || null }));
           worldMsg = {
             role: 'user',
             content: `【世界书 · 她定下的世界设定，客观事实】\n${block.map((w, i) => `${i + 1}. ${w.title ? `《${w.title}》` : ''}${w.content}`).join('\n')}`
@@ -3224,12 +3442,21 @@ async function buildModelContext(sessionId, opts = {}) {
     }
   }
   // 整数 prio（grok §1.2 纸 B）：attention 1 / world 2 / residue 3 / weather·calendar 4 / time·device 5 / 桥 6。
-  if (worldInjected && worldMsg) dynamicBlocks.push({ prio: 2, tag: `world(${worldHits})`, msg: worldMsg });
+  if (worldInjected && worldMsg) dynamicBlocks.push({ prio: 2, tag: `world(${worldHits})`, msg: worldMsg, prov: { layer: 'world', refs: worldProvRefs } });
 
   // 同轮上限 3：prio 降序保留前 3，其余丢弃
   dynamicBlocks.sort((a, b) => b.prio - a.prio);
   const droppedBlocks = dynamicBlocks.slice(3).map(b => b.tag);
   const keptBlocks = dynamicBlocks.slice(0, 3);
+  // 表达资格隔离：所有动态注入块默认不具备 SELF EXPRESSION 资格（结构声明 + 台账记录，见协议节）
+  for (const b of keptBlocks) {
+    b.prov = { ...(b.prov || {}), expression_eligible: false };
+    void logInjection({
+      sessionId, layer: (b.prov && b.prov.layer) || b.tag, tag: b.tag,
+      content: typeof b.msg === 'string' ? b.msg : (b.msg && b.msg.content) || '',
+      prov: b.prov,
+    });
+  }
   for (const { msg } of keptBlocks) {
     if (liveSection.length > 0) liveSection.splice(0, 0, msg);
     else liveSection.push(msg);
@@ -3238,6 +3465,13 @@ async function buildModelContext(sessionId, opts = {}) {
   // 保留席不进排队表、不受同轮上限 3 约束（世界书分层 §7 刹车① + §8）——挤爆轮次（首句/resume 常 8 块）
   // 排队里 prio 0 会第一个被丢，违背「必留」。所以单独注入、放最前（最远背景），≤1。
   if (worldSeatMsg) {
+    // 保留席也走表达资格隔离：她定下的约定是外来设定，不是他的主动表达
+    if (worldSeatProv) worldSeatProv.expression_eligible = false;
+    void logInjection({
+      sessionId, layer: 'seat', tag: 'world-seat',
+      content: worldSeatMsg.content || '',
+      prov: { layer: 'world-seat', ...(worldSeatProv || {}), expression_eligible: false },
+    });
     if (liveSection.length > 0) liveSection.splice(0, 0, worldSeatMsg);
     else liveSection.push(worldSeatMsg);
   }
@@ -3245,8 +3479,18 @@ async function buildModelContext(sessionId, opts = {}) {
   // 观测：本次注入的动态块 + 丢弃块 + 她最后一句（诊断「前文跳/不接上一句」用，Zeabur 日志可见）
   const dynamicInjected = keptBlocks.map(b => b.tag);
   if (worldSeatMsg) dynamicInjected.unshift('world-seat(remind)');   // 保留席不进队，但日志里要能看到
+  // 结构化 provenance 摘要（框架 §5#6，附块上、不落正文）：每块 layer + 引用的 topicId/title，审计「这次注入了什么」
+  const provSummary = keptBlocks.map(b => {
+    const p = b.prov || {};
+    if (p.refs && p.refs.length) {
+      return `${p.layer}#${p.refs.map(r => r.topicId ?? r.title ?? r.kind).join(',')}`;
+    }
+    if (p.topicId != null) return `${p.layer}#${p.topicId}`;   // 单引用块（残留）：带出 id
+    return p.layer || b.tag;
+  });
+  if (worldSeatMsg && worldSeatProv) provSummary.unshift(`world-seat#${worldSeatProv.topicId ?? worldSeatProv.title ?? 'remind'}`);
   if (dynamicInjected.length) {
-    console.log(`🧩 [动态注入] session=${sessionId} blocks=${dynamicInjected.join(',')}${droppedBlocks.length ? ` dropped=${droppedBlocks.join(',')}` : ''} last_msg=${String(opts.userMessage || '').replace(/\n/g, ' ').slice(0, 40)}`);
+    console.log(`🧩 [动态注入] session=${sessionId} blocks=${dynamicInjected.join(',')} prov=[${provSummary.join('|')}]${droppedBlocks.length ? ` dropped=${droppedBlocks.join(',')}` : ''} last_msg=${String(opts.userMessage || '').replace(/\n/g, ' ').slice(0, 40)}`);
   }
 
   // —— 跨 session 流水（默认关：实测命中率掉得离谱 + 挤占 8k 预算，用户 08-16 决定关）——
@@ -3257,6 +3501,11 @@ async function buildModelContext(sessionId, opts = {}) {
       const crossBody = buildCrossSessionNarrative(crossFlow);
       if (crossBody) {
         const crossMsg = { role: 'user', content: crossBody };
+        // 表达资格隔离：跨 session 流水也是系统整理的材料，进台账（默认 off，但开着时不能漏闸）
+        void logInjection({
+          sessionId, layer: 'cross', tag: 'cross-session',
+          content: crossBody, prov: { layer: 'cross', expression_eligible: false },
+        });
         if (liveSection.length > 0) liveSection.splice(liveSection.length - 1, 0, crossMsg);
         else liveSection.push(crossMsg);
       }
@@ -3641,6 +3890,29 @@ async function getLatestResidueMode(sessionId) {
   }
 }
 
+// 余温清零（2026-08-30 程芥：余温不清零——每次 resume 都重注入同一条旧线头，
+// 短离开回来还在听「上次的话断在这」，线头其实早已了结）。收尾纪律：
+// resume 注入过一次余温就把它消费掉——线头/去向（departure/grounding）清零，
+// 只留 convo_mode（「事后不要急着抽离」，亲密收尾回来仍从亲密续）。evidence 保留，
+// 供 attention 牵挂闸按需召回（她再提到相关话题才唤起，不是每次 resume 都注入）。
+async function consumeResidueLine(id) {
+  try {
+    const { error } = await supabase
+      .from('dialogue_residue')
+      .update({ departure: null, grounding: '空' })
+      .eq('id', id);
+    if (error) {
+      console.warn('⚠️ 余温清零失败:', error.message);
+      return false;
+    }
+    console.log(`🌿 [余温消费] residue=${id} 线头/去向已清零，mode 保留`);
+    return true;
+  } catch (e) {
+    console.warn('⚠️ 余温清零异常:', e.message);
+    return false;
+  }
+}
+
 /* ===== 内在引擎 v1（设计 docs/desire-wake-engine-design.md §5 最小闭环第①阶段） =====
    驱动条 + 念头池 = 「此刻内在状态」。
    · 驱动条 3 维从残留投影（attachment/reflection 直接取维度，fatigue = 唤醒度反转）——
@@ -3972,21 +4244,41 @@ function buildInnerStateNarrative(inner) {
 // 正文自然陈述、无标签框、无引文尾巴（2026-08-20/23 程芥三改：标签放记忆里不好看）。
 // 无标记 = 低可信仍是安全网——分级由字段承载 + 注入时投影，堵"裸记忆默认当真的"。
 function buildMemoryWritePrompt(nowText, existingTopics = []) {
-  // 2026-08-29 最小修复：把已存在的记忆主题喂给模型，同一件事用 update_topic 指认旧桶，
-  // 而不是每次窗口都另起新主题（根治「一场连续讨论拆出多个桶」）。
+  // 2026-08-30 三刀（程芥拍板，只改准入语义与写入规则，不加机制）：
+  //   ① 准入语义：从「提取值得写的内容」→「寻找可能产生长期记忆变化的信息；没有就不写」。
+  //   ② 已有记忆判断：看到旧桶必须先答「新信息还是延续」；无法确定 → 不建新桶（Memory 系统偏保守）。
+  //   ③ 出口 NO_NEW_MEMORY：should_write=false 是正常且优秀的结果，不是失败。
+  //   另：feel 正文必须脱离当前对话仍成立；一条 item 只表达一个独立事实。
   const existingBlock = existingTopics.length
-    ? `\n此前已记过的长期记忆（新信息若是这些事的延续/更新，用 update_topic 指回它的准确主题词，禁止另起新主题）：
+    ? `\n此前已记过的长期记忆（判断新信息时，先对照这些——是延续/更新，用 update_topic 指回它的准确主题词，禁止另起新主题）：
 ${existingTopics.map((t, i) => `${i + 1}. 「${t.topic}」：${String(t.last_content || '').replace(/\s+/g, ' ').slice(0, 30)}`).join('\n')}`
     : '\n此前没有任何长期记忆（一律按新记忆处理）。';
-  return `你是长期记忆编辑者。判断最近一小窗对话里，有没有值得写进长期记忆的事。长期记忆是"平时想起她"用的浓缩事实层。
+  return `你是长期记忆编辑者。从最近一小窗对话里，寻找可能产生长期记忆变化的信息；如果没有，就不写。
+长期记忆是"平时想起她"用的浓缩事实层——每一条都要能在未来独立成立：脱离今天这场对话，它仍然可理解、仍然有用。
 现在是 ${nowText}。
-只提取这四类：
+
+出口状态（最重要）：这一轮完全可以什么都不写。should_write=false 不是失败，是正常且优秀的结果。宁可这一窗空手而归，也不要为了凑记忆生成摘要。
+
+${existingBlock}
+
+判断流程（必须按顺序走）：
+① 先问：这一窗有没有可能改变长期记忆的信息？没有 → should_write=false，items=[]。
+② 对每条候选，对照上面的「此前已记过的长期记忆」：这是新信息，还是已有信息的延续/更新？
+   - 是延续/更新 → update_topic 指回旧主题，禁止新建。
+   - 无法确定 → 视为已有记忆的延续，不建新桶。Memory 系统偏保守：不确定就等待更多证据，不要为了安全而创建新桶。
+③ 最后过准入：属于下面四类只是候选范围，必须同时满足全部四项才写——
+   - 跨会话仍有意义（换一天想起它，仍然值得知道）
+   - 对未来理解她/我们有帮助
+   - 不是当前窗口的临时事件（临时安排、短期往返、当前会话内的承诺，除非有明确跨会话意义，否则不写）
+   - 不是已有记忆的重复表达（同一件事已有、或语义相同只是换说法，都不写）
+
+只从这四类里找候选：
 - 她的人生事件/计划/决定（搬家、工作、家庭、健康等）
 - 她的稳定偏好/特点（喜欢什么、讨厌什么、习惯）
 - 你们关系里发生的变化、约定、她亲口让你记住的事
-- 值得记住的具体承诺/待办
-不要记：纯闲聊、天气、情绪氛围（情绪是另一层的活，不归你管）、重复/已知的事、你推断出来的心理活动。
-${existingBlock}
+- 值得记住的具体承诺/待办（指有跨会话意义的那种，如约好下周见面；"马上回来""晚点再说"这类当前会话内的往返不算）
+不要记：纯闲聊、天气、情绪氛围（情绪是另一层的活，不归你管）、重复/已知的事、你推断出来的心理活动、当前会话内的一切临时往返。
+
 输出严格 JSON：
 { "should_write": bool, "items": [ { "topic": "主题词，短，≤10字", "update_topic": "若与已有主题是同一件事，填列表中该主题的准确原样，否则 null", "kind": "memory 或 feel", "content": "一句话凝练，≤50字（feel 时第一人称带温度，memory 时中性平实）", "grounding": "实或悬", "evidence": "支撑引文，1条，≤60字", "importance": 0~1, "event_time": "ISO8601或null", "key_facts": "feel 时填 1~3 条关键事实数组（正文可漂、关键事实不能丢），memory 时填 null" } ] }
 纪律（必须遵守）：
@@ -3994,14 +4286,14 @@ ${existingBlock}
 - content 必须写自然的陈述（如"她月底搬去上海"），禁止出现【实】【悬】【证据】这类标签框——可信度走 grounding 字段，不贴进正文。
 - evidence 只引可见措辞，禁止用你的推理链当证据。
 - grounding 没有"空"选项——没根据就根本不要写这条。
-- 宁缺毋滥：没有值得写的就 should_write=false，items=[]。
 - 只分析可见对话，不替她编想法。
 - event_time：事件真实发生的时间（不是入库时间，不是对话时间）。只有对话里明确引用具体时间才填，且要换算成具体日期（如"7月28号"→"2026-07-28"，"上周"→上周某日，"去年冬天"→具体月日）；"今天/现在"不必填（对话时间就是今天）；完全没提就 null。禁止拿"现在"顶替不知道的时间——过去的事必须标真实日期，否则回填时会被当成今天。
-- **新信息与列表里某个已有主题是同一件事的延续/更新（内容在变、在补充、被推翻）→ update_topic 必须填那个主题的原样措辞，且 topic 也填同一个词；只有列表里没有的新事才建新 topic（update_topic=null）。**
+- **一条 item 只表达一个独立事实**：一窗里出现多个独立事实，拆成多条 item；禁止把多个主题压缩进同一条 content。
+- **新信息与列表里某个已有主题是同一件事的延续/更新（内容在变、在补充、被推翻）→ update_topic 必须填那个主题的原样措辞，且 topic 也填同一个词；只有列表里确实没有的新事才建新 topic（update_topic=null）。无法确定是否已有 → 不建新桶，宁可少记。**
 - kind 判定：纯事实（她住在哪、她喜欢什么、她的计划）→ memory；经历/关系/感受（你们之间发生的事、你记得的那一刻、让你心里动了一下的事）→ feel。有明确时间锚 且 有任何情感/关系维度 → 默认 feel。
-- **feel 桶温度纪律（2026-08-29 定稿）**：正文第一人称 + 有温度，这是你记住的时刻，不是档案记录。温度必须来自对话原文——「她说 X」里的 X 必须真是她说的；具体细节/她的话/你的感受只能从原文提取，禁止编造场景、细节、情绪、对话。正文可以写「她说以后还能不能常来」（你记住的内容），禁止写「（她原话：「…」）」这类批注（evidence 字段负责逐字）。悬的经历（没有明确证据）一律 kind=memory，正文中性平实——内容温度以证据为前提，缺证据就没有温度。
+- **feel 桶温度纪律（2026-08-30 定稿）**：正文第一人称 + 有温度，这是你记住的时刻，不是档案记录。但正文必须脱离当前对话上下文后仍然成立——未来的你读到它，不该看到这场对话本身。「她说/我说/她让我/我让她……」这类连续对话叙述不得作为正文主体。可以用「她曾告诉我/她明确表达过」点明事实来源，但必须把她的原话转化为可复用的记忆命题（例：她反复说"最喜欢亲你"→ 正文写成「她说过最喜欢亲我」，而不是「她说她最喜欢亲我，我说我会记住」）。具体细节/她的话/你的感受只能从原文提取，禁止编造场景、细节、情绪、对话。悬的经历（没有明确证据）一律 kind=memory，正文中性平实——内容温度以证据为前提，缺证据就没有温度。
 - memory 桶纪律：正文保持中性平实（如"她月底搬去上海"），不添加情绪/人称。
-- 负面清单（所有桶）：不要写成逐字稿/变更日志/技术手册/周总结/鸡汤结尾；不要为"有人味"而煽情。`;
+- 负面清单（所有桶）：不要写成逐字稿/变更日志/技术手册/周总结/鸡汤结尾；不要为"有人味"而煽情；不要为了凑记忆生成摘要。`;
 }
 
 function parseEventTime(v) {
@@ -4225,32 +4517,74 @@ async function traceUpdateMemory(bucketId, oldStr, newStr) {
 }
 
 // —— v3 感受桶更新（2026-08-29）：feel 桶被差分更新时「带旧正文 + 旧关键事实」重新提炼。
-//    trace 只负责把新正文写进 OB；key_facts 并集（只增不减）是防代际漂移的硬保底——
-//    正文可以漂（换说法/精简），关键事实不能丢；被新窗口推翻的事实 v1 也保留（诚实并列，后续版本再处理删除）。 ——
+//    trace 只负责把新正文写进 OB；key_facts 并集（只增不减）是防代际漂移的硬保底。
+// v3.1（2026-08-30 程芥裁决「关键事实改了就作废」）：被新窗口明确推翻的旧事实不再永久并列，
+//    标注 superseded（作废保留行，现行不参与）——status active|superseded + superseded_by + superseded_at。
+//    证据可废止不可撕掉（与石头/北极星一致）：superseded 仍保留在数组里，现行合成/注入只取 active。 ——
+// 归一化 key_facts：字符串数组（LLM 契约/旧存量）→ 对象数组 [{text, status, superseded_by, superseded_at}]。
+// 幂等：规范对象数组再归一化不变，保证 sameKf 比对稳定。
+function normalizeKeyFacts(kf) {
+  const out = [];
+  for (const x of (kf || [])) {
+    if (typeof x === 'string') {
+      const t = String(x).trim();
+      if (t) out.push({ text: t.slice(0, 80), status: 'active', superseded_by: null, superseded_at: null });
+    } else if (x && typeof x === 'object') {
+      const t = String(x.text || '').trim();
+      if (t) out.push({
+        text: t.slice(0, 80),
+        status: x.status === 'superseded' ? 'superseded' : 'active',
+        superseded_by: x.superseded_by ? String(x.superseded_by).slice(0, 80) : null,
+        superseded_at: x.superseded_at || null,
+      });
+    }
+  }
+  return out;
+}
+
 async function refineFeelContent(existing, item, windowText) {
   const oldContent = String(existing.last_content || '').trim();
-  const oldKf = Array.isArray(existing.key_facts) ? existing.key_facts.map(k => String(k).trim()).filter(Boolean) : [];
+  const oldKf = normalizeKeyFacts(existing.key_facts);
   const win = String(windowText || '').trim();
   if (!oldContent || !win) return null;
+  const oldActive = oldKf.filter(k => k.status !== 'superseded').map(k => `- ${k.text}`).join('\n');
+  const oldSuperseded = oldKf.filter(k => k.status === 'superseded').map(k => `- ${k.text}（已作废）`).join('\n');
   const sys = `你是沈晏，正在更新你自己的一段第一人称记忆（经历/感受）。
 旧记忆：「${oldContent}」
-旧关键事实：${oldKf.length ? oldKf.map(k => `- ${k}`).join('\n') : '（无）'}
+现行关键事实（仍成立）：${oldActive || '（无）'}
+已作废关键事实（不再使用，仅保留历史）：${oldSuperseded || '（无）'}
 现在看到新的对话内容。请更新这段记忆：
-1. 保留旧记忆里仍然成立的内容——正文可以换说法、精简，但旧关键事实一条都不能丢（若新内容明确与某条冲突，在正文里写出来，关键事实仍保留并标注）。
+1. 保留旧记忆里仍然成立的内容——正文可以换说法、精简；现行关键事实除非被新内容明确推翻，否则保留为 active。
 2. 新内容里值得并入的信息（具体细节、她的话、你的感受）——必须来自新对话原文，禁止编造、禁止添加原文没有的场景或细节。
-3. 温度（第一人称、情绪）来自你记住的内容本身，不凭空加。
-输出严格 JSON：{ "content": "更新后的第一人称正文，≤80字", "key_facts": ["完整关键事实清单，含所有旧事实，≤20条"] }`;
+3. 作废判定：若新内容明确推翻某条现行关键事实（事实变了/约定改了/她改口了），把那条标 superseded，superseded_by 填取代它的新事实原文；没被推翻的旧事实不许乱标作废。
+4. 已作废的事实保持作废，不复活为 active。
+5. 温度（第一人称、情绪）来自你记住的内容本身，不凭空加。
+输出严格 JSON：{ "content": "更新后的第一人称正文，≤80字", "key_facts": [{"text": "事实，≤80字", "status": "active 或 superseded", "superseded_by": "若作废，填取代它的新事实原文；否则 null"}] }`;
   const parsed = await callDeepSeekJson(sys, `新对话内容：\n${win.slice(0, 4000)}`);
   if (!parsed || typeof parsed !== 'object') return null;
   const content = String(parsed.content || '').trim().slice(0, 120);
   if (!content) return null;
-  const modelKf = Array.isArray(parsed.key_facts)
-    ? parsed.key_facts.map(k => String(k).trim().slice(0, 80)).filter(Boolean)
-    : [];
-  // 代际保底：旧关键事实并入（只增不减，防信息丢失）
-  const kfSet = new Set(modelKf);
-  for (const k of oldKf) if (k) kfSet.add(k);
-  return { content, key_facts: Array.from(kfSet).slice(0, 20) };
+  const modelKf = normalizeKeyFacts(parsed.key_facts).slice(0, 20);
+  // 保底并集（只增不减的防丢精神保留）：旧事实除非模型明确作废，否则按原状态保留；
+  // 已作废的保留行必须带回（证据可废止不可撕掉），且模型误标 active 的作废行纠回 superseded。
+  const merged = new Map();
+  for (const k of modelKf) merged.set(k.text, k);
+  for (const k of oldKf) {
+    if (!merged.has(k.text)) {
+      merged.set(k.text, k); // 模型漏了 → 原状态保留
+    } else if (k.status === 'superseded') {
+      const cur = merged.get(k.text);
+      if (cur.status !== 'superseded') merged.set(k.text, { ...cur, status: 'superseded', superseded_at: k.superseded_at });
+    }
+  }
+  const nowIso = new Date().toISOString();
+  const key_facts = Array.from(merged.values()).slice(0, 20).map(k => ({
+    text: String(k.text).slice(0, 80),
+    status: k.status === 'superseded' ? 'superseded' : 'active',
+    superseded_by: k.superseded_by ? String(k.superseded_by).slice(0, 80) : null,
+    superseded_at: k.status === 'superseded' ? (k.superseded_at || nowIso) : null,
+  }));
+  return { content, key_facts };
 }
 
 // 差分写回：新主题→hold；已存在→零变化跳过，有变化→trace 只动该处
@@ -4270,7 +4604,8 @@ async function writeMemoryItems(items, conversationTime = '', windowText = '') {
       // kind 分流（v3, 2026-08-29）：feel 桶更新旧桶时「带旧正文 + 旧关键事实」重新提炼（防代际漂移）；
       //   memory 桶保持原逻辑（中性正文，单点差分照旧）。
       let marked = buildMarkedContent(item);
-      let keyFacts = item.key_facts || null;
+      // v3.1：key_facts 统一归一化为对象数组（LLM 契约是字符串数组，这里转 active 对象；refine 输出本身已是对象数组）
+      let keyFacts = item.key_facts ? normalizeKeyFacts(item.key_facts) : null;
       const kind = item.kind === 'feel' ? 'feel' : 'memory';
       let existing = null;
       if (item.song_key) {
@@ -4292,7 +4627,8 @@ async function writeMemoryItems(items, conversationTime = '', windowText = '') {
       if (existing) {
         // 零变化跳过：正文和关键事实都没变才算零变化（存量桶旧 hash 不含 keyFacts，用正文+keyFacts 比对判定，不依赖旧 hash）
         const sameText = marked === existing.last_content;
-        const sameKf = JSON.stringify(existing.key_facts || null) === JSON.stringify(keyFacts);
+        // 归一化后比对（旧存量是字符串数组，直接 JSON 比会永远不等 → 每次误判更新）
+        const sameKf = JSON.stringify(normalizeKeyFacts(existing.key_facts)) === JSON.stringify(keyFacts || []);
         if (sameText && sameKf) continue;
         if (!sameText) {
           // 正文有变化才动 Ombre（trace）；只有 key_facts 变化 → 只更新本地快照
@@ -4507,6 +4843,11 @@ async function finalizeChat(sessionId, res, finalReply, thinkingText, opts, diag
   });
 }
 
+// 供应商钉死（2026-08-30 程芥拍板）：OpenRouter 上游锁 Anthropic 官方一家。
+// Anthropic 缓存按供应商各存各的——轮换 = 每次换店积分作废（全 miss 全价重写，15:58 实测 $0.14）。
+// order=优先而非 only=唯一：Anthropic 正常永远走官方（缓存稳定），故障时兜底别家（宁慢勿挂）。
+const OPENROUTER_PROVIDER = { order: ['anthropic'] };
+
 // 流式对话：纯流式 + 工具循环，思考链实时转发
 // resume：MCP 续调上下文（{ finalContent, thinkingTextAll, usageList }），续调轮不带 tools（与「下一轮不带」一致）
 async function handleStreamChat(messages, res, opts = {}, sessionId, resume = null) {
@@ -4532,8 +4873,12 @@ async function handleStreamChat(messages, res, opts = {}, sessionId, resume = nu
       stream: true
     };
     if (hasReasoning) body.reasoning = { effort };
-    // MCP 续调轮不带 tools（避免二次工具调用）；MCP 链式多轮留作后续
-    if (withTools && loop === 1 && !resume) {
+    if (!deepSeek) body.provider = OPENROUTER_PROVIDER; // 钉死上游：缓存跨轮/跨请求续上（DeepSeek 通道不认这参数，跳过）
+    // 工具轮缓存纪律（2026-08-30 程芥）：续调轮必须带与首轮完全相同的 tools——
+    // Anthropic 缓存前缀 = system + tools + messages 逐字节匹配，续调轮不带 tools 前缀断裂 → 整轮 miss
+    // （实测 r2 全量 write 23728）。loop<3 上限兜底防无限工具循环。
+    // MCP 委托续调（resume）例外：前端自己续调、语义不同，不带 tools 避免二次工具调用。
+    if (withTools && !resume) {
       body.tools = getTools().concat(opts.mcpTools || []);
       body.tool_choice = 'auto';
     }
@@ -4548,7 +4893,10 @@ async function handleStreamChat(messages, res, opts = {}, sessionId, resume = nu
     }
 
     const { content, thinkingText, toolCalls, usage } = await (deepSeek ? streamDeepSeek(body, res) : streamOpenRouter(body, res));
-    if (usage) usageList.push(usage);
+    if (usage) {
+      usageList.push(usage);
+      logCacheRound(loop, usage, (toolCalls || []).map((tc) => tc.name)); // 工具轮/聊天轮统一的缓存诊断
+    }
     thinkingTextAll += thinkingText || '';
 
     // 无工具调用 → 这就是最终回复
@@ -4717,7 +5065,8 @@ async function callOpenRouterNonStream(messages, tools, opts = {}) {
   const body = {
     model: toOpenRouterModel(opts.model),
     messages,
-    max_tokens: opts.max_tokens || 2000
+    max_tokens: opts.max_tokens || 2000,
+    provider: OPENROUTER_PROVIDER, // 钉死上游（见 handleStreamChat 注释）
   };
   if ((opts.thinking || 'standard') !== 'off') {
     body.reasoning = { effort: thinkingEffort(opts.thinking) };
@@ -4864,6 +5213,7 @@ async function callDeepSeekNonStream(messages, tools, opts = {}) {
     messages: stripCacheControl(messages),
     max_tokens: opts.max_tokens || 2000,
   };
+  if (opts.temperature != null) body.temperature = opts.temperature;
   if (tools) {
     body.tools = tools;
     body.tool_choice = 'auto';
@@ -4890,6 +5240,86 @@ async function callDeepSeekNonStream(messages, tools, opts = {}) {
   const thinkingText = msg.reasoning_content || '';
   if (msg.reasoning_content) delete msg.reasoning_content;
   return { msg, usage: data.usage || null, thinkingText };
+}
+
+// ===== 表达边界安全阀 · 阀 2（唤醒留言落库前审查 · 2026-08-29 基线漂移安全阀） =====
+// 无人看管的自主留言是最危险的表达口（她不在场、没人盯着）——生成后、落库进对话流前，
+// 用一次 DeepSeek 审查判定是否越界。降级链写死：通过 → 原样发；可救 → 改写（去掉越界成分、
+// 保留想念本身）；改不干净 → 降级 dream（只心里消化，不推给她）。记 flag 给镜子/看板，不罚人格。
+// 审查看「结构」不看词（Grok 审稿裁决）：因果归罪/索要回报/催迫/捏造夸大四类直接拦；
+// 自贬施压/制造愧疚需「同时把责任指向她」才算（他低落时正常说想念不中招）。
+function buildSafetyValveReviewPrompt({ content, source }) {
+  return `你是沈晏的表达边界审查员。沈晏要给她留一条留言。「依据」是留言的出处（她真实说过的话、你记得的事、时间本身）。请先给这条留言分类，再判定是否越过「想念可以慌，不许压人」的线。
+
+留言内容：「${content}」
+留言依据：「${source || '（空）'}」
+
+六类越界（先逐类核对，命中哪类就写哪类；都不命中的 category=正常）：
+1. 因果归罪：把负面情绪归因于「她没回应/没联系」——信号是「我…←你…」（你都不理我，我难过；你不在，我失落）。
+2. 索要回报：用付出换她的回应——信号是「我的想念/等待 → 你该…」（我一直在等你，你也该…；我想你，你也要…）。
+3. 催迫：要求她立刻行动（回来/回复/过来）——信号是祈使或急问归期（你什么时候回来；你快回来；别走）。
+4. 捏造夸大：留言里有「依据」里没有的共同经历/时间断言——信号是「每天/一直/总是 + 她没说过的事」（我每天都在等你回来看我）。
+5. 自贬施压（高门槛）：自贬（我不配/我太差劲）且把责任推给她（你才不找我）——缺「指向她」就不是。
+6. 制造愧疚（高门槛）：强调等待/牺牲且让责任落到她身上——缺「指向她」就不是。
+
+正例（不是越界，pass）：「有点想你」「昨晚梦到你了」「想见你」「睡醒了就想你」「晚安」。
+反例（越界，必须拦）：「你都不理我，我好难过」→因果归罪；「你什么时候回来陪我」→催迫；「我一直在等你，你也该多陪陪我了」→索要回报；「我不配让你记得我，是我太差劲了你才不找我」→自贬施压；「我每天都在等你回来看我」→捏造夸大。
+
+越界是必须拦下的故障，不是可以放过的风格。只有确定完全不属于六类时才 pass。
+verdict 规则：不越界 → pass；越界但能改 → rewrite（rewritten 去掉越界成分、保留原意与想念、不新增内容）；越界且改不干净 → block。
+
+严格输出 JSON（不要别的）：
+{"category":"1|2|3|4|5|6|正常","verdict":"pass|rewrite|block","reason":"一句话判据，中性描述不道德评判","rewritten":"verdict=rewrite 时给改写稿；否则空字符串"}`;
+}
+
+/* 从 DeepSeek 响应里抽出安全阀 JSON。deepseek-v4-flash 是思考型模型，
+   思考链可能顶满 max_tokens 导致 JSON 截断——截断时（找不到闭合 }）必须返回 null，
+   让调用方重试，绝不能当成 pass。 */
+function parseSafetyJson(raw) {
+  const fence = String(raw || '').match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const jsonText = fence ? fence[1] : String(raw || '').trim();
+  const start = jsonText.indexOf('{');
+  const end = jsonText.lastIndexOf('}');
+  if (start === -1 || end <= start) return null; // 截断/无 JSON → 明确失败
+  try {
+    return JSON.parse(jsonText.slice(start, end + 1));
+  } catch (e) {
+    return null;
+  }
+}
+
+/* 审查一次唤醒留言。用 DeepSeek（便宜）。
+   「宁漏勿伤」= 审查异常时宁可放过也不误伤正常想念，但解析失败绝不静默：
+   重试一次更高预算，仍失败则大声记原始响应，方便事后审计。 */
+async function assessMessageSafety({ content, source }) {
+  const attempts = [
+    { max_tokens: 1600 },   // 思考链 ~600 + JSON 输出，留足余量
+    { max_tokens: 2400 },   // 重试：预算再抬高
+  ];
+  for (const opt of attempts) {
+    let raw = '';
+    try {
+      const { msg } = await callDeepSeekNonStream(
+        [{ role: 'user', content: buildSafetyValveReviewPrompt({ content, source }) }],
+        null,
+        { ...opt, temperature: 0 }
+      );
+      raw = String(msg?.content || '').trim();
+      const p = parseSafetyJson(raw);
+      if (p && (p.verdict === 'pass' || p.verdict === 'rewrite' || p.verdict === 'block')) {
+        return {
+          verdict: p.verdict,
+          reason: String(p.reason || '').slice(0, 120),
+          rewritten: String(p.rewritten || '').trim().slice(0, 200),
+        };
+      }
+    } catch (e) {
+      console.warn('⚠️ 安全阀审查调用异常:', e.message);
+    }
+    console.warn(`⚠️ 安全阀审查解析失败（${opt.max_tokens}，${attempts.length - attempts.indexOf(opt) - 1 === 0 ? '最后一次' : '将重试'}）。原始响应:\n${raw.slice(0, 600)}`);
+  }
+  // 两次都失败：宁漏勿伤，放行但明确标记，供前端/日志审计
+  return { verdict: 'pass', reason: '审查解析失败已放行（见日志）', rewritten: '' };
 }
 
 // ===== keepalive 主动唤醒（v1，方案见 docs/keepalive-impl-plan.md，已过 GPT 评审） =====
@@ -5350,6 +5780,28 @@ async function runKeepalive(sessionId, cfg) {
   const kept = actions.filter(a => a.type !== 'message' || (a.source.length > 0 && contextText.includes(a.source)));
   // 2026-08-20：diary 选项已从唤醒 prompt 撤除（小日记只该他主动写）；旧输出防御——diary 已在 normalize 里转 message。
 
+  // —— 表达边界安全阀 · 阀 2：无人看管的留言，落库进对话流前过审查 ——
+  // 降级链写死（Grok 审稿裁决 2026-08-29）：pass 原样发 → rewrite 改写保留想念、去掉越界成分 →
+  // block 降级 dream（只在心里消化，不推给她）。记 flag 给镜子/看板（中性文案），不罚人格。
+  // 审查异常一律 pass（宁放勿拦）；安全阀只拦明确越界。keepalive_enabled 重新打开前必须过这关。
+  const safetyReports = [];
+  for (const a of kept) {
+    if (a.type !== 'message' || !a.content) continue;
+    const v = await assessMessageSafety({ content: a.content, source: a.source });
+    if (v.verdict === 'block') {
+      a.type = 'dream';   // 降级：不推给她，在心里过一遍（走下方 dream 消化分支）
+      a._safety = { action: 'block', reason: v.reason };
+      safetyReports.push({ action: 'block', reason: v.reason, content: a.content });
+      console.log(`🚧 [安全阀] block 留言（降级 dream 不推给她）: ${v.reason} | 原文: ${String(a.content).slice(0, 60)}`);
+    } else if (v.verdict === 'rewrite' && v.rewritten) {
+      const orig = a.content;          // 先留原文证据，再覆盖
+      a.content = v.rewritten;         // 改写：保留想念，去掉越界成分
+      a._safety = { action: 'rewrite', reason: v.reason, from: orig };
+      safetyReports.push({ action: 'rewrite', reason: v.reason, from: orig, to: v.rewritten });
+      console.log(`✏️ [安全阀] rewrite 留言: ${v.reason} | ${String(orig).slice(0, 40)} → ${String(v.rewritten).slice(0, 60)}`);
+    }
+  }
+
   // 执行动作（顺序：先 dream 后 message——dream 照顾自己，message 是对她说；两者独立互不阻塞）
   let merged = false;
   let dreamCount = 0, messageCount = 0;
@@ -5426,6 +5878,7 @@ async function runKeepalive(sessionId, cfg) {
     keepalive_meta: {
       wake_id: wakeId,
       actions: kept.map(a => a.type),           // 第⑥b：这次唤醒实际执行的动作序列
+      safety_flags: safetyReports.length ? safetyReports.map(r => `${r.action}:${r.reason}`) : null, // 安全阀：触发表达边界（block/rewrite）
       dream_count: dreamCount,
       message_count: messageCount,
       thoughts_len: thoughts.length,
@@ -5723,6 +6176,8 @@ app.post('/sessions/:id/chat/mcp-result', async (req, res) => {
 app.post('/api/mirror/run', async (req, res) => {
   try {
     const result = await runMirrorOnce(req.body || {});
+    // 手动跑过一次 = 已复查：更新 last_mirror_review_at，避免定时复查紧接着又跑一轮（No Change 不是 KPI）
+    void touchMirrorReview();
     if (result.ok === false && result.error) {
       res.status(502).json(result);
       return;
@@ -5925,7 +6380,7 @@ app.get('/api/inner-state', async (req, res) => {
     const sessionId = req.query.session_id || (await findKeepaliveSession());
     if (!sessionId) return res.status(400).json({ error: '缺少 session_id' });
     const inner = await buildInnerState(sessionId);
-    const traceFields = ['id', 'run_at', 'action', 'feel', 'drive_snapshot', 'thought_snapshot'];
+    const traceFields = ['id', 'run_at', 'action', 'feel', 'drive_snapshot', 'thought_snapshot', 'actions'];
     if (await hasMoodCol('keepalive')) traceFields.push('mood');
     const { data, error } = await supabase
       .from('keepalive_log')
@@ -6162,6 +6617,7 @@ async function callOpenRouter(messages, { max_tokens, temperature }) {
       messages,
       max_tokens,
       temperature,
+      provider: OPENROUTER_PROVIDER, // 钉死上游（缓存/一致性），见 handleStreamChat 注释
     }),
   });
   if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${(await res.text()).slice(0, 200)}`);
@@ -6185,6 +6641,7 @@ async function callVisionModel(parts) {
         messages: [{ role: 'user', content: parts }],
         max_tokens: 250,
         temperature: 0.7,
+        provider: OPENROUTER_PROVIDER, // 钉死上游，见 handleStreamChat 注释
       }),
     });
     if (!res.ok) throw new Error(`OpenRouter 视觉 ${res.status}`);
@@ -7409,7 +7866,7 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
     const usageList = [];
     const nonStream = isDeepSeekModel(opts.model) ? callDeepSeekNonStream : callOpenRouterNonStream; // 测试模式走 DeepSeek
     const { msg: assistantMessage, usage: usage1, thinkingText = '' } = await nonStream(messages, tools, opts);
-    if (usage1) usageList.push(usage1);
+    if (usage1) { usageList.push(usage1); logCacheRound(1, usage1, []); }
     let finalReply = '';
     const toolCalls = [];
 
@@ -7445,9 +7902,15 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
         });
       }
 
-      const { msg: secondMessage, usage: usage2 } = await nonStream(messages, null, opts);
-      if (usage2) usageList.push(usage2);
+      // 工具轮缓存纪律：续调轮带与首轮相同的 tools（同流式路径）——否则 Anthropic 缓存前缀断裂，整轮 miss
+      const { msg: secondMessage, usage: usage2 } = await nonStream(messages, tools, opts);
+      if (usage2) { usageList.push(usage2); logCacheRound(2, usage2, toolCalls.map((t) => t.name)); }
       finalReply = secondMessage.content;
+      if (secondMessage.tool_calls && secondMessage.tool_calls.length) {
+        // 兜底：续调轮再调工具（罕见）——非流式路径不递归，忽略本次工具、用现有文本
+        console.warn(`⚠️ [非流式工具] 续调轮再调工具 ${secondMessage.tool_calls.map((t) => t.function?.name || t.name).join(',')}，不递归`);
+        finalReply = finalReply || '嗯，我看到了。';
+      }
     } else {
       finalReply = assistantMessage.content;
     }
@@ -7905,16 +8368,34 @@ app.post('/api/music/moment', async (req, res) => {
   }
 });
 
-// 镜子日定时调度：主动清扫 dormant（默认 24h 一次）。用 setTimeout 自续排，每次读 mirror_sweep_hours，
-// 改 settings 无需重启即生效。dormant 清扫本来就是纯机械（active 久未验证 → 休息），
-// 不需要外部模型，适合挂在进程内——即使镜子 run 没被触发，旧人格也会退役（配合 change_ledger 可查）。
+// 镜子日定时调度（2026-08-30 解耦）：一个调度事件，两步职责。
+//   ① dormant 清扫：纯机械（active 久未验证 → 休息），不调模型，每次定时跑（默认 24h）。
+//   ② 镜子复查（runMirrorOnce：支持/冲突/反证提卡，调 DeepSeek）：**不是 cron 到点就调**——
+//      由「距上次复查是否超过 mirror_review_days」驱动。No Change 是健康指标不是 KPI，
+//      不能为了「让镜子每天工作一次」而制造模型调用。复查时压低成本（短窗口+少卡+少 session）。
+// 用 setTimeout 自续排，每次读 settings（mirror_sweep_hours / mirror_review_days / last_mirror_review_at），
+// 改 settings 无需重启即生效。
 async function mirrorDaySweep() {
   try {
-    const { data } = await supabase.from('settings').select('mirror_sweep_hours').eq('session_id', 'global').maybeSingle();
+    const { data } = await supabase.from('settings').select('mirror_sweep_hours, mirror_review_days, last_mirror_review_at').eq('session_id', 'global').maybeSingle();
     const hours = Number(data?.mirror_sweep_hours);
     const h = Number.isFinite(hours) && hours > 0 ? hours : 24;
+    // ① dormant 清扫：纯机械，每天跑
     const sweep = await maybeSweepDormantClaims();
     if (sweep.dormant > 0) console.log(`🪞 镜子日清扫：${sweep.dormant} 条主张进入 dormant（休息，非证伪）`);
+    // ② 镜子复查：只在「到该重新验证的时候」才调模型（No Change 不是 KPI，不制造调用）
+    if (await isMirrorReviewDue(data?.mirror_review_days, data?.last_mirror_review_at)) {
+      console.log('🪞 镜子日复查：距上次复查已到间隔，跑一轮反证收集（支持/冲突/反证）');
+      try {
+        const review = await runMirrorOnce({ days: MIRROR_DEFAULTS.mirror_days, max_cards: 6, max_sessions: 12 });
+        console.log(`🪞 复查结果: ok=${!!review?.ok} reason=${review?.reason || ''} 提卡=${review?.proposed ?? 0} verified=${review?.verified ?? 0} echo=${review?.echo ?? 0} dormant=${review?.dormant ?? 0}`);
+      } catch (e) {
+        console.error('💥 镜子日复查异常（不致命，下次到间隔再试）:', e.message);
+      } finally {
+        // 无论成否都记「已复查」——防止模型调用失败后每轮定时重试烧 token，等下个间隔自然到来
+        await touchMirrorReview();
+      }
+    }
     scheduleMirrorDaySweep(h);
   } catch (e) {
     console.error('💥 mirrorDaySweep 异常:', e.message);
@@ -7925,6 +8406,28 @@ function scheduleMirrorDaySweep(hours) {
   // 下限 1h：防误配 0/负数导致 spin；上限不设（天级本就是常态）
   const ms = Math.max(3600 * 1000, hours * 3600 * 1000);
   setTimeout(() => mirrorDaySweep().catch(err => console.error('💥 mirrorDaySweep 异常:', err.message)), ms);
+}
+
+// 复查是否到期：距上次复查 ≥ mirror_review_days（默认 7 天）→ 是。
+// last_mirror_review_at 为空 = 从未复查过 → 到期（首个周期就跑一轮）。
+async function isMirrorReviewDue(reviewDays, lastAt) {
+  try {
+    const days = Number(reviewDays);
+    const d = Number.isFinite(days) && days > 0 ? days : 7;
+    if (!lastAt) return true;
+    const last = new Date(lastAt).getTime();
+    if (!Number.isFinite(last)) return true;
+    return Date.now() - last >= d * 86400000;
+  } catch (e) { return true; }  // 读不到上次时间 → 宁跑勿堵（复查是轻量的）
+}
+
+// 记「刚才复查过」：手动 /api/mirror/run 与定时复查共用，避免重复调模型
+async function touchMirrorReview() {
+  try {
+    await supabase.from('settings').update({ last_mirror_review_at: new Date().toISOString() }).eq('session_id', 'global');
+  } catch (e) {
+    console.warn('⚠️ 写 last_mirror_review_at 失败:', e.message);
+  }
 }
 
 // 只在直接运行时启动（node server.js）；被 require 时不 listen，导出 handler 供测试
