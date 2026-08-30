@@ -3099,6 +3099,14 @@ function buildDeviceNotice(device) {
   return parts.length ? `她的手机：${parts.join('，')}。` : '';
 }
 
+// —— 2026-08-30 缓存锚定：live 段从「每轮滚动」改「锚定攒批 + 定期塌缩」——
+// 滚动滑窗每轮头部掉一轮+尾部加一轮 → 前缀在 live 头部必断 → 动态尾巴(middle+live≈45%)全价支付。
+// 锚定：liveStart 钉在「上次塌缩点」，live 只追加；攒到 live_rounds×2 轮塌一次
+// （锚点前移回当前起点，多出的轮自然进 middle，middle 由预算裁剪兜底）。塌缩轮断前缀是低频，其余轮前缀连续。
+// 内存 Map 存锚点：单实例足够（keepalive 定时器同进程长驻）；重启丢锚点=退化为一次滚动，下一轮重建。
+// 不用 DB 列：避免 select 缺列连坐 state（resumeGap/residue 静默失效），零迁移零副作用。
+const liveAnchors = new Map(); // sessionId -> live 段第一轮 turn（1-based）
+
 // —— 核心组装：System → Frozen → Summary → Live → 当前消息 ——
 async function buildModelContext(sessionId, opts = {}) {
   const config = await getContextConfig(sessionId);
@@ -3117,7 +3125,23 @@ async function buildModelContext(sessionId, opts = {}) {
   const segments = await loadSummarySegments(sessionId);
   const segWatermark = segments.length ? segments[segments.length - 1].period_end : null;
 
-  const liveStart = totalTurns - config.live_rounds + 1; // 1-based 第一轮 live
+  // liveStart = live 段第一轮（1-based）。默认滚动，有锚点则钉住 → 非塌缩轮纯追加。
+  let liveStart = totalTurns - config.live_rounds + 1;
+  const anchor = liveAnchors.get(sessionId);
+  // 锚点死条件：无锚 / 越界 / 被摘要水位线吞掉（segWatermark 前的轮已摘要，不该逐字重复进 live）
+  const anchorDead = anchor == null || anchor < 1 || anchor >= totalTurns
+    || (segWatermark != null && anchor <= segWatermark);
+  if (anchorDead) {
+    liveStart = totalTurns - config.live_rounds + 1; // 重置到当前滚动起点
+    liveAnchors.set(sessionId, liveStart);
+  } else {
+    liveStart = anchor; // 锚定：live 从锚点持续追加，前缀不断
+    if (totalTurns - liveStart + 1 > config.live_rounds * 2) {
+      // 攒批到 live_rounds×2 轮 → 机械塌缩：锚点前移回当前起点，多出的轮让给 middle
+      liveStart = totalTurns - config.live_rounds + 1;
+      liveAnchors.set(sessionId, liveStart);
+    }
+  }
   let frozenTurns = [], middleTurns = [], liveTurns = [];
   if (segWatermark != null) {
     // 有摘要：frozen = 水位线之后的第一批稳定原文；水位线前的历史都在摘要里，不再逐字常驻
