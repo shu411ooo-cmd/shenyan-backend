@@ -205,3 +205,11 @@ async function saveLiveAnchor(sessionId, turn) {
 2. 「旧 live 让给 middle」会不会让 middle 在塌缩后偏大、间接改变模型对「刚刚聊过」的感知距离？（预算裁剪保底 3 轮已兜）
 3. 有没有发现任何「为修缓存而改语义内容」的地方——**这是本方案的红线**。
 4. 方向 2/3/4（middle 进断点 / live_rounds 15→8 / Keeper 保温）暂不碰，先验证方向 1。
+
+---
+
+## 8. 诊断字段 + grok 审稿结论（2026-08-30）
+
+`request_stats` 每行新增三字段（grok 建议，已部署）：`live_anchor_turn`（本轮 live 起点 turn）/ `live_collapsed`（本轮是否塌缩 = 预期尾巴 partial miss 的轮）/ `live_tokens_est`（塌缩判断用的 live 估算 token）。拉流水时与 hit_rate 对齐：**塌缩轮应恰好是命中率回落的轮，其余轮连续命中** → 证明 90% 是结构命中而非运气。
+
+grok 审稿结论（红线没踩）：只改 segment boundary、不改进嘴内容；方向 1 成立，**按 v2 跑**；验收用命中率 + collapse 频率，不再手感。外部审四答：①20k 阈值看四件事（collapse 频率/平均 live tokens/命中率/middle 被裁次数），不凭一次会话拍数；②旧 live 进 middle 感知上 middle 更长，但最近对话仍在 live 尾、预算保 live≥3，风险只在塌缩后且总长顶满时 middle 头被裁（旧问题非锚定引入）；③无语义改写；④方向 2/3/4 叠加分不清功，先只验方向 1。竞态确认：`anchor<=segWatermark` 判死与摘要写 watermark 最多造成「判死推迟/提前一轮」= 一次滚动，无数据风险。

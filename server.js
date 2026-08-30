@@ -3048,6 +3048,9 @@ async function recordRequestStat({ sessionId, client, model, stream, usageList =
       summary_to: d.summary_to ?? null,
       middle_raw_turns: d.middle_raw_turns ?? null,
       live_turns: d.live_turns ?? null,
+      live_anchor_turn: d.live_anchor_turn ?? null,
+      live_collapsed: d.live_collapsed ?? null,
+      live_tokens_est: d.live_tokens_est ?? null,
       messages_sent: d.messages_sent ?? null,
       estimated_tokens: d.estimated_tokens ?? null,
       trimmed_turns: d.trimmed_turns ?? null,
@@ -3159,6 +3162,8 @@ async function buildModelContext(sessionId, opts = {}) {
 
   // liveStart = live 段第一轮（1-based）。默认滚动，有锚点则钉住 → 非塌缩轮纯追加。
   let liveStart = totalTurns - config.live_rounds + 1;
+  let liveCollapsed = false;   // 本轮是否触发塌缩（诊断，grok 建议：与 request_stats.hit 对齐才能说清 90%）
+  let liveTokensEst = 0;       // 塌缩判断用的 live 估算 token（诊断）
   const anchor = await loadLiveAnchor(sessionId);
   // 锚点死条件：无锚 / 越界 / 被摘要水位线吞掉（segWatermark 前的轮已摘要，不该逐字重复进 live）
   const anchorDead = anchor == null || anchor < 1 || anchor >= totalTurns
@@ -3171,10 +3176,11 @@ async function buildModelContext(sessionId, opts = {}) {
     // —— 双阈值塌缩：谁先到谁触发。轮数控「别让周期无限延长」，token 控「别撑爆预算」——
     // token 阈值是安全线不是目标值：在预算主动裁剪 live 之前先塌（否则 middle 裁光后
     // live 每轮被裁 → 重新制造 cache miss，退化回滚动）。锚点前移回当前起点，多出的轮让给 middle。
-    const tmpLiveTokens = turns.slice(liveStart - 1).reduce((s, t) => s + turnTokens(t), 0);
+    liveTokensEst = turns.slice(liveStart - 1).reduce((s, t) => s + turnTokens(t), 0);
     if (totalTurns - liveStart + 1 > config.live_rounds * 2
-        || tmpLiveTokens > config.live_max_tokens) {
+        || liveTokensEst > config.live_max_tokens) {
       liveStart = totalTurns - config.live_rounds + 1;
+      liveCollapsed = true;
       await saveLiveAnchor(sessionId, liveStart);
     }
   }
@@ -3583,6 +3589,9 @@ async function buildModelContext(sessionId, opts = {}) {
     segments_count: segments.length,
     middle_raw_turns: uncoveredMiddle.length,
     live_turns: liveTurns.length,
+    live_anchor_turn: liveStart,        // 本轮 live 段第一轮 turn（锚定/塌缩后的实际起点）
+    live_collapsed: liveCollapsed,      // 本轮是否触发塌缩（= 尾巴预期 partial miss 的轮）
+    live_tokens_est: liveTokensEst,     // 塌缩判断用的 live 估算 token
     messages_sent: messages.length,
     estimated_tokens: estimatedTokens,
     raw_estimated_tokens: rawEstimatedTokens,   // 裁剪前的原始估算（后台塌缩触发读这个）
