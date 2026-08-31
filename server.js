@@ -3041,6 +3041,92 @@ function markCacheTail(messages) {
   }
 }
 
+// ===== 缓存保温 Keeper（2026-09-01 落地）：治冷启动全写 =====
+// 问题：缓存 TTL 1h，隔久回来（>1h）必全写。实测 08-31 三次全写 ≈ 0.77 刀
+//   （opus 启动 0.379 + keepalive sonnet 0.197×2），正常聊天 4 条才 0.08。
+// 原理：Anthropic 缓存断点按「到断点的前缀」匹配。保温请求 = 复现最后真实请求的
+//   body（messages 已带全部显式断点）+ 追加一条极小占位 → 前缀命中（读 0.1x）、
+//   占位写续 TTL 1h，且「到倒数第二条 user」的断点条目被刷新 → 用户回来真实请求
+//   命中同一条目，启动轮不再全写。占位在断点之后、每次从 snapshot 重建不累积；
+//   真实请求（无占位）命中断点前缀，无冲突。
+// 纪律：保温不跑 context builder、不触发摘要/记忆/感知/日记/工具、不写聊天消息、
+//   不进 request_stats（直接 fetch，防污染统计）。只对 anthropic/* 保温（DeepSeek 便宜）。
+// 已知限制：keepalive 留言合并进对话流 → 前缀分叉 → 该次保温失效（低频可接受）。
+const cacheWarmStore = new Map(); // model → snapshot
+
+function cacheWarmSnapshot(body) {
+  if (!body || typeof body.model !== 'string' || !body.model.startsWith('anthropic/')) return;
+  try {
+    const key = body.model;
+    const prev = cacheWarmStore.get(key);
+    cacheWarmStore.set(key, {
+      body: JSON.parse(JSON.stringify(body)), // 深拷贝：后续工具轮/keepalive 会 mutate messages
+      lastRealAt: Date.now(),
+      lastWarmAt: prev?.lastWarmAt || 0,
+      warmCount: prev?.warmCount || 0,
+    });
+  } catch (e) { /* snapshot 失败不阻断主流程 */ }
+}
+
+async function sendCacheWarm(snap) {
+  const src = snap.body;
+  const warm = {
+    ...src,
+    messages: [...src.messages, { role: 'user', content: '·' }], // 极小占位续 TTL，断点后，不累积
+    max_tokens: 0,
+    stream: false,
+  };
+  const fire = async (mt) => {
+    warm.max_tokens = mt;
+    return fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`
+      },
+      body: JSON.stringify(warm),
+    });
+  };
+  let res;
+  try {
+    res = await fire(0);
+  } catch (e) {
+    console.warn(`🌡️ [cachewarm] ${src.model} 网络失败（跳过，下轮重试）:`, e.message);
+    return;
+  }
+  if (res.status >= 400) {
+    // max_tokens:0 不被上游接受 → 降级 1（最小输出，cost 可忽略）
+    try { res = await fire(1); } catch (e) { console.warn(`🌡️ [cachewarm] ${src.model} 降级也网络失败（跳过）`); return; }
+    if (res.status >= 400) {
+      console.warn(`🌡️ [cachewarm] ${src.model} HTTP ${res.status}（跳过，下轮重试）`);
+      return;
+    }
+  }
+  const data = await res.json().catch(() => null);
+  const u = data?.usage;
+  const cached = u?.prompt_tokens_details?.cached_tokens || 0;
+  const write = u?.prompt_tokens_details?.cache_write_tokens || 0;
+  console.log(`🌡️ [cachewarm] ${src.model} ok cached=${cached} write=${write}`);
+}
+
+async function cacheWarmTick() {
+  if (cacheWarmStore.size === 0) return;
+  const now = Date.now();
+  for (const [key, snap] of [...cacheWarmStore.entries()]) {
+    const idleMin = (now - snap.lastRealAt) / 60000;
+    if (idleMin < 50) continue;                   // 缓存还新鲜（1h TTL），不刷
+    if (idleMin > 6 * 60) {                        // 闲置超 6h：用户大概率不回来了，自停省着
+      cacheWarmStore.delete(key);
+      console.log(`🌡️ [cachewarm] ${key} 闲置超 6h 自停`);
+      continue;
+    }
+    if (snap.lastWarmAt && now - snap.lastWarmAt < 45 * 60 * 1000) continue; // 距上次保温 <45min
+    await sendCacheWarm(snap);
+    snap.lastWarmAt = Date.now();
+    snap.warmCount++;
+  }
+}
+
 // —— 记录一次 chat 请求的真实 usage 到 request_stats（失败只告警，不阻断） ——
 // usage 语义（OpenRouter）：OpenAI 风格 cached_tokens 是 prompt_tokens 的子集；
 // Anthropic 风格 cache_read/creation 是独立的桶。两者可能并存，语义可能随 provider 变化——
@@ -5187,6 +5273,7 @@ async function streamOpenRouter(body, res) {
     const errText = await response.text();
     throw new Error(`OpenRouter 请求失败 (${response.status}): ${errText}`);
   }
+  cacheWarmSnapshot(body); // 保温 snapshot：请求成功即记录，供空闲期续 TTL
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -5290,6 +5377,7 @@ async function callOpenRouterNonStream(messages, tools, opts = {}) {
   if (!data.choices || !data.choices[0]) {
     throw new Error(`OpenRouter 响应异常: ${JSON.stringify(data)}`);
   }
+  if (response.ok) cacheWarmSnapshot(body); // 保温 snapshot：keepalive 等非流式也续缓存（sonnet 独立）
   const msg = data.choices[0].message;
   // 存回历史前剥离思考字段，避免二次发送报错；但先捕获，供思考链入库（与流式路径对称）
   // 2026-08-31：补 reasoning_summary（OpenRouter deferred 模式）——与流式路径同一兜底
@@ -8665,6 +8753,10 @@ if (require.main === module) {
       processDueReplies();
       processDueCommentReplies();
     }, 15 * 60 * 1000);
+    // 缓存保温 Keeper：每 5 分钟检查，距最后真实请求 ≥50min 才刷（判断在 cacheWarmTick 内部）
+    setInterval(() => {
+      cacheWarmTick().catch(err => console.error('💥 cacheWarmTick 异常:', err.message));
+    }, 5 * 60 * 1000);
     // 镜子日：启动先跑一轮 dormant 清扫，之后按 mirror_sweep_hours 自续排
     mirrorDaySweep().catch(err => console.error('💥 启动时 mirrorDaySweep 异常:', err.message));
   });
