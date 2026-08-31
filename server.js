@@ -3021,17 +3021,22 @@ function countCacheControlBlocks(messages) {
   return n;
 }
 
-// 显式尾断点（2026-08-31 修）：把断点推到最后一个 user 消息（对话尾巴），
-// 让 middle+live 进缓存。兜底场景=OpenRouter chat_completions 通道对 system 内逐块 cache_control
-// 可能「accepted but not write」（hermes-agent #20957），只靠顶层不够时，尾巴上必须有一个显式 1h 断点。
-// 只标 user 消息：assistant/tool 消息 content 可能为 null 或含 tool_calls，withCacheControl 会包坏。
-// 每请求消息数组由 buildModelContext 从 DB 重拼（DB 不带 cache_control），不会跨轮累积断点数。
+// 显式尾断点（2026-08-31 修 v2）：断点挂「倒数第二条」user 消息（当前输入之前的整段历史末尾），
+// 对标实战报告（NyraSeithhh/cache BP4 rolling，线上 96%）铁律 #4——挂最后一条（本轮新输入）
+// 每次都不一样，缓存等于没挂；挂倒数第二条，缓存边界正好停在「这轮之前的所有内容」末尾，
+// 下一轮整段历史读回。只标 user 消息：assistant/tool 消息 content 可能为 null 或含 tool_calls，
+// withCacheControl 会包坏。每请求消息数组由 buildModelContext 从 DB 重拼（DB 不带 cache_control），
+// 不会跨轮累积断点数。首轮（不足两条 user）无历史可纳，缓存边界停在 system/frozen 末尾即可。
 function markCacheTail(messages) {
+  let found = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (m && m.role === 'user' && m.content) {
-      messages[i] = withCacheControl(m);
-      return;
+      found++;
+      if (found === 2) {
+        messages[i] = withCacheControl(m);
+        return;
+      }
     }
   }
 }
