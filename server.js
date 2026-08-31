@@ -2540,20 +2540,51 @@ async function voiceifyMemory(body, topic, hash) {
   }
 }
 
+// ===== 召回可见性（2026-09-01 填坑）：记忆召回健康度 =====
+// 诊断教训（Claude 转述实战）：记忆静默全灭好几天无人知，只能靠使用者在对话里察觉。
+// 每轮 attention 尝试记录：attempted / 零召回原因分布 / 总命中；天切打一条聚合日志。
+// memory_error（查询失败）是静默缺陷，单独即时告警（10 分钟限一次防刷屏）。
+const recallDaily = { date: '', attempted: 0, hits: 0, zero: 0, noRun: 0, cooldown: 0, memoryError: 0, emptyPool: 0, noMatch: 0, budget: 0 };
+let recallErrorLogAt = 0;
+
+function recallDayRoll() {
+  const d = new Date().toISOString().slice(0, 10);
+  if (recallDaily.date && recallDaily.date !== d) {
+    console.log(`📊 [recall] ${recallDaily.date} attempted=${recallDaily.attempted} hits=${recallDaily.hits} zero=${recallDaily.zero} noRun=${recallDaily.noRun} cooldown=${recallDaily.cooldown} memErr=${recallDaily.memoryError} empty=${recallDaily.emptyPool} noMatch=${recallDaily.noMatch} budget=${recallDaily.budget}`);
+    Object.assign(recallDaily, { date: d, attempted: 0, hits: 0, zero: 0, noRun: 0, cooldown: 0, memoryError: 0, emptyPool: 0, noMatch: 0, budget: 0 });
+  } else if (!recallDaily.date) recallDaily.date = d;
+}
+
+function recallCount(gate = '', hits = 0) {
+  recallDayRoll();
+  recallDaily.attempted++;
+  if (hits > 0) { recallDaily.hits += hits; return; }
+  recallDaily.zero++;
+  if (recallDaily[gate] !== undefined) recallDaily[gate]++;
+  if (gate === 'memoryError') {
+    const now = Date.now();
+    if (now - recallErrorLogAt > 10 * 60 * 1000) {
+      recallErrorLogAt = now;
+      console.error('🚨 [recall] memory_topics 查询失败 → 记忆召回可能静默全灭，查 Supabase');
+    }
+  }
+}
+
 async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
-  if (opts.memory === false || !userMessage) return null;
+  if (opts.memory === false || !userMessage) { recallCount('noRun'); return null; }
   const cfg = await getAttentionConfig();
   const msg = String(userMessage);
   // 每次检查都推进序号：冷却 = 距上次注入已隔几次检查
   attentionSeq++;
   const lastInjectSeq = attentionCooldown.get(sessionId) || -Infinity;
-  if (attentionSeq - lastInjectSeq < ATTENTION_COOLDOWN_TURNS) return null; // 冷却中，这轮不注入
+  if (attentionSeq - lastInjectSeq < ATTENTION_COOLDOWN_TURNS) { recallCount('cooldown'); return null; } // 冷却中，这轮不注入
 
   const { data: topics, error } = await supabase
     .from('memory_topics')
     .select('id, topic, last_content, grounding, importance, updated_at, kind, evidence, source')
     .limit(60);
-  if (error || !topics?.length) return null;
+  if (error) { recallCount('memoryError'); return null; }
+  if (!topics?.length) { recallCount('emptyPool'); return null; }
 
   // —— 提及闸：topic 命中（她在聊旧话题）。回忆词不是必须——"今天看到一只猫"就该想起关于猫的旧事 ——
   let matched = topics.filter(t => topicHits(msg, t.topic));
@@ -2582,7 +2613,7 @@ async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
     } catch (e) { /* 牵挂读取失败不阻断注意力（可能只是残留没生成） */ }
   }
 
-  if (!matched.length) return null;
+  if (!matched.length) { recallCount('noMatch'); return null; }
 
   const nowMs = Date.now();
   const scored = matched
@@ -2630,10 +2661,11 @@ async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
       chars += line.length;
     }
   }
-  if (!hits.length) return null;
+  if (!hits.length) { recallCount('budget'); return null; }
   // 真正注入才记录冷却水位（闸没触发不覆盖水位，别把未来几轮的额度烧了）
   attentionCooldown.set(sessionId, attentionSeq);
   if (attentionCooldown.size > 1000) attentionCooldown.clear(); // 防无界增长（单用户场景不会到）
+  recallCount('', hits.length); // 命中：计入总召回条数
   return { text: hits.join('\n'), hits: hits.length, refs };
 }
 
