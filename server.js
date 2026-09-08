@@ -135,8 +135,20 @@ app.use(async (req, res, next) => {
     // 主校验：cookie session（await——isValidSession 是异步查库）
     const token = parseCookies(req)[SESSION_COOKIE];
     if (token && (await isValidSession(token))) return next();
-    // 兜底：x-site-key（B 方案兼容，C 稳定后可撤）
-    const supplied = req.headers['x-site-key'] || req.query.site_key || '';
+    // 兜底：x-site-key（B 方案兼容）。
+    // 2026-09-08 已去掉 ?site_key= query 通道（docs/2026-09-03-modifications-handoff.md:20 的计划项）：
+    // query 里的 key 会进访问日志、Referer、浏览器历史，等于把兜底钥匙到处抄一遍。只认 header。
+    //
+    // ⚠ 这条兜底现在是「门开着」——SITE_KEY 由前端构建期内联，明文躺在公开的 /assets/*.js 里
+    // （express.static 排在本中间件之前，bundle 本来也必须公开可读），任何人扒一次 JS 就能拿到，
+    // 拿到即可绕过密码门调所有 /api/*。src/config.js 的注释早就写明它「不防定向扒 JS」。
+    // 但现在还不能拆：线上前端 bundle 的 API_BASE 被烧成了 localhost:3000 → 请求跨源 →
+    // 登录 cookie 是 SameSite=Strict 不会发送 → cookie 那条路在生产上根本没通，全靠这把钥匙撑着。
+    // 拆除顺序（前端 src/config.js 已修，等重新构建+部署后执行）：
+    //   1) 部署新前端 → 确认同源相对路径生效，浏览器能拿到 sid cookie、/api/auth/check 返回 200；
+    //   2) 确认 ringdonut（backend/adapters/host.js）也走通 cookie 通道；
+    //   3) 删掉下面两行 + SITE_KEY 常量，Zeabur 里删 SITE_KEY / VITE_SITE_KEY。
+    const supplied = req.headers['x-site-key'] || '';
     if (SITE_KEY && supplied === SITE_KEY) return next();
     return res.status(401).json({ error: 'unauthorized' });
   } catch (err) {
@@ -2159,6 +2171,13 @@ function getTools() {
 // 每次请求实时读取，不在启动时缓存——改完前端立刻生效。
 // fail-closed（WrenWen 借鉴 2026-09-03）：人格锚读不到或为空 → 抛错让本轮不发生，
 // 绝不退回 hardcode 空壳人格开口——「人格掉电」用户无感知，比本轮报错更糟。
+// 人格锚长度下限。存在理由（2026-09-08 实锤）：.env 里 SYSTEM_PROMPT 的多行值没加引号，
+// dotenv 只取到第一行 → env 里躺着 5 个字「你是沈晏。」。原来的 fail-closed 只判「非空」，
+// 于是这 5 个字永远非空 → DB 那路一旦失效，系统不会停，而是带着一个 5 字人格继续说话，
+// 且毫无告警。空是能看见的失败，截断不是——所以门槛按长度设，不按有无设。
+// 200 远低于任何真实人格（实际 1381 字），也远高于任何截断残渣。
+const MIN_PERSONA_CHARS = 200;
+
 async function getSystemPrompt() {
   const { data, error } = await supabase
     .from('settings')
@@ -2170,11 +2189,22 @@ async function getSystemPrompt() {
     throw new Error(`人格锚读取失败（fail-closed，本轮不发生）: ${error.message}`);
   }
   const db = data && typeof data.system_prompt === 'string' ? data.system_prompt.trim() : '';
-  if (db) return db;
+  if (db) {
+    if (db.length < MIN_PERSONA_CHARS) {
+      throw new Error(`人格锚过短（settings.system_prompt 仅 ${db.length} 字，疑似被截断/清空），fail-closed：本轮不发生`);
+    }
+    return db;
+  }
   // DB 无内容时 env 是资格内兜底（初版人格在 env 定义，不算空壳）；两边都空 = 人格掉电 → fail-closed。
+  // 走到这里说明 DB 那条路已经失效了——这本身就该被看见，不能安静地降级。
   const env = (process.env.SYSTEM_PROMPT || '').trim();
-  if (env) return env;
-  throw new Error('人格锚为空（settings.system_prompt 与 SYSTEM_PROMPT 均无内容），fail-closed：本轮不发生');
+  if (env.length >= MIN_PERSONA_CHARS) {
+    console.warn(`⚠️ [人格锚] settings.system_prompt 为空，已回落到 SYSTEM_PROMPT 环境变量（${env.length} 字）——DB 那条路需要查`);
+    return env;
+  }
+  throw new Error(
+    `人格锚不可用（settings.system_prompt 为空，SYSTEM_PROMPT 仅 ${env.length} 字 < ${MIN_PERSONA_CHARS}），fail-closed：本轮不发生`
+  );
 }
 
 async function setSystemPrompt(content) {
@@ -5982,8 +6012,8 @@ async function hasUnconsumedMessage(sessionId) {
 // ===== 第②阶段：醒来注入想要素材（给眼睛不给手 · 设计见 docs/want-phase2-keepalive.md） =====
 const WANT_INJECT_DEFAULTS = { inject_k: 3, cooldown_days: 3, dim_threshold: 3 };
 
-/* 上海日期键 YYYY-MM-DD，用于"每天最多注入一次"判断 */
-function shDateKey(ts) {
+/* 上海日期键 YYYY-MM-DD（en-CA）。注意与上面的 shDateKey 区分：那个是 zh-CN 的 YYYY/MM/DD，只用于同日比较，用于"每天最多注入一次"判断 */
+function shDayKeyISO(ts) {
   return new Date(ts).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
 }
 
@@ -6008,7 +6038,7 @@ async function canInjectWantToday() {
   try {
     const { data, error } = await supabase.from('settings').select('desire_inject_at').eq('session_id', 'global').maybeSingle();
     if (error || !data || !data.desire_inject_at) return true;
-    return shDateKey(Date.now()) !== shDateKey(new Date(data.desire_inject_at).getTime());
+    return shDayKeyISO(Date.now()) !== shDayKeyISO(new Date(data.desire_inject_at).getTime());
   } catch (e) { return true; }
 }
 
@@ -8100,6 +8130,25 @@ app.post('/api/keepalive/reflection', async (req, res) => {
   }
 });
 
+// POST /api/keepalive/check — 外部 cron 触发入口（cron-job.org 等，兼作 Railway 保活）
+app.post('/api/keepalive/check', async (req, res) => {
+  try {
+    const secret = process.env.KEEPALIVE_CRON_SECRET;
+    if (secret) {
+      const provided = String(req.headers['x-cron-secret'] || '');
+      const a = Buffer.from(provided);
+      const b = Buffer.from(secret);
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        return res.status(401).json({ error: 'unauthorized' });
+      }
+    }
+    await keepaliveCheck();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/keepalive/:action(pause|resume) — 手动暂停/恢复自动唤醒（写 settings 表持久生效）
 // 2026-08-20 程芥资金告急暂停：keepaliveCheck 每次读 keepalive_enabled，DB 改完立即生效，无需部署
 // ⚠ 定义在 /api/keepalive/reflection 之后：reflection 是固定路径，必须先于 :action 通配匹配。
@@ -8121,25 +8170,6 @@ app.post('/api/keepalive/:action', async (req, res) => {
     }
     console.log(`⏸ keepalive ${action === 'pause' ? '暂停' : '恢复'}（enabled=${enabled}）`);
     res.json({ ok: true, keepalive_enabled: enabled });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/keepalive/check — 外部 cron 触发入口（cron-job.org 等，兼作 Railway 保活）
-app.post('/api/keepalive/check', async (req, res) => {
-  try {
-    const secret = process.env.KEEPALIVE_CRON_SECRET;
-    if (secret) {
-      const provided = String(req.headers['x-cron-secret'] || '');
-      const a = Buffer.from(provided);
-      const b = Buffer.from(secret);
-      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-        return res.status(401).json({ error: 'unauthorized' });
-      }
-    }
-    await keepaliveCheck();
-    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -9544,6 +9574,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  app,                 // 路由表可被测试遍历（test/routes.test.cjs 的运行时校验 + 后续拆分模块的接缝）
   buildDeviceNotice,
   sanitizeMcpTools,
   handleWantAdd,
