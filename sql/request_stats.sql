@@ -52,7 +52,7 @@ CREATE INDEX IF NOT EXISTS idx_request_stats_client ON request_stats (client);
 -- 关键：新建表默认会开 RLS 且无策略 → INSERT 被拒（42501）、SELECT 被静默过滤。
 -- 其他表（sessions/messages 等）都是关 RLS 的，这里保持一致。
 -- 若想保留 RLS，改为：CREATE POLICY "request_stats_all" ON request_stats FOR ALL USING (true) WITH CHECK (true);
-ALTER TABLE request_stats DISABLE ROW LEVEL SECURITY;
+-- RLS 由 2026-08-13-rls.sql 迁移统一启用
 
 -- 已按旧版建表（无 cache_write_tokens 列）的迁移：
 -- ALTER TABLE request_stats ADD COLUMN IF NOT EXISTS cache_write_tokens INTEGER;

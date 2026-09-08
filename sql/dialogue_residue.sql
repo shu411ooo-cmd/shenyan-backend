@@ -40,5 +40,4 @@ CREATE TABLE IF NOT EXISTS dialogue_residue (
 
 CREATE INDEX IF NOT EXISTS idx_dialogue_residue_session ON dialogue_residue (session_id, created_at DESC);
 
--- 与其他表一致：关 RLS（默认开且无策略会 INSERT 被拒、SELECT 被静默过滤）
-ALTER TABLE dialogue_residue DISABLE ROW LEVEL SECURITY;
+-- RLS 由 2026-08-13-rls.sql 迁移统一启用，此处不再关闭

@@ -25,5 +25,4 @@ CREATE TABLE IF NOT EXISTS diary_entries (
 CREATE INDEX IF NOT EXISTS idx_diary_entries_event
   ON diary_entries (event_time DESC);
 
--- 与其他表一致：关 RLS（默认开且无策略会 INSERT 被拒、SELECT 被静默过滤）
-ALTER TABLE diary_entries DISABLE ROW LEVEL SECURITY;
+-- RLS 由 2026-08-13-rls.sql 迁移统一启用

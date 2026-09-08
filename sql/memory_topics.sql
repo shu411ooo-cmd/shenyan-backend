@@ -27,5 +27,4 @@ CREATE TABLE IF NOT EXISTS memory_topics (
 
 CREATE INDEX IF NOT EXISTS idx_memory_topics_topic ON memory_topics (topic);
 
--- 与其他表一致：关 RLS（默认开且无策略会 INSERT 被拒、SELECT 被静默过滤）
-ALTER TABLE memory_topics DISABLE ROW LEVEL SECURITY;
+-- RLS 由 2026-08-13-rls.sql 迁移统一启用

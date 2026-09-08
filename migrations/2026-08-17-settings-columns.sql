@@ -20,10 +20,18 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS kugou_token   text;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS kugou_userid  text;
 
 -- session_id 加唯一约束：saveKugouAuth 的 upsert onConflict 依赖它
--- （若已有重复 global 行会失败，先删重再建）
+-- （若已有重复 global 行会失败，先删重再建；只针对 global 行避免误删其他 session）
 DELETE FROM settings a USING settings b
-  WHERE a.session_id = b.session_id AND a.id > b.id;
-ALTER TABLE settings ADD CONSTRAINT settings_session_id_unique UNIQUE (session_id);
+  WHERE a.session_id = b.session_id AND a.id > b.id AND a.session_id = 'global';
+-- 幂等：用 DO 块检查约束是否已存在，避免重复执行报错
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'settings_session_id_unique'
+  ) THEN
+    ALTER TABLE settings ADD CONSTRAINT settings_session_id_unique UNIQUE (session_id);
+  END IF;
+END $$;
 
 -- 降频：每天主动唤醒 6 → 3（程芥拍板，留言/日记同一个沈晏，人格一致）
 UPDATE settings SET keepalive_daily_wake_cap = 3 WHERE session_id = 'global' AND keepalive_daily_wake_cap IS NOT NULL;
