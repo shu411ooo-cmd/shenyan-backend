@@ -42,9 +42,8 @@ app.use(express.json({ limit: '15mb' }));
 // ===== C 方案：登录门（2026-08-23）=====
 // 真正的门：密码登录 → HttpOnly cookie(sid) → 中间件校验 cookie。没密码谁都进不来。
 // session 存 DB（auth_sessions，多实例可共享）；token 随机，HttpOnly+SameSite=Strict 不进 JS。
-// 过渡：SITE_KEY 保留为「兜底」——cookie 有效或 x-site-key 对上都放行；C 稳定后可撤 SITE_KEY。
+// 2026-09-08：B 方案 SITE_KEY 已正式退休（详见鉴权中间件注释）——登录只认 cookie。
 const SITE_PASSWORD = process.env.SITE_PASSWORD || '';
-const SITE_KEY = process.env.SITE_KEY || '';
 const SESSION_TTL_MS = 7 * 24 * 3600 * 1000; // 7 天
 const SESSION_COOKIE = 'sid';
 
@@ -124,7 +123,7 @@ app.get('/api/auth/check', async (req, res) => {
   return res.status(401).json({ ok: false });
 });
 
-// 鉴权中间件：静态资源/首页/健康检查放行；API 一律要登录态（cookie 或 x-site-key 兜底）
+// 鉴权中间件：静态资源/首页/健康检查放行；API 一律要登录态（cookie 登录门）
 app.use(async (req, res, next) => {
   try {
     if (req.path === '/health' || req.path === '/' || req.path.startsWith('/assets/')) return next();
@@ -135,21 +134,12 @@ app.use(async (req, res, next) => {
     // 主校验：cookie session（await——isValidSession 是异步查库）
     const token = parseCookies(req)[SESSION_COOKIE];
     if (token && (await isValidSession(token))) return next();
-    // 兜底：x-site-key（B 方案兼容）。
-    // 2026-09-08 已去掉 ?site_key= query 通道（docs/2026-09-03-modifications-handoff.md:20 的计划项）：
-    // query 里的 key 会进访问日志、Referer、浏览器历史，等于把兜底钥匙到处抄一遍。只认 header。
-    //
-    // ⚠ 这条兜底现在是「门开着」——SITE_KEY 由前端构建期内联，明文躺在公开的 /assets/*.js 里
-    // （express.static 排在本中间件之前，bundle 本来也必须公开可读），任何人扒一次 JS 就能拿到，
-    // 拿到即可绕过密码门调所有 /api/*。src/config.js 的注释早就写明它「不防定向扒 JS」。
-    // 但现在还不能拆：线上前端 bundle 的 API_BASE 被烧成了 localhost:3000 → 请求跨源 →
-    // 登录 cookie 是 SameSite=Strict 不会发送 → cookie 那条路在生产上根本没通，全靠这把钥匙撑着。
-    // 拆除顺序（前端 src/config.js 已修，等重新构建+部署后执行）：
-    //   1) 部署新前端 → 确认同源相对路径生效，浏览器能拿到 sid cookie、/api/auth/check 返回 200；
-    //   2) 确认 ringdonut（backend/adapters/host.js）也走通 cookie 通道；
-    //   3) 删掉下面两行 + SITE_KEY 常量，Zeabur 里删 SITE_KEY / VITE_SITE_KEY。
-    const supplied = req.headers['x-site-key'] || '';
-    if (SITE_KEY && supplied === SITE_KEY) return next();
+    // B 方案 x-site-key 兜底已于 2026-09-08 拆除（server.js 的 SITE_KEY 常量 + Zeabur 环境变量一并清掉）。
+    // 拆除理由与顺序（均已执行）：key 内联在公开 bundle 里、扒 JS 即得，只防路人不防定向；
+    // 旧 bundle 还把 API_BASE 烧成 localhost → cookie 跨源不发，只能靠 key 撑着。
+    // → 先前端同源化（src/config.js 生产 API_BASE=""，ed2a2a1）→ 无 key 前端部署
+    //   （index-BepPaPQl.js，反断言无 key）+ 花园 cookie 承重确认 → 现在拆掉这个兜底。
+    // ringdonut（backend/adapters/host.js）同源挂在主服务下，cookie 通道一致，一并拆除。
     return res.status(401).json({ error: 'unauthorized' });
   } catch (err) {
     console.error('💥 鉴权中间件异常:', err.message);

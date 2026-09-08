@@ -3,7 +3,7 @@
  *
  * ringdonut 从生产系统拆出，宿主适配层是可独立运行的参考实现：
  *  - 独立 createClient（SUPABASE_URL / SUPABASE_KEY 与主服务同一套环境变量）
- *  - 鉴权独立实现（cookie session 或 x-site-key 双通道，与主服务逻辑一致）
+ *  - 鉴权独立实现（cookie session，与主服务逻辑一致；x-site-key 兜底 2026-09-08 随主服务一并拆除）
  *
  * 这样 ringdonut 既可以挂进主 server.js，也可以单独 node 起一个实例调试。
  * 记忆接入点：loadMemories 从 memory_topics 表读（与主服务 getAttentionMaterial
@@ -29,7 +29,7 @@ function notConfigured(name) {
   throw new Error(`Host adapter not configured: ${name}`);
 }
 
-// —— 鉴权：cookie(sid) 有效 或 x-site-key 对上都放行 ——
+// —— 鉴权：cookie(sid) 有效即放行（x-site-key 兜底已拆，2026-09-08）——
 function parseCookies(req) {
   const out = {};
   const h = req.headers.cookie || '';
@@ -57,16 +57,12 @@ async function isValidSession(token) {
 }
 
 async function authorizeRequest(req) {
-  const siteKey = process.env.SITE_KEY || '';
   const sitePassword = process.env.SITE_PASSWORD || '';
   // 无配置时不锁（防把自己锁死，与主服务行为一致）
   if (!sitePassword) return;
-  // cookie session（完整校验）
+  // cookie session（完整校验；x-site-key 兜底 2026-09-08 已拆）
   const token = parseCookies(req)[SESSION_COOKIE];
   if (token && (await isValidSession(token))) return;
-  // x-site-key 兜底
-  const supplied = req.headers['x-site-key'] || '';
-  if (siteKey && supplied === siteKey) return;
   const err = new Error('unauthorized');
   err.statusCode = 401;
   throw err;
