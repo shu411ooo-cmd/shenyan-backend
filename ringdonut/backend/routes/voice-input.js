@@ -21,7 +21,8 @@ router.use(async (req, res, next) => {
 });
 
 function getRequestAddress(req) {
-    return String(req.headers['x-forwarded-for'] || req.ip || 'unknown').split(',')[0].trim();
+    // trust proxy 已设置，req.ip 返回真实客户端 IP（从 X-Forwarded-For 解析）
+    return String(req.ip || 'unknown').split(',')[0].trim();
 }
 
 function isRateLimited(req) {
@@ -31,9 +32,11 @@ function isRateLimited(req) {
     recent.push(now);
     requestBuckets.set(key, recent);
     if (requestBuckets.size > 500) {
+        const expired = [];
         for (const [address, timestamps] of requestBuckets) {
-            if (!timestamps.some(timestamp => now - timestamp < RATE_WINDOW_MS)) requestBuckets.delete(address);
+            if (!timestamps.some(timestamp => now - timestamp < RATE_WINDOW_MS)) expired.push(address);
         }
+        for (const address of expired) requestBuckets.delete(address);
     }
     return recent.length > RATE_LIMIT;
 }

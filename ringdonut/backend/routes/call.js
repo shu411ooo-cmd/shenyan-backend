@@ -250,13 +250,13 @@ router.post('/respond', async (req, res) => {
 
         const toneContext = formatVoiceToneContext(req.body.voiceTone);
         const userContent = toneContext ? `${toneContext}\n\nUser just said:\n${message}` : message;
-        const { error: userError } = await host.supabase.from('call_turns').insert({
+        const { data: userTurn, error: userError } = await host.supabase.from('call_turns').insert({
             call_id: callId,
             role: 'user',
             content: message,
             voice_tone: req.body.voiceTone || null,
             duration_seconds: Number.isFinite(Number(req.body.duration)) ? Number(req.body.duration) : null,
-        });
+        }).select('id').single();
         if (userError) throw userError;
 
         const { data: turns, error: turnsError } = await host.supabase.from('call_turns')
@@ -278,30 +278,41 @@ router.post('/respond', async (req, res) => {
 
         const apiConfig = getApiConfig(call.model);
         let reply = '';
-        if (apiConfig.type === 'anthropic') {
-            const raw = await callAnthropicNative(
-                apiConfig,
-                context.messages,
-                context.systemPrompt,
-                [],
-                320,
-                0.72,
-                false,
-                { ttl: '5m', usageLabel: `电话 ${callId.slice(0, 8)}` },
-            );
-            const parsed = parseAnthropicResponse(raw);
-            reply = parsed.text;
-        } else {
-            const raw = await callOpenAI(apiConfig, [
-                { role: 'system', content: context.systemPrompt },
-                ...context.messages,
-            ], [], 320, 0.72);
-            reply = raw.choices?.[0]?.message?.content || '';
+        try {
+            if (apiConfig.type === 'anthropic') {
+                const raw = await callAnthropicNative(
+                    apiConfig,
+                    context.messages,
+                    context.systemPrompt,
+                    [],
+                    320,
+                    0.72,
+                    false,
+                    { ttl: '5m', usageLabel: `电话 ${callId.slice(0, 8)}` },
+                );
+                const parsed = parseAnthropicResponse(raw);
+                reply = parsed.text;
+            } else {
+                const raw = await callOpenAI(apiConfig, [
+                    { role: 'system', content: context.systemPrompt },
+                    ...context.messages,
+                ], [], 320, 0.72);
+                reply = raw.choices?.[0]?.message?.content || '';
+            }
+        } catch (llmError) {
+            // LLM 调用失败 → 清理已写入的用户 turn，避免数据不一致
+            console.error('[Call] LLM 调用失败，回滚用户 turn:', llmError.message);
+            await host.supabase.from('call_turns').delete().eq('id', userTurn.id);
+            throw llmError;
         }
 
         const lifecycle = parseCallDirectives(reply);
         const cleanReply = lifecycle.cleanedText || String(reply || '').trim();
-        if (!cleanReply) throw new Error('Companion 没有接上这一句');
+        if (!cleanReply) {
+            // 无有效回复 → 清理用户 turn
+            await host.supabase.from('call_turns').delete().eq('id', userTurn.id);
+            throw new Error('Companion 没有接上这一句');
+        }
         const { data: assistantTurn, error: assistantError } = await host.supabase.from('call_turns').insert({
             call_id: callId,
             role: 'assistant',
@@ -309,7 +320,8 @@ router.post('/respond', async (req, res) => {
         }).select('id').single();
         if (assistantError) throw assistantError;
         const now = new Date().toISOString();
-        await host.supabase.from('call_sessions').update({ updated_at: now, last_heartbeat_at: now }).eq('id', callId);
+        const { error: updateError } = await host.supabase.from('call_sessions').update({ updated_at: now, last_heartbeat_at: now }).eq('id', callId);
+        if (updateError) console.warn('[Call] 更新 call_sessions 心跳失败:', updateError.message);
         res.json({
             reply: cleanReply,
             turnId: assistantTurn.id,
@@ -364,7 +376,8 @@ router.post('/finish', async (req, res) => {
         }
         const { data: turns, error: turnsError } = await host.supabase.from('call_turns')
             .select('role, content, created_at').eq('call_id', callId)
-            .order('created_at', { ascending: true });
+            .order('created_at', { ascending: true })
+            .limit(2000); // 防异常通话累积超大结果集（2026-09-03）
         if (turnsError) throw turnsError;
 
         const hasUserTurn = turns?.some(turn => turn.role === 'user');

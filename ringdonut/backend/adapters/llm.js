@@ -79,15 +79,20 @@ async function callAnthropicNative(config, messages, system, tools = [], maxToke
     messages,
     stream,
   };
-  if (system) body.system = system;
+  if (system) {
+    // 缓存断点：将 system prompt 包装为 content block 数组，在最后一个 block 上加 cache_control
+    if (cacheOpts?.ttl && typeof system === 'string') {
+      body.system = [
+        { type: 'text', text: system, cache_control: { type: 'ephemeral' } },
+      ];
+    } else {
+      body.system = system;
+    }
+  }
   if (temperature !== undefined) body.temperature = temperature;
   if (Array.isArray(tools) && tools.length) {
     body.tools = tools;
     body.tool_choice = 'auto';
-  }
-  // 缓存断点：稳定 system 前缀用 1h TTL（OpenRouter 透传给 Anthropic）
-  if (cacheOpts?.ttl) {
-    body.cache_control = { type: 'ephemeral', ttl: cacheOpts.ttl };
   }
 
   const controller = new AbortController();

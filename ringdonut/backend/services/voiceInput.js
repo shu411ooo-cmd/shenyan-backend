@@ -57,8 +57,14 @@ function decodeAudioPayload(audio) {
         throw Object.assign(new Error('录音数据无效'), { statusCode: 400 });
     }
 
-    const buffer = Buffer.from(encoded, 'base64');
     const maxBytes = Number(process.env.VOICE_INPUT_MAX_BYTES || 8 * 1024 * 1024);
+    // 解码前先验大小（DoS 防护 2026-09-03）：base64 解码 ≈ 长度×3/4，超限直接拒，
+    // 不再等 Buffer.from 把超大字符串整个解码进内存再做检查。
+    if (encoded.length * 0.75 > maxBytes) {
+        throw Object.assign(new Error('录音太长了，请控制在一分钟以内'), { statusCode: 413 });
+    }
+
+    const buffer = Buffer.from(encoded, 'base64');
     if (!buffer.length) throw Object.assign(new Error('录音是空的'), { statusCode: 400 });
     if (buffer.length > maxBytes) {
         throw Object.assign(new Error('录音太长了，请控制在一分钟以内'), { statusCode: 413 });

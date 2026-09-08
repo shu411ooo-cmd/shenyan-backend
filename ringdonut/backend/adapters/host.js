@@ -50,7 +50,10 @@ async function isValidSession(token) {
       .maybeSingle();
     if (error || !data) return false;
     return new Date(data.expires_at).getTime() > Date.now();
-  } catch { return false; }
+  } catch (err) {
+    console.error('[Call Host] isValidSession 异常:', err.message);
+    return false;
+  }
 }
 
 async function authorizeRequest(req) {
@@ -62,7 +65,7 @@ async function authorizeRequest(req) {
   const token = parseCookies(req)[SESSION_COOKIE];
   if (token && (await isValidSession(token))) return;
   // x-site-key 兜底
-  const supplied = req.headers['x-site-key'] || req.query.site_key || '';
+  const supplied = req.headers['x-site-key'] || '';
   if (siteKey && supplied === siteKey) return;
   const err = new Error('unauthorized');
   err.statusCode = 401;
@@ -76,7 +79,7 @@ async function loadMemories() {
     .select('topic, last_content, grounding, importance, updated_at')
     .order('updated_at', { ascending: true })
     .limit(60);
-  if (error) return [];
+  if (error) { console.error('[Call Host] loadMemories 失败:', error.message); return []; }
   return (data || [])
     .filter(t => String(t.last_content || '').trim())
     .map(t => ({
@@ -95,7 +98,7 @@ async function loadMessagesForAI(sessionId) {
     .select('role, content, created_at')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true });
-  if (error) return [];
+  if (error) { console.error('[Call Host] loadMessagesForAI 失败:', error.message); return []; }
   return (data || []).filter(m => ['user', 'assistant'].includes(m.role));
 }
 
@@ -106,7 +109,7 @@ async function loadSettings() {
     .select('system_prompt')
     .eq('session_id', 'global')
     .maybeSingle();
-  if (error) return {};
+  if (error) { console.error('[Call Host] loadSettings 失败:', error.message); return {}; }
   return { system_prompt: String(data?.system_prompt || '') };
 }
 
