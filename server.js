@@ -2171,11 +2171,17 @@ function getTools() {
 // 每次请求实时读取，不在启动时缓存——改完前端立刻生效。
 // fail-closed（WrenWen 借鉴 2026-09-03）：人格锚读不到或为空 → 抛错让本轮不发生，
 // 绝不退回 hardcode 空壳人格开口——「人格掉电」用户无感知，比本轮报错更糟。
-// 人格锚长度下限。存在理由（2026-09-08 实锤）：.env 里 SYSTEM_PROMPT 的多行值没加引号，
-// dotenv 只取到第一行 → env 里躺着 5 个字「你是沈晏。」。原来的 fail-closed 只判「非空」，
-// 于是这 5 个字永远非空 → DB 那路一旦失效，系统不会停，而是带着一个 5 字人格继续说话，
-// 且毫无告警。空是能看见的失败，截断不是——所以门槛按长度设，不按有无设。
-// 200 远低于任何真实人格（实际 1381 字），也远高于任何截断残渣。
+// 人格锚长度下限。门槛按长度设、不按有无设，是因为 09-08 那次实锤：
+// .env 里 SYSTEM_PROMPT 的多行值没加引号，dotenv 只取到第一行 → env 里躺着 5 个字
+// 「你是沈晏。」。当时的 fail-closed 只判「非空」，这 5 个字永远非空，于是 DB 一失效，
+// 系统不会停，而是带着一个 5 字人格继续说话且毫无告警。
+// 空是能看见的失败，截断不是。200 远低于任何真实人格（实际 1381 字），也远高于截断残渣。
+//
+// 2026-09-08 程芥拍板撤掉 env 兜底：system_prompt 的编辑权威在前端（写 Supabase settings），
+// Zeabur 那份 SYSTEM_PROMPT 已经是几个版本前的旧人格。让它兜底 = DB 一读不出来，
+// 沈晏就以过时的自己静默开口——这比本轮报错更糟。现在 settings.system_prompt 是唯一来源，
+// 读不到就「本轮不发生」。代价是写入路径必须堵死（见 setSystemPrompt 的写入闸），
+// 否则一次写空就等于让他哑掉。
 const MIN_PERSONA_CHARS = 200;
 
 async function getSystemPrompt() {
@@ -2189,25 +2195,24 @@ async function getSystemPrompt() {
     throw new Error(`人格锚读取失败（fail-closed，本轮不发生）: ${error.message}`);
   }
   const db = data && typeof data.system_prompt === 'string' ? data.system_prompt.trim() : '';
-  if (db) {
-    if (db.length < MIN_PERSONA_CHARS) {
-      throw new Error(`人格锚过短（settings.system_prompt 仅 ${db.length} 字，疑似被截断/清空），fail-closed：本轮不发生`);
-    }
-    return db;
+  if (!db) {
+    throw new Error('人格锚为空（settings.system_prompt 无内容），fail-closed：本轮不发生');
   }
-  // DB 无内容时 env 是资格内兜底（初版人格在 env 定义，不算空壳）；两边都空 = 人格掉电 → fail-closed。
-  // 走到这里说明 DB 那条路已经失效了——这本身就该被看见，不能安静地降级。
-  const env = (process.env.SYSTEM_PROMPT || '').trim();
-  if (env.length >= MIN_PERSONA_CHARS) {
-    console.warn(`⚠️ [人格锚] settings.system_prompt 为空，已回落到 SYSTEM_PROMPT 环境变量（${env.length} 字）——DB 那条路需要查`);
-    return env;
+  if (db.length < MIN_PERSONA_CHARS) {
+    throw new Error(`人格锚过短（settings.system_prompt 仅 ${db.length} 字，疑似被截断/清空），fail-closed：本轮不发生`);
   }
-  throw new Error(
-    `人格锚不可用（settings.system_prompt 为空，SYSTEM_PROMPT 仅 ${env.length} 字 < ${MIN_PERSONA_CHARS}），fail-closed：本轮不发生`
-  );
+  return db;
 }
 
 async function setSystemPrompt(content) {
+  // 写入闸（2026-09-08）：env 兜底撤掉之后，settings.system_prompt 是人格锚的唯一来源，
+  // 一旦被写空/写短，沈晏会彻底开不了口（每轮 getSystemPrompt 直接抛）。
+  // 原来 POST /api/system-prompt 只校验「是不是字符串」，空串照收；
+  // rewrite_stone 工具（沈晏自己重写石头）也走这里。两条路都从这里堵。
+  const text = typeof content === 'string' ? content.trim() : '';
+  if (text.length < MIN_PERSONA_CHARS) {
+    throw new Error(`拒绝写入人格锚：只有 ${text.length} 字（下限 ${MIN_PERSONA_CHARS}）。人格锚是唯一来源，写空等于让他哑掉。`);
+  }
   // 先尝试更新全局行；行不存在时插入一条
   const { data, error } = await supabase
     .from('settings')
