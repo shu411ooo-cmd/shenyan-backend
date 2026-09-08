@@ -17,3 +17,17 @@ backup_memories_before_clean.json
 
 # 全量数据备份（敏感，不进 git）
 backup/
+
+# SSE 轨迹录制（真实回复内容敏感，不进 git；synthetic 合成 fixture 保留给回放测试）
+sse-traces/*
+!sse-traces/synthetic/
+
+# 2026-09-08 补齐：本地探针/验证脚本，沿用已有的 _watch.cjs 那条约定推广成通配。
+# （_*.json 早就有了，这里补 cjs/mjs 两种后缀）
+_*.cjs
+_*.mjs
+
+# 构建产物散落在 public/ 根的重复副本：index.html 引的是 /assets/ 下那份，
+# 根目录这两份是拷贝时多出来的，字节完全相同、没人引用。不入库；磁盘上可以直接删。
+/public/index-*.js
+/public/index-*.css
