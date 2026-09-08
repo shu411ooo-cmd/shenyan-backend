@@ -1,0 +1,11 @@
+{"bad":
+{"choices":[{"delta":{"reasoning_summary":"总结思考"}}]}
+:bad-json:
+{"choices":[{"delta":{"reasoning":"深度思考第一段"}}]}
+{"choices":[{"delta":{"content":"你好"}}]}
+{"choices":[{"delta":{"reasoning":"深度思考第二段","content":"呀"}}]}
+{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"weather","arguments":"{\"city\":"}}]}}]}
+{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"上海\"}"}}]}}]}
+{"choices":[{"delta":{"tool_calls":[{"index":1,"id":"call_2","function":{"name":"clock","arguments":"{}"}}]}}]}
+{"choices":[{"delta":{}}],"usage":{"prompt_tokens":10,"completion_tokens":8}}
+[DONE]

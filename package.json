@@ -5,6 +5,8 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "test:sse": "node --test test/sse-parser.test.cjs test/sse-replay.test.cjs",
+    "record:sse": "node scripts/record-sse-trace.cjs",
     "migrate": "node scripts/migrate.js"
   },
   "repository": {
