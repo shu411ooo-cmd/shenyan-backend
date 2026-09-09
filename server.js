@@ -8274,12 +8274,17 @@ async function saveNeteaseCookie(cookie) {
     if (data) {
       const { error: ue } = await supabase
         .from('settings').update({ netease_cookie: cookie }).eq('session_id', 'global');
+      // 2026-09-09：这里原来只是 return !ue，调用处也不看返回值 —— 于是
+      // settings.netease_cookie 这个列压根没建过这件事，被藏了很久：
+      // 扫码「登录成功」了，cookie 转手丢掉，之后所有需登录的接口一律 needLogin。
+      if (ue) warnOnce('netease_cookie_save', `网易云登录 cookie 存不下来，登录态不会保持: ${ue.message}`);
       return !ue;
     }
     const { error: ie } = await supabase
       .from('settings').insert({ session_id: 'global', netease_cookie: cookie });
+    if (ie) warnOnce('netease_cookie_save', `网易云登录 cookie 存不下来，登录态不会保持: ${ie.message}`);
     return !ie;
-  } catch { return false; }
+  } catch (e) { warnOnce('netease_cookie_save', `网易云登录 cookie 写入异常: ${e.message}`); return false; }
 }
 async function ncmProfile() {
   const cookie = await ncmCookie();
