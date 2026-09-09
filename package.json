@@ -4,7 +4,7 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "test": "node --test test/sse-parser.test.cjs test/sse-replay.test.cjs test/routes.test.cjs",
+    "test": "node --test test/sse-parser.test.cjs test/sse-replay.test.cjs test/routes.test.cjs test/lib-time.test.cjs test/lib-cache-control.test.cjs test/lib-share-parse.test.cjs test/lib-tools-schema.test.cjs",
     "test:sse": "node --test test/sse-parser.test.cjs test/sse-replay.test.cjs",
     "record:sse": "node scripts/record-sse-trace.cjs",
     "migrate": "node scripts/migrate.js",

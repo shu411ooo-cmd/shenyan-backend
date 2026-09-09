@@ -130,3 +130,8 @@
 ## 发现记录（做任务时如果发现别的问题，写在这里，不要自行修）
 
 <!-- 格式：文件:行号 —— 发现了什么 —— 为什么觉得不对 -->
+- lib/time.js:108-110 —— `memoryMdLabel` 跨年输入返回 `[2025年年8月25日]`（双「年」）—— `toLocaleDateString(zh-CN,{year:'numeric'})` 已自带「年」后缀，模板里又拼了一个 `年`。只在日期属往年时触发（2026 年看 2025 的旧记忆就会中）。测试只锁了「今年不带年」的形态，没把 bug 冻进断言。
+- 任务单「shPartOfDay 四档」写的是「凌晨/上午/午后/晚上」，代码里 14–17 点实际返回「下午」不是「午后」—— 任务单笔误，测试按代码写「下午」。
+- lib/share-parse.js `lenientJsonParse` —— 任务单说「非法 JSON 应返回 null 或不抛」，真实行为是**抛 SyntaxError**（它只把 undefined/NaN/Infinity 清成 null，救不了真正的垃圾）。链路安全是因为 digXhsNote 内部 try/catch。测试如实断言 `assert.throws`。
+- 任务 B target 3 —— 任务单说「§4 保温 Keeper 那条：文档说它治冷启动全写」，但 `angel-garden-diary/整体框架·当前状态净本.md` 里**不存在这样一条**：全文 + git 全史 + worktree 副本都搜不到「保温/Keeper/治冷启动全写」，Keeper 独有措辞（5min 巡检/≥50min 闲置/6h 自停/占位续 TTL）也零命中。整份净本只有 §4 嘴段一条「缓存锚定」bullet（行 147，本次已改 40000 + 已验证两处）。「保温 Keeper 治冷启动全写 + 50min~6h 边界」的描述实际只写在 CHANGELOG-框架审.md「2026-09-01」节（锚定落档后唯一同步渠道）。净本从 09-01 起就缺 Keeper 这条库存行——**建议由 opus 判断**：target 3 的边界注挂在 CHANGELOG 那节即可，还是净本该补一条 Keeper 的「存在」行（含你给的边界句），我不擅自加。
+
