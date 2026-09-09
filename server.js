@@ -8258,15 +8258,56 @@ function mergeLrc(lrc, tlyric) {
 }
 
 // 网易云登录态 cookie（无则匿名，匿名可播免费歌）
+/* 净化网易云 cookie（2026-09-09）。
+   病：扫码登录成功时 login_qr_check 回的是**原始 Set-Cookie 响应头的整串拼接**，
+   属性一个都没剥。实测存下来 3958 字符里只有 10 个真 cookie 名，却混着
+   Max-Age×28 / Expires×28 / Path×28 这些**属性**，外加 MUSIC_R_T×11、MUSIC_A_T×11 重复
+   （其中还有 Max-Age=0 这种「删除该 cookie」的指令）。
+   发出去的请求头就成了 `Cookie: MUSIC_R_T=..; Max-Age=0; Expires=..; Path=/; MUSIC_R_T=..`，
+   网易云把 Max-Age/Expires/Path 当成 cookie 名 → login_status 拿不到 200
+   → ncmProfile() 返回 null → uid 为空 → liked/daily/playlists 全部 needLogin
+   → 前端翻成「登录过期了」。程芥的体感就是「扫上去几秒钟就掉」。
+
+   规则：只保留真正的 k=v；剥掉 cookie 属性；同名取**最后一次**（后发的 Set-Cookie 覆盖先发的）。
+   读写两侧都过一遍 —— 写侧管以后，读侧顺带治好已经存进去的那条脏数据，不用重新扫码。 */
+const COOKIE_ATTRS = new Set([
+  'max-age', 'expires', 'path', 'domain', 'httponly', 'secure', 'samesite', 'version', 'comment', 'priority',
+]);
+function sanitizeNeteaseCookie(raw) {
+  const s = String(raw || '').replace(/[\r\n]+/g, ';');
+  if (!s.trim()) return '';
+  const kept = new Map();                       // 同名后来居上
+  for (const part of s.split(';')) {
+    const seg = part.trim();
+    if (!seg) continue;
+    const eq = seg.indexOf('=');
+    if (eq <= 0) continue;                      // 没有 = 的（HttpOnly/Secure 裸属性）直接丢
+    const k = seg.slice(0, eq).trim();
+    const v = seg.slice(eq + 1).trim();
+    if (COOKIE_ATTRS.has(k.toLowerCase())) continue;
+    if (!/^[A-Za-z0-9_\-.]+$/.test(k)) continue; // 键名不合法的丢掉
+    if (!v) continue;                            // 空值 = 被删的那份，别带上
+    kept.set(k, v);
+  }
+  return [...kept.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
+}
+
 async function ncmCookie() {
   try {
     const { data, error } = await supabase
       .from('settings').select('netease_cookie').eq('session_id', 'global').maybeSingle();
     if (error || !data || !data.netease_cookie) return null;
-    return data.netease_cookie;
+    const clean = sanitizeNeteaseCookie(data.netease_cookie);
+    return clean || null;
   } catch { return null; }
 }
-async function saveNeteaseCookie(cookie) {
+async function saveNeteaseCookie(rawCookie) {
+  const cookie = sanitizeNeteaseCookie(rawCookie);   // 见 sanitizeNeteaseCookie 的注释：原始 Set-Cookie 串不能直接存
+  if (!cookie) { warnOnce('netease_cookie_save', '要保存的网易云 cookie 净化后为空，没有可用的 k=v'); return false; }
+  if (!/MUSIC_U=/.test(cookie)) {
+    // MUSIC_U 是登录态的关键项；没有它就只是匿名 cookie，存了也登录不上
+    warnOnce('netease_cookie_nomusicu', '网易云 cookie 里没有 MUSIC_U —— 存下来也是未登录状态');
+  }
   try {
     const { data, error } = await supabase
       .from('settings').select('id').eq('session_id', 'global').maybeSingle();
