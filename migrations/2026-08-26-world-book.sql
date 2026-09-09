@@ -17,4 +17,7 @@ CREATE TABLE IF NOT EXISTS world_entries (
 
 CREATE INDEX IF NOT EXISTS idx_world_entries_enabled ON world_entries (enabled);
 
-ALTER TABLE world_entries DISABLE ROW LEVEL SECURITY;
+-- 2026-09-09 停用：这些迁移是幂等设计、随时可能被重跑，重跑一次就会把 RLS 关回去。
+-- 后端用的是 secret key（绕过 RLS），前端不直连 Supabase，所以根本不需要关 RLS。
+-- 原语句保留在下方注释里备查，不再执行。
+-- ALTER TABLE world_entries DISABLE ROW LEVEL SECURITY;

@@ -875,12 +875,12 @@ async function getMirrorConfig() {
       .select('mirror_days, mirror_max_sessions')
       .eq('session_id', 'global')
       .maybeSingle();
-    if (error || !data) return MIRROR_DEFAULTS;
+    if (error || !data) { warnConfigFallback('mirror', error); return MIRROR_DEFAULTS; }
     return {
       mirror_days: Number.isInteger(data.mirror_days) ? data.mirror_days : MIRROR_DEFAULTS.mirror_days,
       mirror_max_sessions: Number.isInteger(data.mirror_max_sessions) ? data.mirror_max_sessions : MIRROR_DEFAULTS.mirror_max_sessions,
     };
-  } catch (e) { return MIRROR_DEFAULTS; }
+  } catch (e) { warnConfigFallback('mirror', e); return MIRROR_DEFAULTS; }
 }
 
 const MIRROR_SYSTEM_PROMPT = `你是沈晏的「证据对账器」。你的任务只有一个：从对话原文里提「逐字引语」候选，分三类。你不做任何分析、不评价、不下结论。
@@ -2024,7 +2024,7 @@ async function getAttentionConfig() {
       .select('attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor')
       .eq('session_id', 'global')
       .maybeSingle();
-    if (error || !data) return ATTENTION_DEFAULTS;
+    if (error || !data) { warnConfigFallback('attention', error); return ATTENTION_DEFAULTS; }
     const d = ATTENTION_DEFAULTS;
     return {
       k: Number.isInteger(data.attention_k) ? data.attention_k : d.k,
@@ -2039,7 +2039,7 @@ async function getAttentionConfig() {
       echo_72h_hours: Number.isFinite(Number(data.attention_echo_72h_hours)) && Number(data.attention_echo_72h_hours) > 0 ? Number(data.attention_echo_72h_hours) : d.echo_72h_hours,
       echo_72h_factor: typeof data.attention_echo_72h_factor === 'number' && data.attention_echo_72h_factor >= 0 && data.attention_echo_72h_factor <= 1 ? data.attention_echo_72h_factor : d.echo_72h_factor,
     };
-  } catch (e) { return ATTENTION_DEFAULTS; }
+  } catch (e) { warnConfigFallback('attention', e); return ATTENTION_DEFAULTS; }
 }
 
 /* 主题命中：topic 的 ≥2 字子串出现在消息里（中文短语直接 substring 最稳，不折腾分词）。
@@ -2486,6 +2486,22 @@ function selectWorldHits(hits, curMode) {
 // 20k 阈值让塌缩在 live 刚攒到 15 轮就触发（每 1~2 轮塌一次）→ 锚定攒的批永远攒不起来 → 命中率
 // 退回滚动 55%。设计稿 §3② 明确轮数阈值(30 轮)才是周期、token 阈值是安全线；40k 让轮数先触发，
 // 安全线仍在（防单条巨物撑爆）。若塌缩后预算裁剪开始裁 live（trimmed_turns 上升）再调 max_context_tokens。
+// 配置降级的一次性告警。存在理由（2026-09-09 逐列核对线上 settings 表实锤）：
+// PostgREST 的 .select('a, b, c') 只要有一个列不存在就**整条查询报错**，于是
+// `if (error) return DEFAULTS` 会让该组**全部**配置一起退回硬编码默认 ——
+// 包括那些明明存在、可能已经调过的列。代码照跑、不报错、无日志，
+// 「配置没生效」和「配置本来就是默认值」完全分不清。
+// 实测 8 组读取里有 4 组正是这样静默失效的（09-03 两个迁移从没跑过 +
+// live_max_tokens 压根没有迁移创建过）。
+// 空是能看见的失败，静默降级不是 —— 所以让它出声。每组只喊一次，不刷屏。
+const _configFallbackWarned = new Set();
+function warnConfigFallback(group, err) {
+  if (_configFallbackWarned.has(group)) return;
+  _configFallbackWarned.add(group);
+  const why = err && err.message ? err.message : (err ? String(err) : 'settings 无 global 行');
+  console.warn(`⚠️ [config] ${group} 整组退回硬编码默认，settings 里的值不会生效 —— ${why}`);
+}
+
 async function getContextConfig(sessionId) {
   const defaults = { frozen_rounds: 10, live_rounds: 15, max_context_tokens: 24000, live_max_tokens: 40000 };
   const pick = (row) => row ? ({
@@ -2500,9 +2516,10 @@ async function getContextConfig(sessionId) {
       .select('frozen_rounds, live_rounds, max_context_tokens, live_max_tokens')
       .eq('session_id', 'global')
       .maybeSingle();
-    if (error) return defaults;
+    if (error) { warnConfigFallback('context', error); return defaults; }
     return pick(data);
   } catch (e) {
+    warnConfigFallback('context', e);
     return defaults;
   }
 }
@@ -3754,14 +3771,14 @@ async function getSatisfyConfig() {
       .select('satisfy_window_hours, satisfy_factor')
       .eq('session_id', 'global')
       .maybeSingle();
-    if (error || !data) return SATISFY_DEFAULTS;
+    if (error || !data) { warnConfigFallback('satisfy', error); return SATISFY_DEFAULTS; }
     const h = Number(data.satisfy_window_hours);
     const f = Number(data.satisfy_factor);
     return {
       window_ms: (Number.isFinite(h) && h > 0 ? h : 6) * 3600 * 1000,
       factor: Number.isFinite(f) && f > 0 && f <= 1 ? f : 0.8,
     };
-  } catch (e) { return SATISFY_DEFAULTS; }
+  } catch (e) { warnConfigFallback('satisfy', e); return SATISFY_DEFAULTS; }
 }
 
 // 驱动条：attachment/reflection/curiosity/social/duty/stress 直接投影残留维度；
@@ -4331,7 +4348,7 @@ async function getMemoryGateConfig() {
       .select('memory_gate_enabled')
       .eq('session_id', 'global')
       .maybeSingle();
-    if (error || !data) return { enabled: true };
+    if (error || !data) { warnConfigFallback('memory_gate', error); return { enabled: true }; }
     return { enabled: data.memory_gate_enabled !== false };
   } catch (e) {
     return { enabled: true }; // fail-open：开关读不到不阻断写入流程
@@ -5312,7 +5329,7 @@ async function getKeepaliveConfig() {
       .select('keepalive_enabled, keepalive_interval_min, keepalive_active_start, keepalive_active_end, keepalive_daily_cap, keepalive_daily_wake_cap, keepalive_model')
       .eq('session_id', 'global')
       .maybeSingle();
-    if (error || !data) return KEEPALIVE_DEFAULTS;
+    if (error || !data) { warnConfigFallback('keepalive', error); return KEEPALIVE_DEFAULTS; }
     return {
       keepalive_enabled: data.keepalive_enabled !== false,
       interval_min: Number.isInteger(data.keepalive_interval_min) ? data.keepalive_interval_min : KEEPALIVE_DEFAULTS.interval_min,
@@ -5323,6 +5340,7 @@ async function getKeepaliveConfig() {
       model: data.keepalive_model || null,
     };
   } catch (e) {
+    warnConfigFallback('keepalive', e);
     return KEEPALIVE_DEFAULTS;
   }
 }
@@ -5443,13 +5461,13 @@ async function getWantInjectConfig() {
       .select('desire_inject_k, desire_inject_cooldown_days, desire_inject_dim_threshold')
       .eq('session_id', 'global')
       .maybeSingle();
-    if (error || !data) return WANT_INJECT_DEFAULTS;
+    if (error || !data) { warnConfigFallback('want_inject', error); return WANT_INJECT_DEFAULTS; }
     return {
       inject_k: Number.isInteger(data.desire_inject_k) ? data.desire_inject_k : WANT_INJECT_DEFAULTS.inject_k,
       cooldown_days: Number.isInteger(data.desire_inject_cooldown_days) ? data.desire_inject_cooldown_days : WANT_INJECT_DEFAULTS.cooldown_days,
       dim_threshold: Number.isInteger(data.desire_inject_dim_threshold) ? data.desire_inject_dim_threshold : WANT_INJECT_DEFAULTS.dim_threshold,
     };
-  } catch (e) { return WANT_INJECT_DEFAULTS; }
+  } catch (e) { warnConfigFallback('want_inject', e); return WANT_INJECT_DEFAULTS; }
 }
 
 /* 每天最多注入一次：看 settings.desire_inject_at 是不是上海今天 */

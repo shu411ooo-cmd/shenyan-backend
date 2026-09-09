@@ -40,5 +40,8 @@ CREATE TABLE IF NOT EXISTS moment_comments (
 
 CREATE INDEX IF NOT EXISTS idx_moment_comments_moment ON moment_comments (moment_id, created_at);
 
-ALTER TABLE moments DISABLE ROW LEVEL SECURITY;
-ALTER TABLE moment_comments DISABLE ROW LEVEL SECURITY;
+-- 2026-09-09 停用：这些迁移是幂等设计、随时可能被重跑，重跑一次就会把 RLS 关回去。
+-- 后端用的是 secret key（绕过 RLS），前端不直连 Supabase，所以根本不需要关 RLS。
+-- 原语句保留在下方注释里备查，不再执行。
+-- ALTER TABLE moments DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE moment_comments DISABLE ROW LEVEL SECURITY;
