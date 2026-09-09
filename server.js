@@ -806,6 +806,17 @@ async function dispatchTool(name, args, sessionId) {
 //   ③ 镜子提卡时引语命中台账 = 回响 → 卡 expression_eligible=false，不进 candidate/升级，只留审计。
 const EXPRESSION_MATERIAL_TOOLS = new Set(['recall', 'breath_search', 'breath_advanced']);
 
+/* 一次性告警（2026-09-09）。为什么需要它：这套系统里坏得最久的几处，都不是「不报错」，
+   而是「每轮都报同一行、于是变成噪音、于是没人看」。注入台账整整十天写不进去，
+   期间每一轮都 console.warn 过一次，没人发现。
+   每个 key 只喊一次（进程内），喊得具体一点，让它像事故不像日志。 */
+const _warnedOnce = new Set();
+function warnOnce(key, message) {
+  if (_warnedOnce.has(key)) return;
+  _warnedOnce.add(key);
+  console.warn(`🚨 [${key}] ${message}`);
+}
+
 /* 注入台账写入（fire-and-forget：台账是离线审计，写不进不阻塞对话） */
 async function logInjection({ sessionId, layer, tag, content, prov }) {
   try {
@@ -822,7 +833,13 @@ async function logInjection({ sessionId, layer, tag, content, prov }) {
     });
     maybePruneInjections();          // 偶发清理旧台账，防无界增长
   } catch (e) {
-    console.warn('⚠️ 注入台账写失败（不影响对话）:', e.message);
+    // 一次性大声报（2026-09-09）：这里原来每轮都 warn 一行「写失败」，
+    // 于是它变成噪音、没人看 —— 实际情况是从 2026-08-30 建表那天起**一行都没写进去过**
+    // （session_id 被建成 uuid，而 sessions.id 是整数，每次插入都被 Postgres 拒绝），
+    // 而表达资格隔离整条链路因此空转了十天，无人察觉。
+    // 台账写不进 = P0 边界协议失效，这不是「不影响对话」那么轻，值得单独喊一次。
+    warnOnce('prompt_injections',
+      `注入台账写入失败 —— 表达资格隔离（P0 边界协议）正在空转，镜子无法排除回响: ${e.message}`);
   }
 }
 
@@ -2494,12 +2511,9 @@ function selectWorldHits(hits, curMode) {
 // 实测 8 组读取里有 4 组正是这样静默失效的（09-03 两个迁移从没跑过 +
 // live_max_tokens 压根没有迁移创建过）。
 // 空是能看见的失败，静默降级不是 —— 所以让它出声。每组只喊一次，不刷屏。
-const _configFallbackWarned = new Set();
 function warnConfigFallback(group, err) {
-  if (_configFallbackWarned.has(group)) return;
-  _configFallbackWarned.add(group);
   const why = err && err.message ? err.message : (err ? String(err) : 'settings 无 global 行');
-  console.warn(`⚠️ [config] ${group} 整组退回硬编码默认，settings 里的值不会生效 —— ${why}`);
+  warnOnce(`config:${group}`, `整组退回硬编码默认，settings 里的值不会生效 —— ${why}`);
 }
 
 async function getContextConfig(sessionId) {
