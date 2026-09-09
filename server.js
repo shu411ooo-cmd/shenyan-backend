@@ -28,6 +28,10 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
+const createAuth = require('./routes/auth');
+// 登录门：交出 router 与 requireAuth 中间件（挂载顺序见下方注释）
+const authModule = createAuth({ supabase });
+
 // 日历模块：交出 router 与 buildCalendarBlock（后者被 buildModelContext 调用）
 const calendarModule = createCalendar({ supabase });
 // 朋友圈模块：交出四个 router + 5 个被外部调用的能力（定时器 / 聊天主链路用）
@@ -60,113 +64,14 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // base64 膨胀 ~1.33×，1280px JPEG 最高可到 ~1-2MB，默认 100kb 会直接 413）。
 app.use(express.json({ limit: '15mb' }));
 
-// ===== C 方案：登录门（2026-08-23）=====
-// 真正的门：密码登录 → HttpOnly cookie(sid) → 中间件校验 cookie。没密码谁都进不来。
-// session 存 DB（auth_sessions，多实例可共享）；token 随机，HttpOnly+SameSite=Strict 不进 JS。
-// 2026-09-08：B 方案 SITE_KEY 已正式退休（详见鉴权中间件注释）——登录只认 cookie。
-const SITE_PASSWORD = process.env.SITE_PASSWORD || '';
-const SESSION_TTL_MS = 7 * 24 * 3600 * 1000; // 7 天
-const SESSION_COOKIE = 'sid';
+// ===== C 方案登录门 =====（2026-09-09 搬到 routes/auth.js，分区第 2 步收官）
+// ⚠️ 这两行的**先后顺序是安全边界**，不要调换、不要往下挪：
+//    先挂 /api/auth 路由（否则登录接口会被门自己拦住，永远登不进去），
+//    再挂门本身（它必须在其余所有路由之前，否则那些路由就不需要登录了）。
+//    改动这里之前先跑 npm run test:auth —— 那条测试专门锁这个不变式。
+app.use('/api/auth', authModule.router);
+app.use(authModule.requireAuth);
 
-function parseCookies(req) {
-  const out = {};
-  const h = req.headers.cookie || '';
-  for (const part of h.split(';')) {
-    const i = part.indexOf('=');
-    if (i > 0) out[part.slice(0, i).trim()] = part.slice(i + 1).trim();
-  }
-  return out;
-}
-
-async function isValidSession(token) {
-  if (!token) return false;
-  try {
-    const { data, error } = await supabase
-      .from('auth_sessions')
-      .select('id, expires_at')
-      .eq('token', token)
-      .maybeSingle();
-    if (error || !data) return false;
-    return new Date(data.expires_at).getTime() > Date.now();
-  } catch { return false; }
-}
-
-// 登录：校验密码 → 种 HttpOnly cookie
-// 登录频率限制：同一 IP 15 秒内最多 5 次尝试（防暴力破解）
-const loginAttempts = new Map();
-function checkLoginRateLimit(req) {
-  const ip = req.ip || req.socket.remoteAddress || 'unknown';
-  const now = Date.now();
-  const key = `login:${ip}`;
-  const entry = loginAttempts.get(key);
-  if (entry && now - entry.since < 15000 && entry.count >= 5) return false;
-  if (!entry || now - entry.since >= 15000) loginAttempts.set(key, { since: now, count: 1 });
-  else entry.count++;
-  return true;
-}
-// 每 5 分钟清理过期登录限流记录
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of loginAttempts) if (now - v.since > 60000) loginAttempts.delete(k);
-}, 5 * 60 * 1000).unref();
-
-app.post('/api/auth/login', async (req, res) => {
-  if (!checkLoginRateLimit(req)) return res.status(429).json({ ok: false, error: '尝试太频繁，请稍后再试' });
-  const pwd = String(req.body?.password || '');
-  if (!SITE_PASSWORD || pwd !== SITE_PASSWORD) return res.status(401).json({ ok: false, error: '密码不对' });
-  const token = require('crypto').randomBytes(32).toString('hex');
-  const expires = new Date(Date.now() + SESSION_TTL_MS).toISOString();
-  try {
-    const { error } = await supabase.from('auth_sessions').insert({ token, expires_at: expires });
-    if (error) return res.status(500).json({ ok: false, error: error.message });
-  } catch (e) { return res.status(500).json({ ok: false, error: e.message }); }
-  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_MS / 1000}`);
-  res.json({ ok: true });
-});
-
-// 登出：删 session + 清 cookie
-app.post('/api/auth/logout', async (req, res) => {
-  const token = parseCookies(req)[SESSION_COOKIE];
-  if (token) {
-    try {
-      await supabase.from('auth_sessions').delete().eq('token', token);
-    } catch { /* 删不掉就算了，cookie 已清 */ }
-  }
-  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`);
-  res.json({ ok: true });
-});
-
-// 检查登录态（前端 AuthGate 用）：无 cookie → 401，前端显示密码页
-app.get('/api/auth/check', async (req, res) => {
-  const token = parseCookies(req)[SESSION_COOKIE];
-  const ok = await isValidSession(token);
-  if (ok) return res.json({ ok: true });
-  return res.status(401).json({ ok: false });
-});
-
-// 鉴权中间件：静态资源/首页/健康检查放行；API 一律要登录态（cookie 登录门）
-app.use(async (req, res, next) => {
-  try {
-    if (req.path === '/health' || req.path === '/' || req.path.startsWith('/assets/')) return next();
-    // 兜底锁：SITE_PASSWORD 没配时先不锁（防把自己锁死）
-    if (!SITE_PASSWORD) return next();
-    // auth 相关接口本身放行（login/logout/check 已各自处理）
-    if (req.path.startsWith('/api/auth/')) return next();
-    // 主校验：cookie session（await——isValidSession 是异步查库）
-    const token = parseCookies(req)[SESSION_COOKIE];
-    if (token && (await isValidSession(token))) return next();
-    // B 方案 x-site-key 兜底已于 2026-09-08 拆除（server.js 的 SITE_KEY 常量 + Zeabur 环境变量一并清掉）。
-    // 拆除理由与顺序（均已执行）：key 内联在公开 bundle 里、扒 JS 即得，只防路人不防定向；
-    // 旧 bundle 还把 API_BASE 烧成 localhost → cookie 跨源不发，只能靠 key 撑着。
-    // → 先前端同源化（src/config.js 生产 API_BASE=""，ed2a2a1）→ 无 key 前端部署
-    //   （index-BepPaPQl.js，反断言无 key）+ 花园 cookie 承重确认 → 现在拆掉这个兜底。
-    // ringdonut（backend/adapters/host.js）同源挂在主服务下，cookie 通道一致，一并拆除。
-    return res.status(401).json({ error: 'unauthorized' });
-  } catch (err) {
-    console.error('💥 鉴权中间件异常:', err.message);
-    return res.status(500).json({ error: 'auth error' });
-  }
-});
 
 // ===== Ombre Brain MCP 客户端 =====
 
