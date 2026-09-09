@@ -34,7 +34,12 @@ const routes = [];
 function walk(stack, prefix) {
   for (const layer of stack) {
     if (layer.route) {
-      const p = prefix + layer.route.path;
+      // 挂载前缀 + router.get('/') 拼出来会是 '/api/moments/'，但 Express 实际把
+      // 不带尾斜杠的 /api/moments 也路由到这个 handler（2026-09-09 起本地服务实测：
+      // /api/moments 与 /api/moments/ 都进了 handler，对照组 /api/xxx 才 404）。
+      // 所以这里归一化掉多余的尾斜杠，否则搬运前后比对会出现假差异。
+      const rawPath = prefix + layer.route.path;
+      const p = rawPath.length > 1 ? rawPath.replace(/\/+$/, '') : rawPath;
       for (const method of Object.keys(layer.route.methods || {})) {
         if (layer.route.methods[method]) routes.push(`${method.toUpperCase()} ${p}`);
       }
