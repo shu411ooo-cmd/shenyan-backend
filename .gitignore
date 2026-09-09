@@ -2,6 +2,11 @@
 node_modules/
 scripts/*
 !scripts/migrate.js
+# 2026-09-09：审计/分区工具要入库。它们是发现「代码写对了但没接上」那类静默故障的主力
+# （列缺失扫描一次揪出三个真 bug），也是 server.js 继续拆分时的依赖分析与路由核对工具。
+# 一次性的调试脚本仍然照旧不入库。
+!scripts/audit/
+!scripts/audit/*.cjs
 .env.zeabur
 # 运行时产物（dfid 有环境变量 KUGOU_DFID_SEED 兜底，不需要进 git）
 .kugou-dfid
