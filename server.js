@@ -4050,11 +4050,20 @@ async function buildInnerState(sessionId) {
     }
     const thoughtFields = ['id', 'text', 'drive_key', 'strength', 'born_at', 'fed_count'];
     if (await hasMoodCol('thought')) thoughtFields.push('mood');
+    // ⚠️ 必须带 order：limit 是在**数据库层**截断的，发生在下面的衰减过滤之前。
+    // 没有 ORDER BY 的 LIMIT 返回哪 50 行是任意的（通常是物理顺序＝最早那批，
+    // 也正是衰减最狠、马上会被 >=0.08 过滤掉的那批）——一旦 active 行超过 50，
+    // 新鲜念头排在第 51 行之后就永远读不到，念头池会静默读成空。
+    // （2026-09-09 审计发现。彼时 keepalive 关着，而清扫只在唤醒时跑，
+    //   active 行只进不出，这个洞正在被慢慢填满。）
+    // born_at 倒序 = 先拿最新的：衰减是按年龄单调的，最新即最未衰减，
+    // 所以截断发生时保住的是最可能通过过滤的那批。
     const { data: rows, error } = await supabase
       .from('thought_pool')
       .select(thoughtFields.join(','))
       .eq('session_id', sessionId)
       .eq('status', 'active')
+      .order('born_at', { ascending: false })
       .limit(50);
     if (!error && rows?.length) {
       const nowMs = Date.now();
@@ -4177,6 +4186,25 @@ async function sweepThoughtLifecycle(sessionId) {
     if (gradIds.length) await graduateThoughts(sessionId, gradIds);
   } catch (e) {
     console.warn('⚠️ 念头生命周期清扫失败（不阻塞唤醒）:', e.message);
+  }
+}
+
+/* 定时清扫（2026-09-09 加）：把生命周期从「唤醒的副作用」变成「独立的钟」。
+   原来 sweepThoughtLifecycle 只挂在 buildWakeMessages 上，调用链是
+   runKeepalive → buildWakeMessages → sweep，于是：
+     keepalive 关着（或她聊得勤、被「你在身边」闸挡住唤醒）→ 清扫从不发生
+     → active 行只进不出 → 淡到地板的念头永远不「放下」，
+       够格的念头也永远不「毕业进河」。
+   而念头的衰减本来就是按时间算的（projectThought 读时投影），
+   所以「该放下了」这件事跟「他醒没醒」无关 —— 它该有自己的钟。
+   唤醒路径里那次调用保留（醒来前先清一遍，拿到的是最新状态）。 */
+async function sweepThoughtLifecycleTick() {
+  try {
+    const sessionId = await findKeepaliveSession();
+    if (!sessionId) return;                       // 还没有会话，没什么可扫
+    await sweepThoughtLifecycle(sessionId);
+  } catch (e) {
+    console.warn('⚠️ 念头生命周期定时清扫异常:', e.message);
   }
 }
 
@@ -8833,11 +8861,15 @@ if (require.main === module) {
       // 朋友圈到期回复：程芥不打开页面，回复也会自己长出来（他回来直接看到）
       processDueReplies();
       processDueCommentReplies();
+      // 念头生命周期：独立于唤醒（唤醒关着时也要清，否则池子只进不出）
+      sweepThoughtLifecycleTick();
     }, 15 * 60 * 1000);
     // 缓存保温 Keeper：每 5 分钟检查，距最后真实请求 ≥50min 才刷（判断在 cacheWarmTick 内部）
     setInterval(() => {
       cacheWarmTick().catch(err => console.error('💥 cacheWarmTick 异常:', err.message));
     }, 5 * 60 * 1000);
+    // 念头生命周期：启动先扫一轮，别让「重启比 15 分钟还频繁」时永远轮不到
+    sweepThoughtLifecycleTick();
     // 镜子日：启动先跑一轮 dormant 清扫，之后按 mirror_sweep_hours 自续排
     mirrorDaySweep().catch(err => console.error('💥 启动时 mirrorDaySweep 异常:', err.message));
   });
