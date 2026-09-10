@@ -1,0 +1,929 @@
+{
+  "cfg_ok": {
+    "deepseek": [],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle"
+    ],
+    "logs": [],
+    "value": {
+      "assoc_seats": 2,
+      "budget_chars": 700,
+      "concern_threshold": 0.5,
+      "echo_24h_factor": 0.5,
+      "echo_24h_hours": 24,
+      "echo_72h_factor": 0.8,
+      "echo_72h_hours": 72,
+      "k": 2,
+      "recent_days": 7,
+      "recent_seats": 3
+    },
+    "warns": []
+  },
+  "cfg_allNull": {
+    "deepseek": [],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle"
+    ],
+    "logs": [],
+    "value": {
+      "assoc_seats": 2,
+      "budget_chars": 700,
+      "concern_threshold": 0.5,
+      "echo_24h_factor": 0.5,
+      "echo_24h_hours": 24,
+      "echo_72h_factor": 0.8,
+      "echo_72h_hours": 72,
+      "k": 2,
+      "recent_days": 7,
+      "recent_seats": 3
+    },
+    "warns": []
+  },
+  "cfg_badTypes": {
+    "deepseek": [],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle"
+    ],
+    "logs": [],
+    "value": {
+      "assoc_seats": 1,
+      "budget_chars": 700,
+      "concern_threshold": 0.5,
+      "echo_24h_factor": 0.5,
+      "echo_24h_hours": 24,
+      "echo_72h_factor": 0.8,
+      "echo_72h_hours": 72,
+      "k": 0,
+      "recent_days": 7,
+      "recent_seats": 3
+    },
+    "warns": []
+  },
+  "cfg_error": {
+    "deepseek": [],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle"
+    ],
+    "logs": [],
+    "value": {
+      "assoc_seats": 2,
+      "budget_chars": 700,
+      "concern_threshold": 0.5,
+      "echo_24h_factor": 0.5,
+      "echo_24h_hours": 24,
+      "echo_72h_factor": 0.8,
+      "echo_72h_hours": 72,
+      "k": 2,
+      "recent_days": 7,
+      "recent_seats": 3
+    },
+    "warns": [
+      "attention:column attention_k does not exist"
+    ]
+  },
+  "cfg_noRow": {
+    "deepseek": [],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle"
+    ],
+    "logs": [],
+    "value": {
+      "assoc_seats": 2,
+      "budget_chars": 700,
+      "concern_threshold": 0.5,
+      "echo_24h_factor": 0.5,
+      "echo_24h_hours": 24,
+      "echo_72h_factor": 0.8,
+      "echo_72h_hours": 72,
+      "k": 2,
+      "recent_days": 7,
+      "recent_seats": 3
+    },
+    "warns": [
+      "attention:no-row"
+    ]
+  },
+  "att_notRun_memoryFalse": {
+    "deepseek": [],
+    "io": [],
+    "logs": [],
+    "value": null,
+    "warns": []
+  },
+  "att_notRun_emptyMsg": {
+    "deepseek": [],
+    "io": [],
+    "logs": [],
+    "value": null,
+    "warns": []
+  },
+  "att_gate_memoryError": {
+    "deepseek": [],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.limit | 60",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "err 🚨 [recall] memory_topics 查询失败 → 记忆召回可能静默全灭，查 Supabase"
+    ],
+    "value": null,
+    "warns": []
+  },
+  "att_gate_emptyPool": {
+    "deepseek": [],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.limit | 60",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "value": null,
+    "warns": []
+  },
+  "att_gate_noMatch": {
+    "deepseek": [],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.limit | 60",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "value": null,
+    "warns": []
+  },
+  "att_concern_hit": {
+    "deepseek": [
+      "她想搬到有院子的房子"
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.limit | 60",
+      "memory_topics.await",
+      "from:memory_relations",
+      "memory_relations.select | source_topic, target_topic, rel_type, note",
+      "memory_relations.limit | 3000",
+      "memory_relations.await"
+    ],
+    "logs": [],
+    "value": {
+      "hits": 1,
+      "refs": [
+        {
+          "title": "搬家",
+          "topicId": 343
+        }
+      ],
+      "text": "（你心里还惦记着：搬家的事还没说完）\nD3「V[她想搬到有院子的房子]」【实】"
+    },
+    "warns": []
+  },
+  "att_concern_belowThreshold": {
+    "deepseek": [],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.limit | 60",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "value": null,
+    "warns": []
+  },
+  "att_concern_noSharedWord": {
+    "deepseek": [],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.limit | 60",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "value": null,
+    "warns": []
+  },
+  "att_concern_emptyKw": {
+    "deepseek": [],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.limit | 60",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "value": null,
+    "warns": []
+  },
+  "att_hit_basic": {
+    "deepseek": [
+      "正文-八音盒"
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.limit | 60",
+      "memory_topics.await",
+      "from:memory_relations",
+      "memory_relations.select | source_topic, target_topic, rel_type, note",
+      "memory_relations.limit | 3000",
+      "memory_relations.await"
+    ],
+    "logs": [],
+    "value": {
+      "hits": 1,
+      "refs": [
+        {
+          "title": "八音盒",
+          "topicId": 311
+        }
+      ],
+      "text": "D3「V[正文-八音盒]」【实】"
+    },
+    "warns": []
+  },
+  "att_groundingFallback": {
+    "deepseek": [],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.limit | 60",
+      "memory_topics.await",
+      "from:memory_relations",
+      "memory_relations.select | source_topic, target_topic, rel_type, note",
+      "memory_relations.limit | 3000",
+      "memory_relations.await"
+    ],
+    "logs": [],
+    "value": {
+      "hits": 1,
+      "refs": [
+        {
+          "title": "八音盒",
+          "topicId": 311
+        }
+      ],
+      "text": "D3「V[正文-八音盒]」【悬】"
+    },
+    "warns": []
+  },
+  "att_gate_budget_emptyContent": {
+    "deepseek": [],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.limit | 60",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "value": null,
+    "warns": []
+  },
+  "att_gate_budget_chars": {
+    "deepseek": [],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.limit | 60",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "value": null,
+    "warns": []
+  },
+  "att_recentCap": {
+    "deepseek": [
+      "正文-搬家",
+      "正文-搬家的院子",
+      "正文-搬家那天"
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.limit | 60",
+      "memory_topics.await",
+      "from:memory_relations",
+      "memory_relations.select | source_topic, target_topic, rel_type, note",
+      "memory_relations.limit | 3000",
+      "memory_relations.await"
+    ],
+    "logs": [],
+    "value": {
+      "hits": 3,
+      "refs": [
+        {
+          "title": "搬家",
+          "topicId": 343
+        },
+        {
+          "title": "搬家的院子",
+          "topicId": 301
+        },
+        {
+          "title": "搬家那天",
+          "topicId": 825
+        }
+      ],
+      "text": "D1「V[正文-搬家]」【实】\nD100「V[正文-搬家的院子]」【实】\nD200「V[正文-搬家那天]」【实】"
+    },
+    "warns": []
+  },
+  "att_cooldown_and_echo": {
+    "deepseek": [
+      "正文-八音盒音准"
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.limit | 60",
+      "memory_topics.await",
+      "from:memory_relations",
+      "memory_relations.select | source_topic, target_topic, rel_type, note",
+      "memory_relations.limit | 3000",
+      "memory_relations.await",
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.limit | 60",
+      "memory_topics.await",
+      "from:memory_relations",
+      "memory_relations.select | source_topic, target_topic, rel_type, note",
+      "memory_relations.limit | 3000",
+      "memory_relations.await"
+    ],
+    "logs": [],
+    "value": [
+      {
+        "hits": 1,
+        "refs": [
+          {
+            "title": "八音盒",
+            "topicId": 311
+          }
+        ],
+        "text": "D3「V[正文-八音盒]」【实】"
+      },
+      null,
+      null,
+      null,
+      {
+        "hits": 1,
+        "refs": [
+          {
+            "title": "八音盒音准",
+            "topicId": 268
+          }
+        ],
+        "text": "D3「V[正文-八音盒音准]」【实】"
+      }
+    ],
+    "warns": []
+  },
+  "att_relation": {
+    "deepseek": [
+      "正文-打雷",
+      "正文-雨夜好眠"
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.limit | 60",
+      "memory_topics.await",
+      "from:memory_relations",
+      "memory_relations.select | source_topic, target_topic, rel_type, note",
+      "memory_relations.limit | 3000",
+      "memory_relations.await",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.in | topic | 怕雷声,雨夜好眠",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "value": {
+      "hits": 3,
+      "refs": [
+        {
+          "title": "打雷",
+          "topicId": 849
+        },
+        {
+          "title": "雨夜好眠",
+          "topicId": 220
+        },
+        {
+          "title": "怕雷声",
+          "topicId": 543
+        }
+      ],
+      "text": "D3「V[正文-打雷]」【实】\nD3「V[正文-雨夜好眠]」【实】（经由「怕雷声」：解释）\nD3「正文-怕雷声」【实】（因为「打雷」：导致）"
+    },
+    "warns": []
+  },
+  "att_voice_cacheHit": {
+    "deepseek": [
+      "同一段正文"
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.limit | 60",
+      "memory_topics.await",
+      "from:memory_relations",
+      "memory_relations.select | source_topic, target_topic, rel_type, note",
+      "memory_relations.limit | 3000",
+      "memory_relations.await",
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.limit | 60",
+      "memory_topics.await",
+      "from:memory_relations",
+      "memory_relations.select | source_topic, target_topic, rel_type, note",
+      "memory_relations.limit | 3000",
+      "memory_relations.await"
+    ],
+    "logs": [],
+    "value": {
+      "first": {
+        "hits": 1,
+        "refs": [
+          {
+            "title": "八音盒",
+            "topicId": 311
+          }
+        ],
+        "text": "D3「V[同一段正文]」【实】"
+      },
+      "second": {
+        "hits": 1,
+        "refs": [
+          {
+            "title": "八音盒",
+            "topicId": 311
+          }
+        ],
+        "text": "D3「V[同一段正文]」【实】"
+      }
+    },
+    "warns": []
+  },
+  "att_voice_throwFallback": {
+    "deepseek": [],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.limit | 60",
+      "memory_topics.await",
+      "from:memory_relations",
+      "memory_relations.select | source_topic, target_topic, rel_type, note",
+      "memory_relations.limit | 3000",
+      "memory_relations.await"
+    ],
+    "logs": [],
+    "value": {
+      "hits": 1,
+      "refs": [
+        {
+          "title": "八音盒",
+          "topicId": 311
+        }
+      ],
+      "text": "D3「V[正文-八音盒]」【实】"
+    },
+    "warns": []
+  },
+  "att_voice_emptyTextFallback": {
+    "deepseek": [],
+    "io": [
+      "from:settings",
+      "settings.select | attention_k, attention_budget_chars, attention_concern_threshold, attention_recent_days, attention_recent_seats, attention_assoc_seats, attention_echo_24h_hours, attention_echo_24h_factor, attention_echo_72h_hours, attention_echo_72h_factor",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.limit | 60",
+      "memory_topics.await",
+      "from:memory_relations",
+      "memory_relations.select | source_topic, target_topic, rel_type, note",
+      "memory_relations.limit | 3000",
+      "memory_relations.await"
+    ],
+    "logs": [],
+    "value": {
+      "hits": 1,
+      "refs": [
+        {
+          "title": "八音盒",
+          "topicId": 311
+        }
+      ],
+      "text": "D3「V[正文-八音盒]」【实】"
+    },
+    "warns": []
+  },
+  "rel_ok": {
+    "deepseek": [],
+    "io": [
+      "from:memory_relations",
+      "memory_relations.select | source_topic, target_topic, rel_type, note",
+      "memory_relations.limit | 3000",
+      "memory_relations.await",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.in | topic | 怕雷声,雨夜好眠",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "value": [
+      {
+        "hop": 2,
+        "note": "x",
+        "relType": "解释",
+        "score": 0.5700475733626544,
+        "topic": {
+          "evidence": [],
+          "grounding": "实",
+          "id": 220,
+          "importance": 0.9,
+          "kind": "memory",
+          "last_content": "正文-雨夜好眠",
+          "source": "test",
+          "topic": "雨夜好眠",
+          "updated_at": "2026-09-07T12:00:00.000Z"
+        },
+        "via": "怕雷声"
+      },
+      {
+        "hop": 1,
+        "note": "",
+        "relType": "导致",
+        "score": 0.5429024508215757,
+        "topic": {
+          "evidence": [],
+          "grounding": "实",
+          "id": 543,
+          "importance": 0.6,
+          "kind": "memory",
+          "last_content": "正文-怕雷声",
+          "source": "test",
+          "topic": "怕雷声",
+          "updated_at": "2026-09-07T12:00:00.000Z"
+        },
+        "via": "打雷"
+      }
+    ],
+    "warns": []
+  },
+  "rel_noRels": {
+    "deepseek": [],
+    "io": [
+      "from:memory_relations",
+      "memory_relations.select | source_topic, target_topic, rel_type, note",
+      "memory_relations.limit | 3000",
+      "memory_relations.await"
+    ],
+    "logs": [],
+    "value": [],
+    "warns": []
+  },
+  "rel_readError": {
+    "deepseek": [],
+    "io": [
+      "from:memory_relations",
+      "memory_relations.select | source_topic, target_topic, rel_type, note",
+      "memory_relations.limit | 3000",
+      "memory_relations.await"
+    ],
+    "logs": [],
+    "value": [],
+    "warns": []
+  },
+  "rel_rowsError": {
+    "deepseek": [],
+    "io": [
+      "from:memory_relations",
+      "memory_relations.select | source_topic, target_topic, rel_type, note",
+      "memory_relations.limit | 3000",
+      "memory_relations.await",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.in | topic | 怕雷声,雨夜好眠",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "value": [],
+    "warns": []
+  },
+  "rel_filterEmptyContent": {
+    "deepseek": [],
+    "io": [
+      "from:memory_relations",
+      "memory_relations.select | source_topic, target_topic, rel_type, note",
+      "memory_relations.limit | 3000",
+      "memory_relations.await",
+      "from:memory_topics",
+      "memory_topics.select | id, topic, last_content, grounding, importance, updated_at, kind, evidence, source",
+      "memory_topics.in | topic | 怕雷声,雨夜好眠",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "value": [
+      {
+        "hop": 2,
+        "note": "x",
+        "relType": "解释",
+        "score": 0.5700475733626544,
+        "topic": {
+          "evidence": [],
+          "grounding": "实",
+          "id": 220,
+          "importance": 0.9,
+          "kind": "memory",
+          "last_content": "正文-雨夜好眠",
+          "source": "test",
+          "topic": "雨夜好眠",
+          "updated_at": "2026-09-07T12:00:00.000Z"
+        },
+        "via": "怕雷声"
+      }
+    ],
+    "warns": []
+  },
+  "rel_noCandidates": {
+    "deepseek": [],
+    "io": [
+      "from:memory_relations",
+      "memory_relations.select | source_topic, target_topic, rel_type, note",
+      "memory_relations.limit | 3000",
+      "memory_relations.await"
+    ],
+    "logs": [],
+    "value": [],
+    "warns": []
+  },
+  "world_exact": {
+    "deepseek": [],
+    "io": [
+      "from:world_entries",
+      "world_entries.select | id, title, content, keywords, kind",
+      "world_entries.eq | enabled | true",
+      "world_entries.await"
+    ],
+    "logs": [],
+    "value": [
+      {
+        "_hit": "exact",
+        "content": "八音盒的内容",
+        "enabled": true,
+        "id": 311,
+        "keywords": [
+          "八音盒"
+        ],
+        "kind": "know",
+        "title": "八音盒"
+      }
+    ],
+    "warns": []
+  },
+  "world_contains": {
+    "deepseek": [],
+    "io": [
+      "from:world_entries",
+      "world_entries.select | id, title, content, keywords, kind",
+      "world_entries.eq | enabled | true",
+      "world_entries.await"
+    ],
+    "logs": [],
+    "value": [
+      {
+        "_hit": "contains",
+        "content": "八音盒的内容",
+        "enabled": true,
+        "id": 311,
+        "keywords": [
+          "八音盒"
+        ],
+        "kind": "know",
+        "title": "八音盒"
+      }
+    ],
+    "warns": []
+  },
+  "world_exactBreaksFirst": {
+    "deepseek": [],
+    "io": [
+      "from:world_entries",
+      "world_entries.select | id, title, content, keywords, kind",
+      "world_entries.eq | enabled | true",
+      "world_entries.await"
+    ],
+    "logs": [],
+    "value": [
+      {
+        "_hit": "exact",
+        "content": "猫的内容",
+        "enabled": true,
+        "id": 684,
+        "keywords": [
+          "猫",
+          "猫粮"
+        ],
+        "kind": "remind",
+        "title": "猫"
+      }
+    ],
+    "warns": []
+  },
+  "world_caseInsensitive": {
+    "deepseek": [],
+    "io": [
+      "from:world_entries",
+      "world_entries.select | id, title, content, keywords, kind",
+      "world_entries.eq | enabled | true",
+      "world_entries.await"
+    ],
+    "logs": [],
+    "value": [
+      {
+        "_hit": "exact",
+        "content": "GPS的内容",
+        "enabled": true,
+        "id": 595,
+        "keywords": [
+          "GPS"
+        ],
+        "kind": "know",
+        "title": "GPS"
+      }
+    ],
+    "warns": []
+  },
+  "world_noKeywords": {
+    "deepseek": [],
+    "io": [
+      "from:world_entries",
+      "world_entries.select | id, title, content, keywords, kind",
+      "world_entries.eq | enabled | true",
+      "world_entries.await"
+    ],
+    "logs": [],
+    "value": [],
+    "warns": []
+  },
+  "world_empty": {
+    "deepseek": [],
+    "io": [
+      "from:world_entries",
+      "world_entries.select | id, title, content, keywords, kind",
+      "world_entries.eq | enabled | true",
+      "world_entries.await"
+    ],
+    "logs": [],
+    "value": [],
+    "warns": []
+  },
+  "world_emptyMsg": {
+    "deepseek": [],
+    "io": [
+      "from:world_entries",
+      "world_entries.select | id, title, content, keywords, kind",
+      "world_entries.eq | enabled | true",
+      "world_entries.await"
+    ],
+    "logs": [],
+    "value": [],
+    "warns": []
+  },
+  "world_error": {
+    "deepseek": [],
+    "io": [
+      "from:world_entries",
+      "world_entries.select | id, title, content, keywords, kind",
+      "world_entries.eq | enabled | true",
+      "world_entries.await"
+    ],
+    "logs": [],
+    "value": [],
+    "warns": []
+  },
+  "recallDaily": {
+    "deepseek": [],
+    "io": [],
+    "logs": [],
+    "value": {
+      "attempted": 24,
+      "budget": 2,
+      "cooldown": 3,
+      "date": "2026-09-10",
+      "echoDemoted": 1,
+      "emptyPool": 1,
+      "hits": 15,
+      "memoryError": 1,
+      "noMatch": 4,
+      "noRun": 2,
+      "recentCap": 2,
+      "zero": 13
+    },
+    "warns": []
+  }
+}

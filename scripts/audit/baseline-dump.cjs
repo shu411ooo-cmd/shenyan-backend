@@ -109,7 +109,10 @@ const rev = arg('--rev') || (arg('--module') ? null : spec.baseRev);
 const modPath = arg('--module');
 if (!rev && !modPath) { console.error('❌ 要 --rev <git rev> 或 --module <相对路径> 之一'); process.exit(1); }
 
-const A = rev ? fromRev(spec, rev) : fromModule(spec, modPath);
+const raw = rev ? fromRev(spec, rev) : fromModule(spec, modPath);
+// ⚠️ adapt 是给**两边**归一用的（rev 模式给裸函数集，module 模式给模块导出/工厂）。
+//    第一版只把它当 flag 判断、从没真调用过 —— 等于没实现，直到搬检索层才第一次需要它。
+const A = spec.adapt ? spec.adapt(raw) : raw;
 const out = {};
 (async () => {
 for (const c of spec.calls) out[c.name] = norm(await c.run(A));
