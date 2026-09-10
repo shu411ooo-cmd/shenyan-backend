@@ -18,13 +18,20 @@
 
    spec 文件（CommonJS）：
      module.exports = {
+       baseRev: '1f96a08',            // ⚠️ 必备：这些行号是相对**哪个版本**的 server.js
        ranges: [[1992, 2037]],        // rev 模式：要 eval 的行区间（含首含尾）
        expose: ['topicHits'],         // rev 模式：要把哪些名字暴露出来
+       deps: { supabase: fakeSb },    // 可选：rev 模式下额外注入沙箱的全局（IO 桩）
        prelude: '',                   // 可选：eval 前要垫的桩代码
-       calls: [                       // 要跑并落盘的调用
+       adapt: (api) => api,           // 可选：把「rev 的裸函数集 / 模块的导出」归一成同一个形状
+       calls: [                       // 要跑并落盘的调用（可以是 async）
          { name: 'topicHits', run: (A) => [[msg, topic], ...].map(([m, t]) => A.topicHits(m, t)) },
        ],
      };
+
+   IO 密集的代码怎么比：在 deps 里放一个**假 supabase**（记录每次查询），
+   rev 模式用 prelude 把它绑成模块级 supabase，module 模式由工厂注入同一个假货。
+   两边跑同一批调用，输出（含查询序列）必须一致 —— 「IO 调用序列没变」也是证据。
 
    注意：结果里 Set/Map 会被规范化成排序数组，才能 JSON 往返比较（extractNgrams 返回 Set）。
    ============================================================ */
@@ -52,6 +59,14 @@ function norm(v, depth = 0) {
 
 /* ---------- 从 git rev 切行 eval ---------- */
 function fromRev(spec, rev) {
+  // ⚠️ 行号是相对某个具体版本写的。HEAD 一旦前进（搬完就前进），
+  // `--rev HEAD` 会去切一段**完全不同**的代码 —— 第一版就撞过这个：
+  // 搬完后再拿 --rev HEAD 跑，切到了别的函数中间，vm 报语法错。
+  // 所以 spec 必须自带 baseRev，且只有它（或它的祖先）才对得上。
+  if (spec.baseRev && rev !== spec.baseRev) {
+    console.warn(`⚠️ spec.baseRev=${spec.baseRev}，但你传的 --rev ${rev}。`);
+    console.warn(`   行区间是相对 ${spec.baseRev} 写的，用别的版本切会切错地方。`);
+  }
   const src = execFileSync('git', ['show', `${rev}:server.js`], { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   const L = src.replace(/\r/g, '').split('\n');
   let block = '';
@@ -61,7 +76,10 @@ function fromRev(spec, rev) {
     block += slice + '\n';
   }
   const code = `${spec.prelude || ''}\n${block}\n;({ ${spec.expose.join(', ')} })`;
-  const sandbox = { console, Set, Map, Math, JSON, Object, Array, String, Number, Date, Boolean, RegExp, NaN, Infinity, isNaN, parseInt, parseFloat, undefined };
+  const sandbox = {
+    console, Set, Map, Math, JSON, Object, Array, String, Number, Date, Boolean, RegExp, NaN, Infinity, isNaN, parseInt, parseFloat, undefined,
+    ...(spec.deps || {}),
+  };
   return vm.runInNewContext(code, vm.createContext(sandbox), { filename: `<${rev}:server.js ${spec.ranges.map((r) => r.join('-')).join(',')}>` });
 }
 
@@ -70,6 +88,7 @@ function fromModule(spec, rel) {
   const abs = path.resolve(ROOT, rel);
   if (!fs.existsSync(abs)) throw new Error(`模块不存在: ${rel}`);
   const mod = require(abs);
+  if (spec.adapt) return mod;                    // 交给 spec 的 adapt 归一（通常是调工厂）
   const A = {};
   for (const n of spec.expose) {
     if (!(n in mod)) throw new Error(`模块 ${rel} 没有导出 ${n}（expose 里写了但它不在 module.exports 上？）`);
@@ -86,16 +105,18 @@ const specPath = arg('--spec');
 if (!specPath) { console.error('用法见文件头。至少要 --spec <spec.cjs> 和 --rev/--module 之一。'); process.exit(1); }
 const spec = require(path.resolve(ROOT, specPath));
 
-const rev = arg('--rev');
+const rev = arg('--rev') || (arg('--module') ? null : spec.baseRev);
 const modPath = arg('--module');
 if (!rev && !modPath) { console.error('❌ 要 --rev <git rev> 或 --module <相对路径> 之一'); process.exit(1); }
 
 const A = rev ? fromRev(spec, rev) : fromModule(spec, modPath);
 const out = {};
-for (const c of spec.calls) out[c.name] = norm(c.run(A));
+(async () => {
+for (const c of spec.calls) out[c.name] = norm(await c.run(A));
 
 const json = JSON.stringify(out, null, 2);
 const comparePath = arg('--compare');
+const outPath = arg('--out');
 
 if (comparePath) {
   const abs = path.resolve(ROOT, comparePath);
@@ -123,7 +144,6 @@ if (comparePath) {
   process.exit(1);
 }
 
-const outPath = arg('--out');
 if (outPath) {
   const abs = path.resolve(ROOT, outPath);
   fs.mkdirSync(path.dirname(abs), { recursive: true });
@@ -133,3 +153,4 @@ if (outPath) {
 } else {
   console.log(json);
 }
+})().catch((e) => { console.error('❌ 跑调用时出错:', e && e.stack || e); process.exit(1); });

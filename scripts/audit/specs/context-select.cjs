@@ -101,6 +101,8 @@ const worldCases = [
 ];
 
 module.exports = {
+  // 行号是相对这个版本写的（搬迁前、抽出 lib/context/select.js 之前的最后一个 commit）
+  baseRev: '1f96a08',
   // ⚠️ 区间要停在完整语句的末尾：2036 行起是「注意力组装」那段块注释的开头，
   // 切到 2037 会把 /* 切进来但切不到 */ → vm 报 Invalid or unexpected token。
   ranges: [[1992, 2035], [2249, 2251], [2350, 2361], [2375, 2421]],
