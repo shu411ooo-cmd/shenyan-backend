@@ -10,7 +10,7 @@ const createBackupRouter = require('./routes/backup');
 const createMusicRouter = require('./routes/music');
 const createCalendar = require('./routes/calendar');
 const createShareRouter = require('./routes/share');
-const createMoments = require('./routes/moments');
+const createMoments = require('./routes/moments');
 // module.exports 仍导出 extractMetaHtml / digXhsNote（外部消费者用），故此处仍需引入
 const { extractMetaHtml, digXhsNote } = require('./lib/share-parse');
 const { callDeepSeekJson } = require('./lib/deepseek-json');
@@ -28,14 +28,14 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-const createAuth = require('./routes/auth');
-// 登录门：交出 router 与 requireAuth 中间件（挂载顺序见下方注释）
-const authModule = createAuth({ supabase });
+const createAuth = require('./routes/auth');
+// 登录门：交出 router 与 requireAuth 中间件（挂载顺序见下方注释）
+const authModule = createAuth({ supabase });
 
 // 日历模块：交出 router 与 buildCalendarBlock（后者被 buildModelContext 调用）
 const calendarModule = createCalendar({ supabase });
-// 朋友圈模块：交出四个 router + 5 个被外部调用的能力（定时器 / 聊天主链路用）
-const momentsModule = createMoments({ supabase });
+// 朋友圈模块：交出四个 router + 5 个被外部调用的能力（定时器 / 聊天主链路用）
+const momentsModule = createMoments({ supabase });
 
 const app = express();
 // CORS：同源前端不需要跨域头；允许带凭证的跨域（本地 dev preview 跨端口测登录），
@@ -2686,6 +2686,16 @@ async function cacheWarmTick() {
   }
 }
 
+// request_stats 缺列时的逐列降级（见 lib/stats-row.js 顶部的来龙去脉）
+const { insertRowResilient } = require('./lib/stats-row');
+const MAX_STRIP_COLUMNS = 8;        // 一次最多剥几列（正常 0~1 列就够；上限只是防跑飞）
+// 核心列：从建表（2026-08-08）起就在、几乎不可能缺 —— 剥不动时的最后一档
+const CORE_STAT_COLUMNS = [
+  'session_id', 'client', 'model', 'stream', 'tool_rounds', 'usage_raw',
+  'prompt_tokens', 'completion_tokens', 'total_tokens', 'cached_tokens',
+  'cache_read_input_tokens', 'cache_creation_input_tokens', 'reasoning_tokens',
+];
+
 // —— 记录一次 chat 请求的真实 usage 到 request_stats（失败只告警，不阻断） ——
 // usage 语义（OpenRouter）：OpenAI 风格 cached_tokens 是 prompt_tokens 的子集；
 // Anthropic 风格 cache_read/creation 是独立的桶。两者可能并存，语义可能随 provider 变化——
@@ -2739,33 +2749,28 @@ async function recordRequestStat({ sessionId, client, model, stream, usageList =
       keepalive_meta,
       memory_degraded,
     };
-    let { error } = await supabase.from('request_stats').insert(fullRow);
+    // 写入：先整行；缺列就**从报错里抠出列名、剥掉重试**。
+    //
+    // 为什么不用写死的降级行（2026-09-10 改）：本项目是「代码先部署、迁移不自动跑」，
+    // 新诊断列一写，PostgREST 对未知列**整行 400** → 整个账本停止进货。08-30 就这么瞎了
+    // 两小时（11:45:26→20:33:57，56 轮真实对话的成本没记上；根因 cd75a04）。
+    // 原来的 baseRow 兜底自己仍带着 keepalive_action/keepalive_meta/memory_degraded，
+    // 缺的若是这三个之一，两次插入都失败、整行照样丢。
+    // 剥列是「只丢缺的那一列」，账本不再整段瞎 —— 缺任何未来新列都只是少一个字段。
+    const { error, stripped, coreOnly } = await insertRowResilient(
+      fullRow,
+      (r) => supabase.from('request_stats').insert(r),
+      { maxStrip: MAX_STRIP_COLUMNS, coreColumns: CORE_STAT_COLUMNS },
+    );
     if (error) {
-      // 2026-08-31 韧性：诊断列可能没迁移（live_collapsed/live_tokens_est/live_anchor_turn 等，
-      // 见 migrations/2026-08-31-request-stats-columns.sql）——PostgREST 对未知列整行 400，
-      // 一整行都不进。降级成基础行：核心 token 计数照记、诊断列宁丢，stats 数字继续流动。
-      const baseRow = {
-        session_id: sessionId,
-        client: client || 'legacy',
-        model,
-        stream: !!stream,
-        tool_rounds: raw.length || 1,
-        usage_raw: raw.length ? raw : null,
-        prompt_tokens: fullRow.prompt_tokens,
-        completion_tokens: fullRow.completion_tokens,
-        total_tokens: fullRow.total_tokens,
-        cached_tokens: fullRow.cached_tokens,
-        cache_write_tokens: fullRow.cache_write_tokens,
-        cache_read_input_tokens: fullRow.cache_read_input_tokens,
-        cache_creation_input_tokens: fullRow.cache_creation_input_tokens,
-        reasoning_tokens: fullRow.reasoning_tokens,
-        keepalive_action,
-        keepalive_meta,
-        memory_degraded,
-      };
-      const { error: baseErr } = await supabase.from('request_stats').insert(baseRow);
-      if (baseErr) console.warn('⚠️ 写入 request_stats 失败（含降级）:', baseErr.message);
-      else console.warn('⚠️ request_stats 诊断列缺失，已降级记基础行（跑 2026-08-31-request-stats-columns.sql 后自动全量）:', error.message);
+      // 一行都不进 = 账本正在丢行，这是账本级事故，不能淹没在每轮一条的 warn 里（教训 #2）
+      warnOnce('request_stats',
+        `用量账本写不进去，这一轮的成本没记上 —— 查 request_stats 是否缺迁移: ${error.message}`);
+    } else if (stripped.length || coreOnly) {
+      // 降级 = 「能记，但不全」。同样是长期状态，别每轮喊一声（教训 #2）——
+      // 按缺的列集合分键，换了一批缺列才会再喊一次。
+      warnOnce(`request_stats_${coreOnly ? 'core' : stripped.join('_')}`,
+        `⚠️ request_stats 写入降级（${stripped.length ? `缺列 ${stripped.join(',')}` : '核心列模式'}）—— 其余字段照记，跑迁移后自动恢复全量`);
     }
   } catch (err) {
     console.warn('⚠️ 写入 request_stats 异常:', err.message);
