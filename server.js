@@ -1989,11 +1989,6 @@ async function getAttentionConfig() {
   } catch (e) { warnConfigFallback('attention', e); return ATTENTION_DEFAULTS; }
 }
 
-/* 主题命中：topic 的 ≥2 字子串出现在消息里（中文短语直接 substring 最稳，不折腾分词）。
-   短主题（≤4 字，如"搬家/猫"）整词命中；长主题滑窗取 2~4 字子串碰。 */
-// 口水词（2 字）：配不上「提及」——"我们/今天/觉得"这类在哪都能碰上，当命中会把旧记忆
-// 每轮都拽出来，前文左右跳（程芥 2026-08-21）。命中必须落在非口水词上才算数。
-
 /* 注意力组装：返回 { text, hits }，两个闸都不触发或命中不足时返回 null。
    排序 = importance × 时间衰减（30 天半衰），牵挂线头相关记忆排前面。
    冷却：同一会话至少隔 ATTENTION_COOLDOWN_TURNS 次检查才再注入，避免连续每轮拽旧记忆
@@ -2204,9 +2199,6 @@ async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
 //   getAttentionMaterial 即 retrieveMemory：话题命中 → 关系 1~2 hop 扩展 → 打分 → 冷却/预算门槛。
 //   retrieveWorld：world_entries 表已建（2026-08-26 迁移已跑），空表时自然返回 []。
 
-// 七类关系（缝合怪图1 + GPT 拆法）：触发/导致 = 因果；贡献/改善 = 促成与修正；解释 = 来龙去脉；
-// 更新 = 演化取代；同类 = 同一原子事实的证据束/相关事件。
-
 // 从命中话题出发，拉 1~2 hop 的因果链邻居（带正文/重要性，按 importance×衰减×hop折扣打分降序）。
 // 不做图：memory_relations 是边缘列表，这里只是 BFS 扩展 + 排序。
 async function getRelationNeighbors(matchedTopics) {
@@ -2301,22 +2293,6 @@ async function retrieveWorld(userMessage) {
     return [];
   }
 }
-
-// 独立词判定（全机械，不引分词）：msg 里任一位置出现 kw 且两侧不是中文/字母/数字 → 全等。
-// isWordChar：a-z / 0-9 / 汉字（中文连写是常态，所以 exact 偏少、contains 是常态）。
-
-// —— 世界书 mode×kind 矩阵 + 三刹车（世界书注入分层 §7，审后定稿）——
-//   kind：setting 设定 / remind 关系提醒 / know 知识卡（一条一个主 kind）
-//   mode 是门控不是来源：关键词才是唯一入口，mode 只决定「命中之后带不带、带多少」。
-//   三刹车：
-//     ① 亲密 + remind + exact = 保留席（必注、≤1、前缀极轻；不参与丢块排队 → prio 0）
-//     ② 亲密 + remind + contains = 不注入（remind 只有 exact 才算「亲密的确定性」）
-//     ③ 上限 ≤1、前缀极轻（不写「客观事实」这类冷词）
-//   破例（§12 Q5 裁决）：remind + exact 不受 mode 滞后一窗限制——正事/闲聊的矩阵本
-//   不让 remind 进普通块，但 mode 可能滞后（真亲密刚收尾、残留还没改），漏注更糟 → 破例进席。
-//   矩阵：亲密 → 只 remind（exact 进席、contains 不注）；深入 → setting/remind 全注、know 弱（≤1）；
-//        正事 → setting/know；闲聊 → setting 弱（≤1）。无 residue → 按深入。
-//   返回 { seat: 保留席条目|null, block: 普通块条目[] }（block 已按 exact 优先排好、预算截好）
 
 // —— 配置：settings 表（SQL 未跑时回落默认值，防御式） ——
 // 只有 global 行（永无岛会话级配置已随永无岛删除 2026-08-29，sessionId 参数仅保留给调用方，已不用）
