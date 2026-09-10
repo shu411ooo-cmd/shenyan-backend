@@ -22,6 +22,10 @@ const { callDeepSeekJson } = require('./lib/deepseek-json');
 // （callOpenRouter 确实只在 lib/llm.js 内部被 callReplyModel 的降级链调用，
 //   本文件用不到；一并引入只是图整齐，代价为零，不值得再冒一次裁剪的风险。）
 const { randomDelay, parseJsonLoose, callDeepSeek, callReplyModel, callOpenRouter, callVisionModel } = require('./lib/llm');
+// 上下文检索层的纯选择器（分区第 3 步 · 2026-09-10 搬去 lib/context/select.js）。
+// ⚠️ 这些名字仍在文件底部的 module.exports 里被**裸引用**导出（topicHits / RELATION_TYPES
+//   还被 scripts/smoke-attention-temp.js 直接使用），所以不许按「调用点」裁剪这行。
+const { topicHits, extractNgrams, isExactWord, selectWorldHits, isStopword, RELATION_TYPES, RELATION_HOP1_WEIGHT, RELATION_HOP2_WEIGHT } = require('./lib/context/select');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -1989,50 +1993,6 @@ async function getAttentionConfig() {
    短主题（≤4 字，如"搬家/猫"）整词命中；长主题滑窗取 2~4 字子串碰。 */
 // 口水词（2 字）：配不上「提及」——"我们/今天/觉得"这类在哪都能碰上，当命中会把旧记忆
 // 每轮都拽出来，前文左右跳（程芥 2026-08-21）。命中必须落在非口水词上才算数。
-const STOPWORD2 = new Set([
-  '我们','你们','他们','今天','明天','昨天','现在','时候','觉得','感觉','知道','说话','聊天','聊天',
-  '然后','但是','还是','就是','真的','什么','怎么','这个','那个','一下','有点','没有','如果','因为',
-  '所以','自己','一起','家里','回来','走了','好吧','对了','等等','事情','东西','问题','朋友','早上',
-  '晚上','中午','下午','上次','以前','后来','一直','还是','但是','特别','越来越','上次',
-]);
-
-function isStopword(s) { return s.length === 2 && STOPWORD2.has(s); }
-
-function topicHits(userMessage, topic) {
-  if (!userMessage || !topic) return false;
-  const msg = String(userMessage);
-  const t = String(topic).trim();
-  if (!t) return false;
-  if (t.length <= 4) {
-    // 短短语整词命中优先；整词不中时取 2 字片段再碰——
-    // 中文口语常把四字短语拆开说（"熬夜习惯"→"上次说我熬夜，现在习惯了"），整词会漏。
-    // 但 2 字片段若是口水词（我们/今天…）不算命中。
-    if (msg.includes(t)) return !isStopword(t);
-    if (t.length === 4) return (msg.includes(t.slice(0, 2)) && !isStopword(t.slice(0, 2))) || (msg.includes(t.slice(2, 4)) && !isStopword(t.slice(2, 4)));
-    if (t.length === 3) return (msg.includes(t.slice(0, 2)) && !isStopword(t.slice(0, 2))) || (msg.includes(t.slice(1, 3)) && !isStopword(t.slice(1, 3)));
-    return false;
-  }
-  for (let len = 4; len >= 2; len--) {
-    for (let i = 0; i + len <= t.length; i++) {
-      const frag = t.slice(i, i + len);
-      if (msg.includes(frag)) {
-        // 4/3 字片段足够具体，直接算命中；2 字片段必须是实词
-        if (len >= 3 || !isStopword(frag)) return true;
-      }
-    }
-  }
-  return false;
-}
-
-/* 提取文本的 2~4 字 n-gram（去掉标点），用于牵挂闸的「共享词」判断 */
-function extractNgrams(text) {
-  const s = String(text || '').replace(/[^一-龥a-zA-Z0-9]/g, '');
-  const set = new Set();
-  for (let len = 2; len <= 4; len++) {
-    for (let i = 0; i + len <= s.length; i++) set.add(s.slice(i, i + len));
-  }
-  return set;
-}
 
 /* 注意力组装：返回 { text, hits }，两个闸都不触发或命中不足时返回 null。
    排序 = importance × 时间衰减（30 天半衰），牵挂线头相关记忆排前面。
@@ -2246,9 +2206,6 @@ async function getAttentionMaterial(sessionId, userMessage, opts = {}) {
 
 // 七类关系（缝合怪图1 + GPT 拆法）：触发/导致 = 因果；贡献/改善 = 促成与修正；解释 = 来龙去脉；
 // 更新 = 演化取代；同类 = 同一原子事实的证据束/相关事件。
-const RELATION_TYPES = ['触发', '导致', '贡献', '改善', '解释', '更新', '同类'];
-const RELATION_HOP1_WEIGHT = 1.0; // 直接关联
-const RELATION_HOP2_WEIGHT = 0.7; // 间接（邻居的邻居），V1 常数，后续可调
 
 // 从命中话题出发，拉 1~2 hop 的因果链邻居（带正文/重要性，按 importance×衰减×hop折扣打分降序）。
 // 不做图：memory_relations 是边缘列表，这里只是 BFS 扩展 + 排序。
@@ -2347,18 +2304,6 @@ async function retrieveWorld(userMessage) {
 
 // 独立词判定（全机械，不引分词）：msg 里任一位置出现 kw 且两侧不是中文/字母/数字 → 全等。
 // isWordChar：a-z / 0-9 / 汉字（中文连写是常态，所以 exact 偏少、contains 是常态）。
-function isExactWord(msg, kw) {
-  let from = 0;
-  while (true) {
-    const idx = msg.indexOf(kw, from);
-    if (idx === -1) return false;
-    const before = idx > 0 ? msg[idx - 1] : '';
-    const after = idx + kw.length < msg.length ? msg[idx + kw.length] : '';
-    const wordChar = (ch) => /[a-z0-9一-鿿]/.test(ch);
-    if (!wordChar(before) && !wordChar(after)) return true;
-    from = idx + 1;
-  }
-}
 
 // —— 世界书 mode×kind 矩阵 + 三刹车（世界书注入分层 §7，审后定稿）——
 //   kind：setting 设定 / remind 关系提醒 / know 知识卡（一条一个主 kind）
@@ -2372,53 +2317,6 @@ function isExactWord(msg, kw) {
 //   矩阵：亲密 → 只 remind（exact 进席、contains 不注）；深入 → setting/remind 全注、know 弱（≤1）；
 //        正事 → setting/know；闲聊 → setting 弱（≤1）。无 residue → 按深入。
 //   返回 { seat: 保留席条目|null, block: 普通块条目[] }（block 已按 exact 优先排好、预算截好）
-function selectWorldHits(hits, curMode) {
-  const mode = ['亲密', '深入', '正事', '闲聊'].includes(curMode) ? curMode : '深入';
-  const exactFirst = (a, b) => (b._hit === 'exact' ? 1 : 0) - (a._hit === 'exact' ? 1 : 0);
-
-  // 保留席：remind + exact。亲密 = 刹车①；正事/闲聊 = 破例（mode 滞后一窗时真亲密漏注更糟）。
-  // 深入不设席——矩阵本就允许 remind 进普通块（exact 优先排在块内），无需另开通道。
-  const seat = mode !== '深入'
-    ? (hits.find((h) => h.kind === 'remind' && h._hit === 'exact') || null)
-    : null;
-
-  const allow = (k) => {
-    if (mode === '亲密') return k === 'remind';
-    if (mode === '深入') return true; // setting/remind 全注，know 走弱档
-    if (mode === '正事') return k === 'setting' || k === 'know';
-    return k === 'setting';           // 闲聊
-  };
-  let picked = hits.filter((h) => allow(h.kind)).sort(exactFirst);
-
-  // 亲密：remind 全归保留席（exact 进席，contains 刹车②不注），普通块空
-  if (mode === '亲密') return { seat, block: [] };
-  // 正事/闲聊：破例已把 remind+exact 拿走当席，普通块别再重复注 remind（矩阵本就不让进）
-  if (mode === '正事' || mode === '闲聊') picked = picked.filter((h) => h.kind !== 'remind');
-
-  // 深入（2026-08-30 程芥裁决「深入该保知识卡」）：exact 关系提醒 > exact 设定 > exact 知识软位。
-  //   保 1 席但不是写死第 3 席——有 exact 知识就占第 3，无 exact 知识才补 contains（设定/关系）。
-  //   无 exact 命中绝不硬塞（没知识命中就不带知识，宁缺不乱说话）。
-  if (mode === '深入') {
-    const exactRemind = picked.find((h) => h.kind === 'remind' && h._hit === 'exact');
-    const exactSetting = picked.find((h) => h.kind === 'setting' && h._hit === 'exact');
-    const exactKnow = picked.find((h) => h.kind === 'know' && h._hit === 'exact');
-    const contains = picked.find((h) => h._hit === 'contains');
-    const block = [exactRemind, exactSetting, exactKnow].filter(Boolean);
-    if (block.length < 3 && contains && !block.includes(contains)) block.push(contains);
-    return { seat: null, block: block.slice(0, 3) };
-  }
-
-  // 预算：exact ≤3 / contains 只带 1 / 弱档再压（闲聊 setting ≤1）
-  const block = [];
-  let containsCount = 0;
-  for (const h of picked) {
-    if (block.length >= 3) break;
-    if (h._hit === 'exact') block.push(h);
-    else if (containsCount === 0) { containsCount = 1; block.push(h); }
-  }
-  if (mode === '闲聊') return { seat, block: block.slice(0, 1) };
-  return { seat, block };
-}
 
 // —— 配置：settings 表（SQL 未跑时回落默认值，防御式） ——
 // 只有 global 行（永无岛会话级配置已随永无岛删除 2026-08-29，sessionId 参数仅保留给调用方，已不用）

@@ -1,0 +1,486 @@
+{
+  "topicHits": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    false,
+    false,
+    true,
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    true,
+    false,
+    false,
+    false,
+    true
+  ],
+  "extractNgrams": [
+    {
+      "__set": [
+        "打雷",
+        "打雷了",
+        "雷了"
+      ]
+    },
+    {
+      "__set": [
+        "12",
+        "123",
+        "23",
+        "e一",
+        "e一起",
+        "e一起1",
+        "we",
+        "we一",
+        "we一起",
+        "一起",
+        "一起1",
+        "一起12",
+        "今天",
+        "今天w",
+        "今天we",
+        "天w",
+        "天we",
+        "天we一",
+        "起1",
+        "起12",
+        "起123"
+      ]
+    },
+    {
+      "__set": []
+    },
+    {
+      "__set": []
+    },
+    {
+      "__set": []
+    },
+    {
+      "__set": [
+        "雷雨"
+      ]
+    },
+    {
+      "__set": []
+    },
+    {
+      "__set": []
+    },
+    {
+      "__set": [
+        "1b",
+        "1b2",
+        "a1",
+        "a1b",
+        "a1b2",
+        "b2"
+      ]
+    }
+  ],
+  "isExactWord": [
+    false,
+    false,
+    true,
+    false,
+    true,
+    false,
+    false,
+    false,
+    true,
+    false,
+    false,
+    false
+  ],
+  "isStopword": [
+    true,
+    false,
+    false,
+    true,
+    false,
+    false,
+    false
+  ],
+  "selectWorldHits": [
+    {
+      "block": [],
+      "seat": {
+        "_hit": "exact",
+        "content": "remind内容",
+        "id": 128,
+        "keywords": [
+          "x"
+        ],
+        "kind": "remind",
+        "title": "remind-exact"
+      }
+    },
+    {
+      "block": [],
+      "seat": null
+    },
+    {
+      "block": [
+        {
+          "_hit": "exact",
+          "content": "remind内容",
+          "id": 128,
+          "keywords": [
+            "x"
+          ],
+          "kind": "remind",
+          "title": "remind-exact"
+        },
+        {
+          "_hit": "exact",
+          "content": "setting内容",
+          "id": 173,
+          "keywords": [
+            "x"
+          ],
+          "kind": "setting",
+          "title": "setting-exact"
+        },
+        {
+          "_hit": "exact",
+          "content": "know内容",
+          "id": 208,
+          "keywords": [
+            "x"
+          ],
+          "kind": "know",
+          "title": "know-exact"
+        }
+      ],
+      "seat": null
+    },
+    {
+      "block": [
+        {
+          "_hit": "contains",
+          "content": "remind内容",
+          "id": 128,
+          "keywords": [
+            "x"
+          ],
+          "kind": "remind",
+          "title": "remind-contains"
+        }
+      ],
+      "seat": null
+    },
+    {
+      "block": [
+        {
+          "_hit": "exact",
+          "content": "know内容",
+          "id": 208,
+          "keywords": [
+            "x"
+          ],
+          "kind": "know",
+          "title": "know-exact"
+        },
+        {
+          "_hit": "contains",
+          "content": "know内容",
+          "id": 208,
+          "keywords": [
+            "x"
+          ],
+          "kind": "know",
+          "title": "know-contains"
+        }
+      ],
+      "seat": null
+    },
+    {
+      "block": [
+        {
+          "_hit": "exact",
+          "content": "remind内容",
+          "id": 128,
+          "keywords": [
+            "x"
+          ],
+          "kind": "remind",
+          "title": "remind-exact"
+        }
+      ],
+      "seat": null
+    },
+    {
+      "block": [
+        {
+          "_hit": "exact",
+          "content": "remind内容",
+          "id": 128,
+          "keywords": [
+            "x"
+          ],
+          "kind": "remind",
+          "title": "remind-exact"
+        },
+        {
+          "_hit": "exact",
+          "content": "setting内容",
+          "id": 173,
+          "keywords": [
+            "x"
+          ],
+          "kind": "setting",
+          "title": "setting-exact"
+        },
+        {
+          "_hit": "exact",
+          "content": "know内容",
+          "id": 208,
+          "keywords": [
+            "x"
+          ],
+          "kind": "know",
+          "title": "know-exact"
+        }
+      ],
+      "seat": null
+    },
+    {
+      "block": [
+        {
+          "_hit": "exact",
+          "content": "setting内容",
+          "id": 173,
+          "keywords": [
+            "x"
+          ],
+          "kind": "setting",
+          "title": "setting-exact"
+        },
+        {
+          "_hit": "contains",
+          "content": "know内容",
+          "id": 208,
+          "keywords": [
+            "x"
+          ],
+          "kind": "know",
+          "title": "know-contains"
+        }
+      ],
+      "seat": {
+        "_hit": "exact",
+        "content": "remind内容",
+        "id": 128,
+        "keywords": [
+          "x"
+        ],
+        "kind": "remind",
+        "title": "remind-exact"
+      }
+    },
+    {
+      "block": [
+        {
+          "_hit": "exact",
+          "content": "setting内容",
+          "id": 173,
+          "keywords": [
+            "x"
+          ],
+          "kind": "setting",
+          "title": "setting-exact"
+        }
+      ],
+      "seat": null
+    },
+    {
+      "block": [
+        {
+          "_hit": "exact",
+          "content": "setting内容",
+          "id": 173,
+          "keywords": [
+            "x"
+          ],
+          "kind": "setting",
+          "title": "setting-exact"
+        }
+      ],
+      "seat": null
+    },
+    {
+      "block": [
+        {
+          "_hit": "exact",
+          "content": "setting内容",
+          "id": 173,
+          "keywords": [
+            "x"
+          ],
+          "kind": "setting",
+          "title": "setting-exact"
+        }
+      ],
+      "seat": {
+        "_hit": "exact",
+        "content": "remind内容",
+        "id": 128,
+        "keywords": [
+          "x"
+        ],
+        "kind": "remind",
+        "title": "remind-exact"
+      }
+    },
+    {
+      "block": [
+        {
+          "_hit": "exact",
+          "content": "remind内容",
+          "id": 128,
+          "keywords": [
+            "x"
+          ],
+          "kind": "remind",
+          "title": "remind-exact"
+        },
+        {
+          "_hit": "exact",
+          "content": "know内容",
+          "id": 208,
+          "keywords": [
+            "x"
+          ],
+          "kind": "know",
+          "title": "know-exact"
+        }
+      ],
+      "seat": null
+    },
+    {
+      "block": [
+        {
+          "_hit": "exact",
+          "content": "remind内容",
+          "id": 128,
+          "keywords": [
+            "x"
+          ],
+          "kind": "remind",
+          "title": "remind-exact"
+        },
+        {
+          "_hit": "exact",
+          "content": "know内容",
+          "id": 208,
+          "keywords": [
+            "x"
+          ],
+          "kind": "know",
+          "title": "know-exact"
+        }
+      ],
+      "seat": null
+    },
+    {
+      "block": [
+        {
+          "_hit": "exact",
+          "content": "remind内容",
+          "id": 128,
+          "keywords": [
+            "x"
+          ],
+          "kind": "remind",
+          "title": "remind-exact"
+        },
+        {
+          "_hit": "exact",
+          "content": "know内容",
+          "id": 208,
+          "keywords": [
+            "x"
+          ],
+          "kind": "know",
+          "title": "know-exact"
+        }
+      ],
+      "seat": null
+    },
+    {
+      "block": [],
+      "seat": null
+    },
+    {
+      "block": [],
+      "seat": null
+    },
+    {
+      "block": [
+        {
+          "_hit": "exact",
+          "content": "setting内容",
+          "id": 173,
+          "keywords": [
+            "x"
+          ],
+          "kind": "setting",
+          "title": "setting-exact"
+        },
+        {
+          "_hit": "exact",
+          "content": "know内容",
+          "id": 208,
+          "keywords": [
+            "x"
+          ],
+          "kind": "know",
+          "title": "know-exact"
+        },
+        {
+          "_hit": "contains",
+          "content": "setting内容",
+          "id": 173,
+          "keywords": [
+            "x"
+          ],
+          "kind": "setting",
+          "title": "setting-contains"
+        }
+      ],
+      "seat": {
+        "_hit": "exact",
+        "content": "remind内容",
+        "id": 128,
+        "keywords": [
+          "x"
+        ],
+        "kind": "remind",
+        "title": "remind-exact"
+      }
+    }
+  ],
+  "consts": {
+    "RELATION_TYPES": [
+      "触发",
+      "导致",
+      "贡献",
+      "改善",
+      "解释",
+      "更新",
+      "同类"
+    ],
+    "hop1": 1,
+    "hop2": 0.7
+  }
+}
