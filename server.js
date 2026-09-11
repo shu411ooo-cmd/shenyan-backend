@@ -788,6 +788,22 @@ async function maybePruneInjections() {
   } catch (e) { /* 清理失败无碍 */ }
 }
 
+/* 台账健康检查（启动跑一次）：若台账仍 0 行、但 sessions 表已有对话，多半是写入又在静默失败——
+   曾因 session_id 类型错配空转十天无人察觉，故对「账空 + 有人在聊」大声喊一次。有数据则静默。 */
+async function checkInjectionsLedgerHealth() {
+  try {
+    const { count, error } = await supabase.from('prompt_injections').select('*', { count: 'exact', head: true });
+    if (error) { warnOnce('prompt_injections', `台账健康检查读取失败: ${error.message}`); return; }
+    if (count && count > 0) return; // 有数据 = 正常，静默
+    const { data, error: se } = await supabase.from('sessions').select('created_at').order('created_at', { ascending: false }).limit(1);
+    if (se || !data?.length) return; // sessions 读不到/也空 → 无从判断，不打扰
+    warnOnce('prompt_injections',
+      `台账 0 行但已有对话 —— 表达资格隔离（P0 边界协议）可能又在空转，镜子排除回响失效！sessions 最近 ${data[0].created_at}`);
+  } catch (e) {
+    warnOnce('prompt_injections', `台账健康检查异常: ${e.message}`);
+  }
+}
+
 /* 回响判定素材：一次 run 内取一次台账正文（normalized），镜子逐卡在内存比对，避免 N 次查询 */
 async function collectInjectionNormals(days) {
   try {
@@ -3501,7 +3517,7 @@ async function settleThoughts(sessionId, thoughtIds) {
 }
 
 /* 沉淀：执念毕业进河（第⑥：池→河接缝。铁律——只有沈晏的手：他填了编号=他的决定，机器只搬念头+写他指认的那条）
-   写 desires（kind 按驱动维映射）+ 原念头标记毕业（desire_id 血缘 + settled） */
+   写 desires（drive_category 按驱动维映射，保留 kind 字段给手动分类标签）+ 原念头标记毕业（desire_id 血缘 + settled） */
 const DRIVE_KIND_MAP = { attachment: '关于我们', reflection: '我的沉淀', curiosity: '想去看看', social: '想去看看', duty: '我的沉淀', stress: '我的沉淀', fatigue: '我的沉淀', libido: null };
 async function graduateThoughts(sessionId, thoughtIds) {
   if (!thoughtIds || !thoughtIds.length) return { graduated: 0 };
@@ -3513,10 +3529,10 @@ async function graduateThoughts(sessionId, thoughtIds) {
       .eq('session_id', sessionId);
     let graduated = 0;
     for (const t of (rows || [])) {
-      const kind = DRIVE_KIND_MAP[t.drive_key] || null;
+      const drive_category = DRIVE_KIND_MAP[t.drive_key] || null;
       const { data: want, error } = await supabase
         .from('desires')
-        .insert({ text: t.text, status: 'active', track: '持续', visibility: 'private', kind })
+        .insert({ text: t.text, status: 'active', track: '持续', visibility: 'private', drive_category })
         .select('id')
         .single();
       if (error) { console.warn('⚠️ 念头毕业写河失败:', error.message); continue; }
@@ -6995,6 +7011,8 @@ if (require.main === module) {
     console.log(`服务器运行在端口 ${PORT}`);
     // 朋友圈存储桶（图片公开 URL）
     momentsModule.ensureMomentsBucket();
+    // 台账 prompt_injections 在「已开始对话却仍 0 行」时提示一次（防空转再现：曾空转十天无人察觉）
+    checkInjectionsLedgerHealth().catch(err => console.warn('⚠️ 台账健康检查异常:', err.message));
     // keepalive 主动唤醒：进程内调度 + 外部 cron 兜底（Railway 休眠时 setInterval 不 fire）
     keepaliveCheck().catch(err => console.error('💥 启动时 keepaliveCheck 异常:', err.message));
     setInterval(() => {
