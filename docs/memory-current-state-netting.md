@@ -159,6 +159,7 @@
 | 基线夹具滞后 | 重录 memory-write（120 组）/ context-retrieval（39 组）基线；前者顺带转正 09-11 未提交的 fail-closed 改动 | [test/fixtures/](file:///c:/Users/hbyll/shenyan-backend/test/fixtures) |
 | 关系边只有手动生产者（联想图静默挨饿） | 连边接进写入链尾部：新主题写进后触发一轮，30min 节流 + fail-open + 主题名候选校验（孤儿边不入库，比旧脚本多一道）；手动脚本改走同一 lib | [lib/memory/link-relations.js](file:///c:/Users/hbyll/shenyan-backend/lib/memory/link-relations.js) · [lib/memory/index.js:583-589](file:///c:/Users/hbyll/shenyan-backend/lib/memory/index.js#L583-L589) |
 | fail-closed 语义断言滞后 | 78409d5 修了 getAllMemoryTopics 但漏改对应语义测试（一直红着没人发现）；已改成钉「修复后行为」 | [test/lib-memory.test.cjs:140-161](file:///c:/Users/hbyll/shenyan-backend/test/lib-memory.test.cjs#L140-L161) |
+| 质量闭环 v1（离线·只读·零 LLM） | `node scripts/audit/memory-quality.cjs [--json out]`：写入侧/召回侧（台账还原）/关系侧/claim 侧/参数定值看板五节 + 启发式提示；口径字典与坑在交接文档 | [scripts/audit/memory-quality.cjs](file:///c:/Users/hbyll/shenyan-backend/scripts/audit/memory-quality.cjs) · [2026-09-12-quality-loop-handoff.md](file:///c:/Users/hbyll/shenyan-backend/docs/2026-09-12-quality-loop-handoff.md) · [风险测评](file:///c:/Users/hbyll/shenyan-backend/docs/2026-09-12-memory-quality-risk-assessment.md) |
 
 > 校验：两份基线重录后 `--compare` 逐字节一致；memory-write 重录前的 4 组差异全部归属 09-11 未提交的 fail-closed 改动（非本次新改），context-retrieval 差异仅 `order importance` 一步（本次新改的预期形态）。
 > 校验（2026-09-12 自动连边）：memory-write 基线再重录一次——120 组里**只有 wm_newTopic 一组**多了连边前置的三步（首写触发、其后 30min 节流、冻钟下确定）；全套 128 个测试绿。
