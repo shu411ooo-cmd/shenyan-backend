@@ -68,7 +68,7 @@ async function generateMomentReply(moment) {
     { role: 'system', content: MOMENT_REPLY_PROMPT },
     { role: 'user', content: `【程芥发了一条朋友圈】\n${moment.content}${imageLine}` },
   ];
-  const { content } = await callReplyModel(messages, { max_tokens: 300, temperature: 0.9 });
+  const { content } = await callReplyModel(messages, { max_tokens: 300, temperature: 0.7 });
   const parsed = parseJsonLoose(content);
   return { liked: parsed.liked === true, reply_content: String(parsed.reply_content || '').trim().slice(0, 300) };
 }
