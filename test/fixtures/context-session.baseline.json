@@ -1,0 +1,816 @@
+{
+  "ctx_ok": {
+    "db": null,
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle"
+    ],
+    "logs": [],
+    "value": {
+      "frozen_rounds": 8,
+      "live_max_tokens": 30000,
+      "live_rounds": 12,
+      "max_context_tokens": 20000
+    },
+    "warns": []
+  },
+  "ctx_zeroAccepted": {
+    "db": null,
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle"
+    ],
+    "logs": [],
+    "value": {
+      "frozen_rounds": 0,
+      "live_max_tokens": 0,
+      "live_rounds": 0,
+      "max_context_tokens": 0
+    },
+    "warns": []
+  },
+  "ctx_badTypes": {
+    "db": null,
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle"
+    ],
+    "logs": [],
+    "value": {
+      "frozen_rounds": 10,
+      "live_max_tokens": -1,
+      "live_rounds": 15,
+      "max_context_tokens": 24000
+    },
+    "warns": []
+  },
+  "ctx_error": {
+    "db": null,
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle"
+    ],
+    "logs": [],
+    "value": {
+      "frozen_rounds": 10,
+      "live_max_tokens": 40000,
+      "live_rounds": 15,
+      "max_context_tokens": 24000
+    },
+    "warns": [
+      "context:column live_max_tokens does not exist"
+    ]
+  },
+  "ctx_noRow": {
+    "db": null,
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle"
+    ],
+    "logs": [],
+    "value": {
+      "frozen_rounds": 10,
+      "live_max_tokens": 40000,
+      "live_rounds": 15,
+      "max_context_tokens": 24000
+    },
+    "warns": []
+  },
+  "ctx_throw": {
+    "db": null,
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle"
+    ],
+    "logs": [],
+    "value": {
+      "frozen_rounds": 10,
+      "live_max_tokens": 40000,
+      "live_rounds": 15,
+      "max_context_tokens": 24000
+    },
+    "warns": [
+      "context:socket hang up"
+    ]
+  },
+  "state_ok": {
+    "db": null,
+    "io": [
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | S7",
+      "sessions.maybeSingle"
+    ],
+    "logs": [],
+    "value": {
+      "frozen_until_turn": 3,
+      "id": "S7",
+      "last_time_notice_at": "2026-09-09T00:00:00.000Z"
+    },
+    "warns": []
+  },
+  "state_noRow": {
+    "db": null,
+    "io": [
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | S8",
+      "sessions.maybeSingle"
+    ],
+    "logs": [],
+    "value": {},
+    "warns": []
+  },
+  "state_error": {
+    "db": null,
+    "io": [
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | S9",
+      "sessions.maybeSingle"
+    ],
+    "logs": [],
+    "value": {},
+    "warns": []
+  },
+  "state_throw": {
+    "db": null,
+    "io": [
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | S10",
+      "sessions.maybeSingle"
+    ],
+    "logs": [],
+    "value": {},
+    "warns": []
+  },
+  "seg_ok": {
+    "db": null,
+    "io": [
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | S11",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await"
+    ],
+    "logs": [],
+    "value": [
+      {
+        "content": "第一段",
+        "period_end": 4,
+        "period_end_ts": "2026-09-02T00:00:00Z",
+        "period_start": 1,
+        "period_start_ts": "2026-09-01T00:00:00Z",
+        "session_id": "S11"
+      },
+      {
+        "content": "第二段",
+        "period_end": 10,
+        "period_end_ts": null,
+        "period_start": 5,
+        "period_start_ts": null,
+        "session_id": "S11"
+      }
+    ],
+    "warns": []
+  },
+  "seg_empty": {
+    "db": null,
+    "io": [
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | S12",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await"
+    ],
+    "logs": [],
+    "value": [],
+    "warns": []
+  },
+  "seg_error": {
+    "db": null,
+    "io": [
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | S13",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await"
+    ],
+    "logs": [
+      "warn ⚠️ 读取 summary_segments 失败: relation does not exist"
+    ],
+    "value": [],
+    "warns": []
+  },
+  "seg_throw": {
+    "db": null,
+    "io": [
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | S14",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await"
+    ],
+    "logs": [
+      "warn ⚠️ 读取 summary_segments 异常: timeout"
+    ],
+    "value": [],
+    "warns": []
+  },
+  "flow_filtersAndReverses": {
+    "db": null,
+    "io": [
+      "from:messages",
+      "messages.select | session_id, role, content, created_at",
+      "messages.neq | session_id | ME",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 24",
+      "messages.await"
+    ],
+    "logs": [],
+    "value": [
+      {
+        "content": "a1",
+        "created_at": "2026-09-10T01:00:00Z",
+        "role": "user",
+        "session_id": "A",
+        "visible": true
+      },
+      {
+        "content": "b1",
+        "created_at": "2026-09-10T02:00:00Z",
+        "role": "assistant",
+        "session_id": "B",
+        "visible": true
+      },
+      {
+        "content": "c1",
+        "created_at": "2026-09-10T04:00:00Z",
+        "role": "user",
+        "session_id": "C",
+        "visible": true
+      }
+    ],
+    "warns": []
+  },
+  "flow_limit": {
+    "db": null,
+    "io": [
+      "from:messages",
+      "messages.select | session_id, role, content, created_at",
+      "messages.neq | session_id | ME",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 2",
+      "messages.await"
+    ],
+    "logs": [],
+    "value": [
+      {
+        "content": "中间",
+        "created_at": "2026-09-05T00:00:00Z",
+        "role": "user",
+        "session_id": "A",
+        "visible": true
+      },
+      {
+        "content": "最新",
+        "created_at": "2026-09-09T00:00:00Z",
+        "role": "user",
+        "session_id": "A",
+        "visible": true
+      }
+    ],
+    "warns": []
+  },
+  "flow_error": {
+    "db": null,
+    "io": [
+      "from:messages",
+      "messages.select | session_id, role, content, created_at",
+      "messages.neq | session_id | ME",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 24",
+      "messages.await"
+    ],
+    "logs": [
+      "warn ⚠️ 跨 session 流水读取失败: timeout"
+    ],
+    "value": [],
+    "warns": []
+  },
+  "flow_throw": {
+    "db": null,
+    "io": [
+      "from:messages",
+      "messages.select | session_id, role, content, created_at",
+      "messages.neq | session_id | ME",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 24",
+      "messages.await"
+    ],
+    "logs": [
+      "warn ⚠️ 跨 session 流水异常: ECONNRESET"
+    ],
+    "value": [],
+    "warns": []
+  },
+  "cross_narrative": {
+    "db": null,
+    "io": [],
+    "logs": [],
+    "value": "【你之前在其他对话里说的话 · 流水回望】\n9/1 你说：第一行\n9/3 沈晏：沈晏说的话\n9/4 你说：长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+    "warns": []
+  },
+  "cross_narrative_empty": {
+    "db": null,
+    "io": [],
+    "logs": [],
+    "value": "",
+    "warns": []
+  },
+  "cross_narrative_allBlank": {
+    "db": null,
+    "io": [],
+    "logs": [],
+    "value": "",
+    "warns": []
+  },
+  "insert_ok": {
+    "db": [
+      {
+        "content": "第一段摘要",
+        "period_end": 5,
+        "period_end_ts": "2026-09-05T00:00:00Z",
+        "period_start": 1,
+        "period_start_ts": "2026-09-01T00:00:00Z",
+        "session_id": "S20"
+      }
+    ],
+    "io": [
+      "from:summary_segments",
+      "summary_segments.insert | {\"session_id\":\"S20\",\"period_start\":1,\"period_end\":5,\"period_start_ts\":\"2026-09-01T00:00:00Z\",\"period_end_ts\":\"2026-09-05T00:00:00Z\",\"content\":\"第一段摘要\"}",
+      "summary_segments.await"
+    ],
+    "logs": [],
+    "value": true,
+    "warns": []
+  },
+  "insert_noTimestamps": {
+    "db": [
+      {
+        "content": "不带时间戳",
+        "period_end": 9,
+        "period_end_ts": null,
+        "period_start": 6,
+        "period_start_ts": null,
+        "session_id": "S21"
+      }
+    ],
+    "io": [
+      "from:summary_segments",
+      "summary_segments.insert | {\"session_id\":\"S21\",\"period_start\":6,\"period_end\":9,\"period_start_ts\":null,\"period_end_ts\":null,\"content\":\"不带时间戳\"}",
+      "summary_segments.await"
+    ],
+    "logs": [],
+    "value": true,
+    "warns": []
+  },
+  "insert_error": {
+    "db": [],
+    "io": [
+      "from:summary_segments",
+      "summary_segments.insert | {\"session_id\":\"S22\",\"period_start\":1,\"period_end\":5,\"period_start_ts\":null,\"period_end_ts\":null,\"content\":\"x\"}",
+      "summary_segments.await"
+    ],
+    "logs": [
+      "warn ⚠️ 写入 summary_segments 失败: duplicate key value"
+    ],
+    "value": false,
+    "warns": []
+  },
+  "insert_throw": {
+    "db": null,
+    "io": [
+      "from:summary_segments",
+      "summary_segments.insert | {\"session_id\":\"S23\",\"period_start\":1,\"period_end\":5,\"period_start_ts\":null,\"period_end_ts\":null,\"content\":\"x\"}",
+      "summary_segments.await"
+    ],
+    "logs": [
+      "warn ⚠️ 写入 summary_segments 异常: payload too large"
+    ],
+    "value": false,
+    "warns": []
+  },
+  "pair_normal": {
+    "db": null,
+    "io": [],
+    "logs": [],
+    "value": [
+      {
+        "replies": [
+          {
+            "content": "m1",
+            "created_at": "2026-09-10T11:56:00.000Z",
+            "role": "assistant",
+            "session_id": "S",
+            "visible": true
+          }
+        ],
+        "user": {
+          "content": "m0",
+          "created_at": "2026-09-10T11:55:00.000Z",
+          "role": "user",
+          "session_id": "S",
+          "visible": true
+        }
+      },
+      {
+        "replies": [
+          {
+            "content": "m3",
+            "created_at": "2026-09-10T11:58:00.000Z",
+            "role": "assistant",
+            "session_id": "S",
+            "visible": true
+          }
+        ],
+        "user": {
+          "content": "m2",
+          "created_at": "2026-09-10T11:57:00.000Z",
+          "role": "user",
+          "session_id": "S",
+          "visible": true
+        }
+      },
+      {
+        "replies": [],
+        "user": {
+          "content": "m4",
+          "created_at": "2026-09-10T11:59:00.000Z",
+          "role": "user",
+          "session_id": "S",
+          "visible": true
+        }
+      }
+    ],
+    "warns": []
+  },
+  "pair_leadingAssistant": {
+    "db": null,
+    "io": [],
+    "logs": [],
+    "value": [
+      {
+        "replies": [
+          {
+            "content": "a1",
+            "created_at": "2026-09-01T00:02:00Z",
+            "role": "assistant"
+          }
+        ],
+        "user": {
+          "content": "u1",
+          "created_at": "2026-09-01T00:01:00Z",
+          "role": "user"
+        }
+      }
+    ],
+    "warns": []
+  },
+  "pair_multiReply": {
+    "db": null,
+    "io": [],
+    "logs": [],
+    "value": [
+      {
+        "replies": [
+          {
+            "content": "a1",
+            "created_at": "2026-09-01T00:01:00Z",
+            "role": "assistant"
+          },
+          {
+            "content": "a2",
+            "created_at": "2026-09-01T00:02:00Z",
+            "role": "assistant"
+          }
+        ],
+        "user": {
+          "content": "u1",
+          "created_at": "2026-09-01T00:00:00Z",
+          "role": "user"
+        }
+      },
+      {
+        "replies": [],
+        "user": {
+          "content": "u2",
+          "created_at": "2026-09-01T00:03:00Z",
+          "role": "user"
+        }
+      }
+    ],
+    "warns": []
+  },
+  "pair_empty": {
+    "db": null,
+    "io": [],
+    "logs": [],
+    "value": [],
+    "warns": []
+  },
+  "pair_null": {
+    "db": null,
+    "io": [],
+    "logs": [],
+    "value": [],
+    "warns": []
+  },
+  "hist_zero": {
+    "db": null,
+    "io": [
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | S30",
+      "messages.eq | visible | true",
+      "messages.await"
+    ],
+    "logs": [],
+    "value": [],
+    "warns": []
+  },
+  "hist_onePage": {
+    "db": null,
+    "io": [
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | S31",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | S31",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await"
+    ],
+    "logs": [],
+    "value": [
+      {
+        "content": "m0",
+        "created_at": "2026-09-10T11:53:00.000Z",
+        "role": "user",
+        "session_id": "S31",
+        "visible": true
+      },
+      {
+        "content": "m1",
+        "created_at": "2026-09-10T11:54:00.000Z",
+        "role": "assistant",
+        "session_id": "S31",
+        "visible": true
+      },
+      {
+        "content": "m2",
+        "created_at": "2026-09-10T11:55:00.000Z",
+        "role": "user",
+        "session_id": "S31",
+        "visible": true
+      },
+      {
+        "content": "m3",
+        "created_at": "2026-09-10T11:56:00.000Z",
+        "role": "assistant",
+        "session_id": "S31",
+        "visible": true
+      },
+      {
+        "content": "m4",
+        "created_at": "2026-09-10T11:57:00.000Z",
+        "role": "user",
+        "session_id": "S31",
+        "visible": true
+      },
+      {
+        "content": "m5",
+        "created_at": "2026-09-10T11:58:00.000Z",
+        "role": "assistant",
+        "session_id": "S31",
+        "visible": true
+      },
+      {
+        "content": "m6",
+        "created_at": "2026-09-10T11:59:00.000Z",
+        "role": "user",
+        "session_id": "S31",
+        "visible": true
+      }
+    ],
+    "warns": []
+  },
+  "hist_paginates": {
+    "db": null,
+    "io": [
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | S32",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | S32",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | S32",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 1000 | 1999",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | S32",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 2000 | 2999",
+      "messages.await"
+    ],
+    "logs": [],
+    "value": {
+      "first": "m0",
+      "last": "m2499",
+      "len": 2500
+    },
+    "warns": []
+  },
+  "hist_breaksOnEmptyPage": {
+    "db": null,
+    "io": [
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | S33",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | S33",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await"
+    ],
+    "logs": [],
+    "value": [],
+    "warns": []
+  },
+  "hist_isolatesSession": {
+    "db": null,
+    "io": [
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | S34",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | S34",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await"
+    ],
+    "logs": [],
+    "value": 3,
+    "warns": []
+  },
+  "anchor_dbHitThenMapFastPath": {
+    "db": null,
+    "io": [
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | A1",
+      "sessions.maybeSingle"
+    ],
+    "logs": [],
+    "value": {
+      "first": 12,
+      "second": 12,
+      "secondQueryCount": 0
+    },
+    "warns": []
+  },
+  "anchor_dbMiss": {
+    "db": null,
+    "io": [
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | A2",
+      "sessions.maybeSingle"
+    ],
+    "logs": [],
+    "value": null,
+    "warns": []
+  },
+  "anchor_nonInteger": {
+    "db": null,
+    "io": [
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | A3",
+      "sessions.maybeSingle"
+    ],
+    "logs": [],
+    "value": null,
+    "warns": []
+  },
+  "anchor_nullValue": {
+    "db": null,
+    "io": [
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | A4",
+      "sessions.maybeSingle"
+    ],
+    "logs": [],
+    "value": null,
+    "warns": []
+  },
+  "anchor_readError": {
+    "db": null,
+    "io": [
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | A5",
+      "sessions.maybeSingle"
+    ],
+    "logs": [],
+    "value": null,
+    "warns": []
+  },
+  "anchor_readThrow": {
+    "db": null,
+    "io": [
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | A6",
+      "sessions.maybeSingle"
+    ],
+    "logs": [],
+    "value": null,
+    "warns": []
+  },
+  "anchor_saveThenLoad": {
+    "db": null,
+    "io": [
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":9}",
+      "sessions.eq | id | A7",
+      "sessions.await"
+    ],
+    "logs": [],
+    "value": {
+      "loaded": 9,
+      "saved": {
+        "__undefined": true
+      }
+    },
+    "warns": []
+  },
+  "anchor_saveThrow": {
+    "db": null,
+    "io": [
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":3}",
+      "sessions.eq | id | A8",
+      "sessions.await"
+    ],
+    "logs": [
+      "warn ⚠️ saveLiveAnchor DB 失败（锚定仅在进程内）: read-only"
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  }
+}

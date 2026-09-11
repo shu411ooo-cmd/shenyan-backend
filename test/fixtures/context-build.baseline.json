@@ -1,0 +1,4988 @@
+{
+  "build_tiny_noSeg": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B1",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B1",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B1",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B1",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B1",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-12}",
+      "sessions.eq | id | B1",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B1",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B1 blocks=time prov=[time] last_msg=m3",
+      "log [ContextAssembly] {\"session\":\"B1\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5739,\"raw_estimated_tokens\":5739,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5739,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 2,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -12,
+        "live_collapsed": false,
+        "live_hash": "05023fb12d8f6319",
+        "live_tokens_est": 0,
+        "live_turns": 2,
+        "messages_sent": 6,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5739,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 0,
+          "live": 4,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "msgs": 6,
+      "shape": [
+        {
+          "cc": true,
+          "head": "[{\"type\":\"text\",\"text\":\"⟨STA",
+          "role": "system"
+        },
+        {
+          "cc": false,
+          "head": "【当前时间】\n⟨time gap=false asks=",
+          "role": "user"
+        },
+        {
+          "cc": false,
+          "head": "m0",
+          "role": "user"
+        },
+        {
+          "cc": false,
+          "head": "m1",
+          "role": "assistant"
+        },
+        {
+          "cc": false,
+          "head": "m2",
+          "role": "user"
+        },
+        {
+          "cc": false,
+          "head": "m3",
+          "role": "assistant"
+        }
+      ]
+    }
+  },
+  "build_emptyHistory": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=NaN",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B2",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B2",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B2",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B2",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-14}",
+      "sessions.eq | id | B2",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B2",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B2 blocks=time prov=[time] last_msg=",
+      "log [ContextAssembly] {\"session\":\"B2\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":2,\"estimated_tokens\":5733,\"raw_estimated_tokens\":5733,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":14},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"5806403fbee5d9e6\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5733,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 0,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -14,
+        "live_collapsed": false,
+        "live_hash": "5806403fbee5d9e6",
+        "live_tokens_est": 0,
+        "live_turns": 0,
+        "messages_sent": 2,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5733,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 14,
+          "frozen": 0,
+          "live": 0,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "shape": [
+        {
+          "cc": true,
+          "head": "[{\"type\":\"text\",\"text\":\"⟨STA",
+          "role": "system"
+        },
+        {
+          "cc": false,
+          "head": "【当前时间】\n⟨time gap=false asks=",
+          "role": "user"
+        }
+      ]
+    }
+  },
+  "build_firstTurn": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=NaN",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      },
+      {
+        "content": "【今天与临近的日子】\n⟨cal 今天是你生日⟩",
+        "layer": "calendar",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "calendar"
+        },
+        "tag": "calendar"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B3",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B3",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B3",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B3",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-14}",
+      "sessions.eq | id | B3",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B3",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B3 blocks=time,calendar prov=[time|calendar] last_msg=在吗",
+      "log [ContextAssembly] {\"session\":\"B3\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":3,\"estimated_tokens\":5751,\"raw_estimated_tokens\":5751,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":32},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"a50fdcb8bdea16cb\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[11],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5751,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 0,
+        "keepalive_injected_ids": [
+          11
+        ],
+        "live_anchor_turn": -14,
+        "live_collapsed": false,
+        "live_hash": "a50fdcb8bdea16cb",
+        "live_tokens_est": 0,
+        "live_turns": 0,
+        "messages_sent": 3,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5751,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 32,
+          "frozen": 0,
+          "live": 0,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "shape": [
+        {
+          "cc": true,
+          "head": "[{\"type\":\"text\",\"text\":\"⟨STA",
+          "role": "system"
+        },
+        {
+          "cc": false,
+          "head": "【今天与临近的日子】\n⟨cal 今天是你生日⟩",
+          "role": "user"
+        },
+        {
+          "cc": false,
+          "head": "【当前时间】\n⟨time gap=false asks=",
+          "role": "user"
+        }
+      ]
+    }
+  },
+  "build_seg_split": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B4",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B4",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B4",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B4",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B4",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":26}",
+      "sessions.eq | id | B4",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B4",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B4 blocks=time prov=[time] last_msg=m59",
+      "log [ContextAssembly] {\"session\":\"B4\",\"history_turns\":30,\"frozen_turns\":3,\"summary_present\":true,\"summary_range\":[1,6],\"summary_from\":1,\"summary_to\":6,\"segments_count\":1,\"middle_raw_turns\":16,\"live_turns\":5,\"live_anchor_turn\":26,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":50,\"estimated_tokens\":5783,\"raw_estimated_tokens\":5783,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":6,\"summary\":0,\"middle\":32,\"live\":10,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"050e3245aaa05cf9\",\"summary_hash\":\"67978326b6953f84\",\"live_hash\":\"b6da615152bd9a11\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5783,
+        "frozen_prefix_hash": "050e3245aaa05cf9",
+        "frozen_turns": 3,
+        "history_turns": 30,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": 26,
+        "live_collapsed": false,
+        "live_hash": "b6da615152bd9a11",
+        "live_tokens_est": 0,
+        "live_turns": 5,
+        "messages_sent": 50,
+        "middle_raw_turns": 16,
+        "raw_estimated_tokens": 5783,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 1,
+        "summary_from": 1,
+        "summary_hash": "67978326b6953f84",
+        "summary_present": true,
+        "summary_range": [
+          1,
+          6
+        ],
+        "summary_to": 6,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 6,
+          "live": 10,
+          "middle": 32,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "msgs": 50,
+      "shape": [
+        {
+          "cc": true,
+          "head": "[{\"type\":\"text\",\"text\":\"⟨STA",
+          "role": "system"
+        },
+        {
+          "cc": false,
+          "head": "m12",
+          "role": "user"
+        },
+        {
+          "cc": false,
+          "head": "m13",
+          "role": "assistant"
+        },
+        {
+          "cc": false,
+          "head": "m14",
+          "role": "user"
+        },
+        {
+          "cc": false,
+          "head": "m15",
+          "role": "assistant"
+        },
+        {
+          "cc": false,
+          "head": "m16",
+          "role": "user"
+        }
+      ]
+    }
+  },
+  "build_seg_noMiddle": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B5",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B5",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B5",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B5",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B5",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":26}",
+      "sessions.eq | id | B5",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B5",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B5 blocks=time prov=[time] last_msg=m59",
+      "log [ContextAssembly] {\"session\":\"B5\",\"history_turns\":30,\"frozen_turns\":5,\"summary_present\":true,\"summary_range\":[1,20],\"summary_from\":1,\"summary_to\":20,\"segments_count\":1,\"middle_raw_turns\":0,\"live_turns\":5,\"live_anchor_turn\":26,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":22,\"estimated_tokens\":5755,\"raw_estimated_tokens\":5755,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":10,\"summary\":0,\"middle\":0,\"live\":10,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"4aca0a20fb8b3195\",\"summary_hash\":null,\"live_hash\":\"b6da615152bd9a11\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5755,
+        "frozen_prefix_hash": "4aca0a20fb8b3195",
+        "frozen_turns": 5,
+        "history_turns": 30,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": 26,
+        "live_collapsed": false,
+        "live_hash": "b6da615152bd9a11",
+        "live_tokens_est": 0,
+        "live_turns": 5,
+        "messages_sent": 22,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5755,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 1,
+        "summary_from": 1,
+        "summary_hash": null,
+        "summary_present": true,
+        "summary_range": [
+          1,
+          20
+        ],
+        "summary_to": 20,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 10,
+          "live": 10,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "shape": [
+        {
+          "cc": true,
+          "head": "[{\"type\":\"text\",\"text\":\"⟨STA",
+          "role": "system"
+        },
+        {
+          "cc": false,
+          "head": "m40",
+          "role": "user"
+        },
+        {
+          "cc": false,
+          "head": "m41",
+          "role": "assistant"
+        },
+        {
+          "cc": false,
+          "head": "m42",
+          "role": "user"
+        }
+      ]
+    }
+  },
+  "build_noSeg_overBudget": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B6",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B6",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B6",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B6",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B6",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":26}",
+      "sessions.eq | id | B6",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B6",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B6 blocks=time prov=[time] last_msg=m59",
+      "log [ContextAssembly] {\"session\":\"B6\",\"history_turns\":30,\"frozen_turns\":4,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":21,\"live_turns\":5,\"live_anchor_turn\":26,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":62,\"estimated_tokens\":5795,\"raw_estimated_tokens\":5795,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":8,\"summary\":0,\"middle\":42,\"live\":10,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"f4e8105b1bef5b20\",\"summary_hash\":\"ecf6245f8d7bc983\",\"live_hash\":\"b6da615152bd9a11\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5795,
+        "frozen_prefix_hash": "f4e8105b1bef5b20",
+        "frozen_turns": 4,
+        "history_turns": 30,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": 26,
+        "live_collapsed": false,
+        "live_hash": "b6da615152bd9a11",
+        "live_tokens_est": 0,
+        "live_turns": 5,
+        "messages_sent": 62,
+        "middle_raw_turns": 21,
+        "raw_estimated_tokens": 5795,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": "ecf6245f8d7bc983",
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 8,
+          "live": 10,
+          "middle": 42,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "msgs": 62
+    }
+  },
+  "build_summary_injected_firstTurn": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B7",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B7",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B7",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B7",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B7",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-13}",
+      "sessions.eq | id | B7",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B7",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B7 blocks=time prov=[time] last_msg=m1",
+      "log [ContextAssembly] {\"session\":\"B7\",\"history_turns\":1,\"frozen_turns\":0,\"summary_present\":true,\"summary_range\":[1,4],\"summary_from\":1,\"summary_to\":4,\"segments_count\":1,\"middle_raw_turns\":0,\"live_turns\":1,\"live_anchor_turn\":-13,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":4,\"estimated_tokens\":5737,\"raw_estimated_tokens\":5737,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":2,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"d85890f5216bcb73\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5737,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 1,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -13,
+        "live_collapsed": false,
+        "live_hash": "d85890f5216bcb73",
+        "live_tokens_est": 0,
+        "live_turns": 1,
+        "messages_sent": 4,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5737,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 1,
+        "summary_from": 1,
+        "summary_hash": null,
+        "summary_present": true,
+        "summary_range": [
+          1,
+          4
+        ],
+        "summary_to": 4,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 0,
+          "live": 2,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "shape": [
+        {
+          "cc": true,
+          "head": "[{\"type\":\"text\",\"text\":\"⟨STA",
+          "role": "system"
+        },
+        {
+          "cc": false,
+          "head": "【当前时间】\n⟨time gap=false asks=",
+          "role": "user"
+        },
+        {
+          "cc": false,
+          "head": "m0",
+          "role": "user"
+        },
+        {
+          "cc": false,
+          "head": "m1",
+          "role": "assistant"
+        }
+      ]
+    }
+  },
+  "build_summary_injected_resumeGap": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=true asks=false now=1789041600000 prev=1789",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B8",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B8",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B8",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B8",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B8",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-8}",
+      "sessions.eq | id | B8",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B8",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B8 blocks=time prov=[time] last_msg=m11",
+      "log [ContextAssembly] {\"session\":\"B8\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":true,\"summary_range\":[1,4],\"summary_from\":1,\"summary_to\":4,\"segments_count\":1,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":15,\"estimated_tokens\":5751,\"raw_estimated_tokens\":5751,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":4,\"middle\":0,\"live\":12,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":\"0decba21d405bfcc\",\"live_hash\":\"c1106b1b68abe0f2\",\"resume_gap_min\":182,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5751,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 6,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -8,
+        "live_collapsed": false,
+        "live_hash": "c1106b1b68abe0f2",
+        "live_tokens_est": 0,
+        "live_turns": 6,
+        "messages_sent": 15,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5751,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": 182,
+        "segments_count": 1,
+        "summary_from": 1,
+        "summary_hash": "0decba21d405bfcc",
+        "summary_present": true,
+        "summary_range": [
+          1,
+          4
+        ],
+        "summary_to": 4,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 0,
+          "live": 12,
+          "middle": 0,
+          "stable": 648,
+          "summary": 4,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "shape": [
+        {
+          "cc": true,
+          "head": "[{\"type\":\"text\",\"text\":\"⟨STA",
+          "role": "system"
+        },
+        {
+          "cc": true,
+          "head": "[{\"type\":\"text\",\"text\":\"【历史背",
+          "role": "user"
+        },
+        {
+          "cc": false,
+          "head": "【当前时间】\n⟨time gap=true asks=f",
+          "role": "user"
+        },
+        {
+          "cc": false,
+          "head": "m0",
+          "role": "user"
+        },
+        {
+          "cc": false,
+          "head": "m1",
+          "role": "assistant"
+        },
+        {
+          "cc": false,
+          "head": "m2",
+          "role": "user"
+        },
+        {
+          "cc": false,
+          "head": "m3",
+          "role": "assistant"
+        },
+        {
+          "cc": false,
+          "head": "m4",
+          "role": "user"
+        },
+        {
+          "cc": false,
+          "head": "m5",
+          "role": "assistant"
+        },
+        {
+          "cc": false,
+          "head": "m6",
+          "role": "user"
+        },
+        {
+          "cc": false,
+          "head": "m7",
+          "role": "assistant"
+        },
+        {
+          "cc": false,
+          "head": "m8",
+          "role": "user"
+        },
+        {
+          "cc": false,
+          "head": "m9",
+          "role": "assistant"
+        },
+        {
+          "cc": false,
+          "head": "m10",
+          "role": "user"
+        },
+        {
+          "cc": false,
+          "head": "m11",
+          "role": "assistant"
+        }
+      ]
+    }
+  },
+  "build_summary_present_notInjected": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B9",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B9",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B9",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B9",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B9",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-8}",
+      "sessions.eq | id | B9",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B9",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B9 blocks=time prov=[time] last_msg=m11",
+      "log [ContextAssembly] {\"session\":\"B9\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":true,\"summary_range\":[1,2],\"summary_from\":1,\"summary_to\":2,\"segments_count\":1,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":14,\"estimated_tokens\":5747,\"raw_estimated_tokens\":5747,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":12,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"c0cef940f0bd3dfd\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5747,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 6,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -8,
+        "live_collapsed": false,
+        "live_hash": "c0cef940f0bd3dfd",
+        "live_tokens_est": 0,
+        "live_turns": 6,
+        "messages_sent": 14,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5747,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 1,
+        "summary_from": 1,
+        "summary_hash": null,
+        "summary_present": true,
+        "summary_range": [
+          1,
+          2
+        ],
+        "summary_to": 2,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 0,
+          "live": 12,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "hasSegText": false,
+      "summary_present": true
+    }
+  },
+  "build_anchor_alive": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B10",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B10",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B10",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B10",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B10",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B10",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B10 blocks=time prov=[time] last_msg=m59",
+      "log [ContextAssembly] {\"session\":\"B10\",\"history_turns\":30,\"frozen_turns\":4,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":15,\"live_turns\":11,\"live_anchor_turn\":20,\"live_collapsed\":false,\"live_tokens_est\":22,\"messages_sent\":62,\"estimated_tokens\":5795,\"raw_estimated_tokens\":5795,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":8,\"summary\":0,\"middle\":30,\"live\":22,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"f4e8105b1bef5b20\",\"summary_hash\":\"4b625cb8cfed4c84\",\"live_hash\":\"600f467790616c9b\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5795,
+        "frozen_prefix_hash": "f4e8105b1bef5b20",
+        "frozen_turns": 4,
+        "history_turns": 30,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": 20,
+        "live_collapsed": false,
+        "live_hash": "600f467790616c9b",
+        "live_tokens_est": 22,
+        "live_turns": 11,
+        "messages_sent": 62,
+        "middle_raw_turns": 15,
+        "raw_estimated_tokens": 5795,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": "4b625cb8cfed4c84",
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 8,
+          "live": 22,
+          "middle": 30,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "msgs": 62
+    }
+  },
+  "build_anchor_collapse_rounds": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B11",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B11",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B11",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B11",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B11",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":26}",
+      "sessions.eq | id | B11",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B11",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B11 blocks=time prov=[time] last_msg=m59",
+      "log [ContextAssembly] {\"session\":\"B11\",\"history_turns\":30,\"frozen_turns\":10,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":15,\"live_turns\":5,\"live_anchor_turn\":26,\"live_collapsed\":true,\"live_tokens_est\":58,\"messages_sent\":62,\"estimated_tokens\":5795,\"raw_estimated_tokens\":5795,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":20,\"summary\":0,\"middle\":30,\"live\":10,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"20130d8c53095f92\",\"summary_hash\":\"03e433acbdef7a95\",\"live_hash\":\"b6da615152bd9a11\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5795,
+        "frozen_prefix_hash": "20130d8c53095f92",
+        "frozen_turns": 10,
+        "history_turns": 30,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": 26,
+        "live_collapsed": true,
+        "live_hash": "b6da615152bd9a11",
+        "live_tokens_est": 58,
+        "live_turns": 5,
+        "messages_sent": 62,
+        "middle_raw_turns": 15,
+        "raw_estimated_tokens": 5795,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": "03e433acbdef7a95",
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 20,
+          "live": 10,
+          "middle": 30,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "msgs": 62
+    }
+  },
+  "build_anchor_collapse_tokens": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B12",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B12",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B12",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B12",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B12",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":6}",
+      "sessions.eq | id | B12",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B12",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B12 blocks=time prov=[time] last_msg=m39",
+      "log [ContextAssembly] {\"session\":\"B12\",\"history_turns\":20,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":20,\"live_anchor_turn\":6,\"live_collapsed\":true,\"live_tokens_est\":38,\"messages_sent\":42,\"estimated_tokens\":5775,\"raw_estimated_tokens\":5775,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":40,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"0de9226b0a6e4f5f\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5775,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 20,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": 6,
+        "live_collapsed": true,
+        "live_hash": "0de9226b0a6e4f5f",
+        "live_tokens_est": 38,
+        "live_turns": 20,
+        "messages_sent": 42,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5775,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 0,
+          "live": 40,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      }
+    }
+  },
+  "build_anchor_dead_oob": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B13",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B13",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B13",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B13",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B13",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-4}",
+      "sessions.eq | id | B13",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B13",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B13 blocks=time prov=[time] last_msg=m19",
+      "log [ContextAssembly] {\"session\":\"B13\",\"history_turns\":10,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":10,\"live_anchor_turn\":-4,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":22,\"estimated_tokens\":5755,\"raw_estimated_tokens\":5755,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":20,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"3d5ea75cfefad5a8\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5755,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 10,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -4,
+        "live_collapsed": false,
+        "live_hash": "3d5ea75cfefad5a8",
+        "live_tokens_est": 0,
+        "live_turns": 10,
+        "messages_sent": 22,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5755,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 0,
+          "live": 20,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      }
+    }
+  },
+  "build_anchor_dead_zero": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B14",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B14",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B14",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B14",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B14",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-4}",
+      "sessions.eq | id | B14",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B14",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B14 blocks=time prov=[time] last_msg=m19",
+      "log [ContextAssembly] {\"session\":\"B14\",\"history_turns\":10,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":10,\"live_anchor_turn\":-4,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":22,\"estimated_tokens\":5755,\"raw_estimated_tokens\":5755,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":20,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"3d5ea75cfefad5a8\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5755,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 10,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -4,
+        "live_collapsed": false,
+        "live_hash": "3d5ea75cfefad5a8",
+        "live_tokens_est": 0,
+        "live_turns": 10,
+        "messages_sent": 22,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5755,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 0,
+          "live": 20,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      }
+    }
+  },
+  "build_anchor_dead_byWatermark": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B15",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B15",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B15",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B15",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B15",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":16}",
+      "sessions.eq | id | B15",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B15",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B15 blocks=time prov=[time] last_msg=m59",
+      "log [ContextAssembly] {\"session\":\"B15\",\"history_turns\":30,\"frozen_turns\":0,\"summary_present\":true,\"summary_range\":[1,20],\"summary_from\":1,\"summary_to\":20,\"segments_count\":1,\"middle_raw_turns\":0,\"live_turns\":15,\"live_anchor_turn\":16,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":32,\"estimated_tokens\":5765,\"raw_estimated_tokens\":5765,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":30,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"6ef755bb25fa2e3f\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5765,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 30,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": 16,
+        "live_collapsed": false,
+        "live_hash": "6ef755bb25fa2e3f",
+        "live_tokens_est": 0,
+        "live_turns": 15,
+        "messages_sent": 32,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5765,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 1,
+        "summary_from": 1,
+        "summary_hash": null,
+        "summary_present": true,
+        "summary_range": [
+          1,
+          20
+        ],
+        "summary_to": 20,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 0,
+          "live": 30,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      }
+    }
+  },
+  "build_anchor_equalTotal": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B16",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B16",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B16",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B16",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B16",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-4}",
+      "sessions.eq | id | B16",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B16",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B16 blocks=time prov=[time] last_msg=m19",
+      "log [ContextAssembly] {\"session\":\"B16\",\"history_turns\":10,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":10,\"live_anchor_turn\":-4,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":22,\"estimated_tokens\":5755,\"raw_estimated_tokens\":5755,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":20,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"3d5ea75cfefad5a8\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5755,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 10,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -4,
+        "live_collapsed": false,
+        "live_hash": "3d5ea75cfefad5a8",
+        "live_tokens_est": 0,
+        "live_turns": 10,
+        "messages_sent": 22,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5755,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 0,
+          "live": 20,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      }
+    }
+  },
+  "build_heartbeat_never": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B17",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B17",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B17",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B17",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B17",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-12}",
+      "sessions.eq | id | B17",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B17",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B17 blocks=time prov=[time] last_msg=m3",
+      "log [ContextAssembly] {\"session\":\"B17\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5739,\"raw_estimated_tokens\":5739,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5739,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 2,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -12,
+        "live_collapsed": false,
+        "live_hash": "05023fb12d8f6319",
+        "live_tokens_est": 0,
+        "live_turns": 2,
+        "messages_sent": 6,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5739,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 0,
+          "live": 4,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      }
+    }
+  },
+  "build_heartbeat_recent": {
+    "inj": [],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B18",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B18",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B18",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B18",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B18",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-12}",
+      "sessions.eq | id | B18",
+      "sessions.await"
+    ],
+    "logs": [
+      "log [ContextAssembly] {\"session\":\"B18\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":5,\"estimated_tokens\":5723,\"raw_estimated_tokens\":5723,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"2089b25f0ac10559\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5723,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 2,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -12,
+        "live_collapsed": false,
+        "live_hash": "2089b25f0ac10559",
+        "live_tokens_est": 0,
+        "live_turns": 2,
+        "messages_sent": 5,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5723,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 0,
+          "frozen": 0,
+          "live": 4,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "hasTime": false
+    }
+  },
+  "build_heartbeat_crossMidnight": {
+    "inj": [],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B19",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B19",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B19",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B19",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B19",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-12}",
+      "sessions.eq | id | B19",
+      "sessions.await"
+    ],
+    "logs": [
+      "log [ContextAssembly] {\"session\":\"B19\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":5,\"estimated_tokens\":5723,\"raw_estimated_tokens\":5723,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"2089b25f0ac10559\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5723,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 2,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -12,
+        "live_collapsed": false,
+        "live_hash": "2089b25f0ac10559",
+        "live_tokens_est": 0,
+        "live_turns": 2,
+        "messages_sent": 5,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5723,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 0,
+          "frozen": 0,
+          "live": 4,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "hasTime": false
+    }
+  },
+  "build_asksTime": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=true now=1789041600000 prev=1789",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B20",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B20",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B20",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B20",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B20",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-12}",
+      "sessions.eq | id | B20",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B20",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B20 blocks=time prov=[time] last_msg=现在几点了？",
+      "log [ContextAssembly] {\"session\":\"B20\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5744,\"raw_estimated_tokens\":5744,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":9,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"6eef83d05774ca2f\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5744,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 2,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -12,
+        "live_collapsed": false,
+        "live_hash": "6eef83d05774ca2f",
+        "live_tokens_est": 0,
+        "live_turns": 2,
+        "messages_sent": 6,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5744,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 0,
+          "live": 9,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "hasTime": true
+    }
+  },
+  "build_weather_firstTurn": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=NaN",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      },
+      {
+        "content": "【她那边】\n她在杭州，外面在下小雨。",
+        "layer": "weather",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "weather"
+        },
+        "tag": "weather"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B21",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B21",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B21",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B21",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-14}",
+      "sessions.eq | id | B21",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B21",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B21 blocks=time,weather prov=[time|weather] last_msg=在吗",
+      "log [ContextAssembly] {\"session\":\"B21\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":3,\"estimated_tokens\":5745,\"raw_estimated_tokens\":5745,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":26},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"0c15630d28f5b3b2\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5745,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 0,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -14,
+        "live_collapsed": false,
+        "live_hash": "0c15630d28f5b3b2",
+        "live_tokens_est": 0,
+        "live_turns": 0,
+        "messages_sent": 3,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5745,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 26,
+          "frozen": 0,
+          "live": 0,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "hasWeather": true
+    }
+  },
+  "build_weather_noCity": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=NaN",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      },
+      {
+        "content": "【她那边】\n她那边阴。",
+        "layer": "weather",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "weather"
+        },
+        "tag": "weather"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B22",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B22",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B22",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B22",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-14}",
+      "sessions.eq | id | B22",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B22",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B22 blocks=time,weather prov=[time|weather] last_msg=在吗",
+      "log [ContextAssembly] {\"session\":\"B22\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":3,\"estimated_tokens\":5738,\"raw_estimated_tokens\":5738,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":19},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"27139fcfcc3ca733\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5738,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 0,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -14,
+        "live_collapsed": false,
+        "live_hash": "27139fcfcc3ca733",
+        "live_tokens_est": 0,
+        "live_turns": 0,
+        "messages_sent": 3,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5738,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 19,
+          "frozen": 0,
+          "live": 0,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "hasWeather": true
+    }
+  },
+  "build_perception_silent_midConversation": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B23",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B23",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B23",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B23",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B23",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-10}",
+      "sessions.eq | id | B23",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B23",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B23 blocks=time prov=[time] last_msg=m7",
+      "log [ContextAssembly] {\"session\":\"B23\",\"history_turns\":4,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":4,\"live_anchor_turn\":-10,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":10,\"estimated_tokens\":5743,\"raw_estimated_tokens\":5743,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":8,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"26b4194e706a7e23\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "body": false,
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5743,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 4,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -10,
+        "live_collapsed": false,
+        "live_hash": "26b4194e706a7e23",
+        "live_tokens_est": 0,
+        "live_turns": 4,
+        "messages_sent": 10,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5743,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 0,
+          "live": 8,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      }
+    }
+  },
+  "build_calendar_firstTurn": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=NaN",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      },
+      {
+        "content": "【今天与临近的日子】\n⟨cal 今天是你生日⟩",
+        "layer": "calendar",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "calendar"
+        },
+        "tag": "calendar"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B24",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B24",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B24",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B24",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-14}",
+      "sessions.eq | id | B24",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B24",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B24 blocks=time,calendar prov=[time|calendar] last_msg=在吗",
+      "log [ContextAssembly] {\"session\":\"B24\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":3,\"estimated_tokens\":5740,\"raw_estimated_tokens\":5740,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":21},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"52ca5da995c4e650\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5740,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 0,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -14,
+        "live_collapsed": false,
+        "live_hash": "52ca5da995c4e650",
+        "live_tokens_est": 0,
+        "live_turns": 0,
+        "messages_sent": 3,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5740,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 21,
+          "frozen": 0,
+          "live": 0,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      }
+    }
+  },
+  "build_device_withTimeBlock": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=NaN",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B25",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B25",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B25",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B25",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-14}",
+      "sessions.eq | id | B25",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B25",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B25 blocks=time prov=[time] last_msg=在吗",
+      "log [ContextAssembly] {\"session\":\"B25\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":2,\"estimated_tokens\":5749,\"raw_estimated_tokens\":5749,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":30},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"4640bd265d882838\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5749,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 0,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -14,
+        "live_collapsed": false,
+        "live_hash": "4640bd265d882838",
+        "live_tokens_est": 0,
+        "live_turns": 0,
+        "messages_sent": 2,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5749,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 30,
+          "frozen": 0,
+          "live": 0,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "hasDevice": true
+    }
+  },
+  "build_device_standalone": {
+    "inj": [],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B26",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B26",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B26",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B26",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B26",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-12}",
+      "sessions.eq | id | B26",
+      "sessions.await"
+    ],
+    "logs": [
+      "log [ContextAssembly] {\"session\":\"B26\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":5,\"estimated_tokens\":5723,\"raw_estimated_tokens\":5723,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"2089b25f0ac10559\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5723,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 2,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -12,
+        "live_collapsed": false,
+        "live_hash": "2089b25f0ac10559",
+        "live_tokens_est": 0,
+        "live_turns": 2,
+        "messages_sent": 5,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5723,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 0,
+          "frozen": 0,
+          "live": 4,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "hasDevice": false,
+      "hasTime": false
+    }
+  },
+  "build_resumeGap_residue": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=true asks=false now=1789041600000 prev=1789",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      },
+      {
+        "content": "\n【上次对话的余温】⟨mode 深入⟩。",
+        "layer": "residue",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "residue",
+          "topicId": 77
+        },
+        "tag": "residue"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B27",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B27",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B27",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B27",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B27",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-8}",
+      "sessions.eq | id | B27",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B27",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🌿 [余温注入] session=B27 grounding=实 concern=0.9 mode=深入: 【上次对话的余温】⟨mode 深入⟩。",
+      "log 🧩 [动态注入] session=B27 blocks=time,residue prov=[time|residue#77] last_msg=我回来了",
+      "log [ContextAssembly] {\"session\":\"B27\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":15,\"estimated_tokens\":5761,\"raw_estimated_tokens\":5761,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":12,\"dynamic\":30},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"2ed8b5ef67535049\",\"resume_gap_min\":182,\"residue_injected\":true,\"residue_text\":\"【上次对话的余温】⟨mode 深入⟩。\",\"residue_mode\":\"深入\",\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [
+        77
+      ],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5761,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 6,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -8,
+        "live_collapsed": false,
+        "live_hash": "2ed8b5ef67535049",
+        "live_tokens_est": 0,
+        "live_turns": 6,
+        "messages_sent": 15,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5761,
+        "residue_injected": true,
+        "residue_mode": "深入",
+        "residue_text": "【上次对话的余温】⟨mode 深入⟩。",
+        "resume_gap_min": 182,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 30,
+          "frozen": 0,
+          "live": 12,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "hasResidue": true
+    }
+  },
+  "build_resumeGap_resolvedReturn": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=true asks=false now=1789041600000 prev=1789",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      },
+      {
+        "content": "\n【上次对话的余温】⟨mode 亲密⟩。",
+        "layer": "residue",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "residue",
+          "topicId": 78
+        },
+        "tag": "residue"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B28",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B28",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B28",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B28",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B28",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-8}",
+      "sessions.eq | id | B28",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B28",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🌿 [余温注入] session=B28 grounding=实 concern=0.9 mode=亲密: 【上次对话的余温】⟨mode 亲密⟩。",
+      "log 🧩 [动态注入] session=B28 blocks=time,residue prov=[time|residue#78] last_msg=修好了",
+      "log [ContextAssembly] {\"session\":\"B28\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":15,\"estimated_tokens\":5761,\"raw_estimated_tokens\":5761,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":12,\"dynamic\":30},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"7bef5b64da411138\",\"resume_gap_min\":182,\"residue_injected\":true,\"residue_text\":\"【上次对话的余温】⟨mode 亲密⟩。\",\"residue_mode\":\"亲密\",\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [
+        78
+      ],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5761,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 6,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -8,
+        "live_collapsed": false,
+        "live_hash": "7bef5b64da411138",
+        "live_tokens_est": 0,
+        "live_turns": 6,
+        "messages_sent": 15,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5761,
+        "residue_injected": true,
+        "residue_mode": "亲密",
+        "residue_text": "【上次对话的余温】⟨mode 亲密⟩。",
+        "resume_gap_min": 182,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 30,
+          "frozen": 0,
+          "live": 12,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "hasResidue": true
+    }
+  },
+  "build_resumeGap_noResidue": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=true asks=false now=1789041600000 prev=1789",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B29",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B29",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B29",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B29",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B29",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-8}",
+      "sessions.eq | id | B29",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B29",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B29 blocks=time prov=[time] last_msg=在吗",
+      "log [ContextAssembly] {\"session\":\"B29\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":14,\"estimated_tokens\":5747,\"raw_estimated_tokens\":5747,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":12,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"c1106b1b68abe0f2\",\"resume_gap_min\":182,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5747,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 6,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -8,
+        "live_collapsed": false,
+        "live_hash": "c1106b1b68abe0f2",
+        "live_tokens_est": 0,
+        "live_turns": 6,
+        "messages_sent": 14,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5747,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": 182,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 0,
+          "live": 12,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      }
+    }
+  },
+  "build_resumeGap_residue_blank": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=true asks=false now=1789041600000 prev=1789",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      },
+      {
+        "content": "\n【上次对话的余温】⟨thread —|182m⟩。",
+        "layer": "residue",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "residue",
+          "topicId": 79
+        },
+        "tag": "residue"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B30",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B30",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B30",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B30",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B30",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-8}",
+      "sessions.eq | id | B30",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B30",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🌿 [余温注入] session=B30 grounding=空 concern=0.9 mode=—: 【上次对话的余温】⟨thread —|182m⟩。",
+      "log 🧩 [动态注入] session=B30 blocks=time,residue prov=[time|residue#79] last_msg=在吗",
+      "log [ContextAssembly] {\"session\":\"B30\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":15,\"estimated_tokens\":5761,\"raw_estimated_tokens\":5761,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":12,\"dynamic\":30},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"4cc124d053a9b3c7\",\"resume_gap_min\":182,\"residue_injected\":true,\"residue_text\":\"【上次对话的余温】⟨thread —|182m⟩。\",\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [
+        79
+      ],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5761,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 6,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -8,
+        "live_collapsed": false,
+        "live_hash": "4cc124d053a9b3c7",
+        "live_tokens_est": 0,
+        "live_turns": 6,
+        "messages_sent": 15,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5761,
+        "residue_injected": true,
+        "residue_mode": null,
+        "residue_text": "【上次对话的余温】⟨thread —|182m⟩。",
+        "resume_gap_min": 182,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 30,
+          "frozen": 0,
+          "live": 12,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      }
+    }
+  },
+  "build_noResumeGap_skipsResidue": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B31",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B31",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B31",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B31",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B31",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-8}",
+      "sessions.eq | id | B31",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B31",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B31 blocks=time prov=[time] last_msg=m11",
+      "log [ContextAssembly] {\"session\":\"B31\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":14,\"estimated_tokens\":5747,\"raw_estimated_tokens\":5747,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":12,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"c0cef940f0bd3dfd\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5747,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 6,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -8,
+        "live_collapsed": false,
+        "live_hash": "c0cef940f0bd3dfd",
+        "live_tokens_est": 0,
+        "live_turns": 6,
+        "messages_sent": 14,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5747,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 0,
+          "live": 12,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      }
+    }
+  },
+  "build_pendingKeepalive": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B32",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B32",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B32",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B32",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B32",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-12}",
+      "sessions.eq | id | B32",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B32",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B32 blocks=time prov=[time] last_msg=m3",
+      "log [ContextAssembly] {\"session\":\"B32\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5758,\"raw_estimated_tokens\":5758,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":35},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"eda3c101d7e48889\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[31,32],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5758,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 2,
+        "keepalive_injected_ids": [
+          31,
+          32
+        ],
+        "live_anchor_turn": -12,
+        "live_collapsed": false,
+        "live_hash": "eda3c101d7e48889",
+        "live_tokens_est": 0,
+        "live_turns": 2,
+        "messages_sent": 6,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5758,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 35,
+          "frozen": 0,
+          "live": 4,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "hasNotes": true
+    }
+  },
+  "build_keepaliveOpt": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B33",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B33",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B33",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B33",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B33",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-10}",
+      "sessions.eq | id | B33",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B33",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B33 blocks=time prov=[time] last_msg=",
+      "log [ContextAssembly] {\"session\":\"B33\",\"history_turns\":4,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":4,\"live_anchor_turn\":-10,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":10,\"estimated_tokens\":672,\"raw_estimated_tokens\":672,\"token_breakdown\":{\"tools\":0,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":8,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"26b4194e706a7e23\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 672,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 4,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -10,
+        "live_collapsed": false,
+        "live_hash": "26b4194e706a7e23",
+        "live_tokens_est": 0,
+        "live_turns": 4,
+        "messages_sent": 10,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 672,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 0,
+          "live": 8,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 0
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "leakage": false
+    }
+  },
+  "build_attention_hit": {
+    "inj": [],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B34",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B34",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B34",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B34",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B34",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-12}",
+      "sessions.eq | id | B34",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🔔 [注意力] session=B34 hits=2 · 搬家的事还没说完"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": "ReferenceError: attention is not defined",
+    "value": {
+      "__undefined": true
+    }
+  },
+  "build_attention_null": {
+    "inj": [],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B35",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B35",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B35",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B35",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B35",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-12}",
+      "sessions.eq | id | B35",
+      "sessions.await"
+    ],
+    "logs": [
+      "log [ContextAssembly] {\"session\":\"B35\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":5,\"estimated_tokens\":5723,\"raw_estimated_tokens\":5723,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"2089b25f0ac10559\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5723,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 2,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -12,
+        "live_collapsed": false,
+        "live_hash": "2089b25f0ac10559",
+        "live_tokens_est": 0,
+        "live_turns": 2,
+        "messages_sent": 5,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5723,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 0,
+          "frozen": 0,
+          "live": 4,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      }
+    }
+  },
+  "build_attention_skipped_memoryFalse": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B36",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B36",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B36",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B36",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B36",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-12}",
+      "sessions.eq | id | B36",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B36",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B36 blocks=time prov=[time] last_msg=m3",
+      "log [ContextAssembly] {\"session\":\"B36\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5739,\"raw_estimated_tokens\":5739,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5739,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 2,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -12,
+        "live_collapsed": false,
+        "live_hash": "05023fb12d8f6319",
+        "live_tokens_est": 0,
+        "live_turns": 2,
+        "messages_sent": 6,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5739,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 0,
+          "live": 4,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      }
+    }
+  },
+  "build_attention_skipped_noUserMessage": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B37",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B37",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B37",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B37",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B37",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-12}",
+      "sessions.eq | id | B37",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B37",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B37 blocks=time prov=[time] last_msg=",
+      "log [ContextAssembly] {\"session\":\"B37\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5739,\"raw_estimated_tokens\":5739,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5739,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 2,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -12,
+        "live_collapsed": false,
+        "live_hash": "05023fb12d8f6319",
+        "live_tokens_est": 0,
+        "live_turns": 2,
+        "messages_sent": 6,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5739,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 0,
+          "live": 4,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      }
+    }
+  },
+  "build_world_seat": {
+    "inj": [
+      {
+        "content": "【她定过的一条约定】《怕打雷》打雷时要抱着她",
+        "layer": "world-seat",
+        "prov": {
+          "expression_eligible": false,
+          "kind": "remind",
+          "layer": "world-seat",
+          "title": "怕打雷",
+          "topicId": 11
+        },
+        "tag": "world-seat"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B38",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B38",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B38",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B38",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B38",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-12}",
+      "sessions.eq | id | B38",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 📖 [世界书] session=B38 保留席 亲密+remind+exact title=怕打雷 → 注入",
+      "log 🧩 [动态注入] session=B38 blocks=world-seat(remind) prov=[world-seat#11] last_msg=晚上打雷了",
+      "log [ContextAssembly] {\"session\":\"B38\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5723,\"raw_estimated_tokens\":5723,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"ac44ac4e17608084\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":true,\"world_kinds\":[\"remind\"],\"world_mode\":\"亲密\"}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5723,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 2,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -12,
+        "live_collapsed": false,
+        "live_hash": "ac44ac4e17608084",
+        "live_tokens_est": 0,
+        "live_turns": 2,
+        "messages_sent": 6,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5723,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 0,
+          "frozen": 0,
+          "live": 4,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": true,
+        "world_kinds": [
+          "remind"
+        ],
+        "world_mode": "亲密"
+      },
+      "seatText": [
+        "【她定过的一条约定】《怕打雷》打雷时要抱着她"
+      ]
+    }
+  },
+  "build_world_block": {
+    "inj": [
+      {
+        "content": "【世界书 · 她定下的世界设定，客观事实】\n1. 《猫》家里有只猫叫炉猫",
+        "layer": "world",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "world",
+          "refs": [
+            {
+              "kind": "setting",
+              "title": "猫",
+              "topicId": 12
+            }
+          ]
+        },
+        "tag": "world(1)"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B39",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B39",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B39",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B39",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B39",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-12}",
+      "sessions.eq | id | B39",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 📖 [世界书] session=B39 hits=1 kinds=[setting] mode=闲聊 → 注入",
+      "log 🧩 [动态注入] session=B39 blocks=world(1) prov=[world#12] last_msg=猫呢",
+      "log [ContextAssembly] {\"session\":\"B39\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5723,\"raw_estimated_tokens\":5723,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"32ab8b6b00a3214b\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":true,\"world_kinds\":[\"setting\"],\"world_mode\":\"闲聊\"}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5723,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 2,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -12,
+        "live_collapsed": false,
+        "live_hash": "32ab8b6b00a3214b",
+        "live_tokens_est": 0,
+        "live_turns": 2,
+        "messages_sent": 6,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5723,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 0,
+          "frozen": 0,
+          "live": 4,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": true,
+        "world_kinds": [
+          "setting"
+        ],
+        "world_mode": "闲聊"
+      }
+    }
+  },
+  "build_world_filtered_empty": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B40",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B40",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B40",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B40",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B40",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-12}",
+      "sessions.eq | id | B40",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B40",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 📖 [世界书] session=B40 hits=1 矩阵过滤后无允许项 mode=亲密 → 不注入",
+      "log 🧩 [动态注入] session=B40 blocks=time prov=[time] last_msg=猫呢",
+      "log [ContextAssembly] {\"session\":\"B40\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5739,\"raw_estimated_tokens\":5739,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":\"亲密\"}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5739,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 2,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -12,
+        "live_collapsed": false,
+        "live_hash": "05023fb12d8f6319",
+        "live_tokens_est": 0,
+        "live_turns": 2,
+        "messages_sent": 6,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5739,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 0,
+          "live": 4,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": "亲密"
+      }
+    }
+  },
+  "build_world_empty": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B41",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B41",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B41",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B41",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B41",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-12}",
+      "sessions.eq | id | B41",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B41",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B41 blocks=time prov=[time] last_msg=m3",
+      "log [ContextAssembly] {\"session\":\"B41\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5739,\"raw_estimated_tokens\":5739,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5739,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 2,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -12,
+        "live_collapsed": false,
+        "live_hash": "05023fb12d8f6319",
+        "live_tokens_est": 0,
+        "live_turns": 2,
+        "messages_sent": 6,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5739,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 0,
+          "live": 4,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      }
+    }
+  },
+  "build_blocks_overflow_drop": {
+    "inj": [],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B42",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B42",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B42",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B42",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-14}",
+      "sessions.eq | id | B42",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B42",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🔔 [注意力] session=B42 hits=1 · 旧事"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": "ReferenceError: attention is not defined",
+    "value": {
+      "__undefined": true
+    }
+  },
+  "build_blocks_overflow_drop_noAttention": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=true asks=true now=1789041600000 prev=17890",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      },
+      {
+        "content": "【她那边】\n她在杭州，晴。",
+        "layer": "weather",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "weather"
+        },
+        "tag": "weather"
+      },
+      {
+        "content": "【今天与临近的日子】\n⟨cal⟩",
+        "layer": "calendar",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "calendar"
+        },
+        "tag": "calendar"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B43",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B43",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B43",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B43",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B43",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-12}",
+      "sessions.eq | id | B43",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B43",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🌿 [余温注入] session=B43 grounding=实 concern=0.9 mode=深入: 【上次对话的余温】⟨mode 深入⟩；⟨thread 搬家|92m⟩。",
+      "log 📖 [世界书] session=B43 hits=1 kinds=[setting] mode=闲聊 → 注入",
+      "log 🧩 [动态注入] session=B43 blocks=time,weather,calendar prov=[time|weather|calendar] dropped=residue,world(1) last_msg=几点了？",
+      "log [ContextAssembly] {\"session\":\"B43\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":8,\"estimated_tokens\":5770,\"raw_estimated_tokens\":5770,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":7,\"dynamic\":44},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"69e5bc05305d9a2c\",\"resume_gap_min\":92,\"residue_injected\":true,\"residue_text\":\"【上次对话的余温】⟨mode 深入⟩；⟨thread 搬家|92m⟩。\",\"residue_mode\":\"深入\",\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":true,\"world_kinds\":[\"setting\"],\"world_mode\":\"闲聊\"}"
+    ],
+    "side": {
+      "consumed": [
+        91
+      ],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5770,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 2,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -12,
+        "live_collapsed": false,
+        "live_hash": "69e5bc05305d9a2c",
+        "live_tokens_est": 0,
+        "live_turns": 2,
+        "messages_sent": 8,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5770,
+        "residue_injected": true,
+        "residue_mode": "深入",
+        "residue_text": "【上次对话的余温】⟨mode 深入⟩；⟨thread 搬家|92m⟩。",
+        "resume_gap_min": 92,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 44,
+          "frozen": 0,
+          "live": 7,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": true,
+        "world_kinds": [
+          "setting"
+        ],
+        "world_mode": "闲聊"
+      },
+      "line": "log 🧩 [动态注入] session=B43 blocks=time,weather,calendar prov=[time|weather|calendar] dropped=residue,world(1) "
+    }
+  },
+  "build_trim_all": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B44",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B44",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B44",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B44",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B44",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":23}",
+      "sessions.eq | id | B44",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B44",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B44 blocks=time prov=[time] last_msg=m59",
+      "log [ContextAssembly] {\"session\":\"B44\",\"history_turns\":30,\"frozen_turns\":2,\"summary_present\":true,\"summary_range\":[1,3],\"summary_from\":1,\"summary_to\":3,\"segments_count\":1,\"middle_raw_turns\":0,\"live_turns\":3,\"live_anchor_turn\":23,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":12,\"estimated_tokens\":674,\"raw_estimated_tokens\":718,\"token_breakdown\":{\"tools\":0,\"stable\":648,\"frozen\":12,\"summary\":0,\"middle\":26,\"live\":16,\"dynamic\":16},\"trimmed_turns\":22,\"frozen_prefix_hash\":\"a620f8044db647c7\",\"summary_hash\":null,\"live_hash\":\"188c201b59b380cf\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 674,
+        "frozen_prefix_hash": "a620f8044db647c7",
+        "frozen_turns": 2,
+        "history_turns": 30,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": 23,
+        "live_collapsed": false,
+        "live_hash": "188c201b59b380cf",
+        "live_tokens_est": 0,
+        "live_turns": 3,
+        "messages_sent": 12,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 718,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 1,
+        "summary_from": 1,
+        "summary_hash": null,
+        "summary_present": true,
+        "summary_range": [
+          1,
+          3
+        ],
+        "summary_to": 3,
+        "token_breakdown": {
+          "dynamic": 16,
+          "frozen": 12,
+          "live": 16,
+          "middle": 26,
+          "stable": 648,
+          "summary": 0,
+          "tools": 0
+        },
+        "trimmed_turns": 22,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "msgs": 12
+    }
+  },
+  "build_tools_off": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B45",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B45",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B45",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B45",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B45",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-10}",
+      "sessions.eq | id | B45",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B45",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B45 blocks=time prov=[time] last_msg=m7",
+      "log [ContextAssembly] {\"session\":\"B45\",\"history_turns\":4,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":4,\"live_anchor_turn\":-10,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":10,\"estimated_tokens\":672,\"raw_estimated_tokens\":672,\"token_breakdown\":{\"tools\":0,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":8,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"26b4194e706a7e23\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "toolsTokens": 0
+    }
+  },
+  "build_tools_on": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B46",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B46",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B46",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B46",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B46",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-10}",
+      "sessions.eq | id | B46",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B46",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B46 blocks=time prov=[time] last_msg=m7",
+      "log [ContextAssembly] {\"session\":\"B46\",\"history_turns\":4,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":4,\"live_anchor_turn\":-10,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":10,\"estimated_tokens\":5743,\"raw_estimated_tokens\":5743,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":8,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"26b4194e706a7e23\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "toolsTokens": 5071
+    }
+  },
+  "build_crossFlow_on": {
+    "inj": [
+      {
+        "content": "【你之前在其他对话里说的话 · 流水回望】\n9/10 你说：另一条河里的第一句",
+        "layer": "cross",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "cross"
+        },
+        "tag": "cross-session"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B47",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B47",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B47",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B47",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B47",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-12}",
+      "sessions.eq | id | B47",
+      "sessions.await",
+      "from:messages",
+      "messages.select | session_id, role, content, created_at",
+      "messages.neq | session_id | B47",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 24",
+      "messages.await"
+    ],
+    "logs": [
+      "log [ContextAssembly] {\"session\":\"B47\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5723,\"raw_estimated_tokens\":5723,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"a409e7d0c71e31fa\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "diag": {
+        "attention_hits": 0,
+        "attention_injected": false,
+        "estimated_tokens": 5723,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 2,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -12,
+        "live_collapsed": false,
+        "live_hash": "a409e7d0c71e31fa",
+        "live_tokens_est": 0,
+        "live_turns": 2,
+        "messages_sent": 6,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5723,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 0,
+          "frozen": 0,
+          "live": 4,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      },
+      "hasCross": true
+    }
+  },
+  "build_crossFlow_off": {
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=178",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      }
+    ],
+    "io": [
+      "from:settings",
+      "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:sessions",
+      "sessions.select | frozen_until_turn, last_time_notice_at",
+      "sessions.eq | id | B48",
+      "sessions.maybeSingle",
+      "from:messages",
+      "messages.select | * | {\"count\":\"exact\",\"head\":true}",
+      "messages.eq | session_id | B48",
+      "messages.eq | visible | true",
+      "messages.await",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | B48",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":true}",
+      "messages.range | 0 | 999",
+      "messages.await",
+      "from:summary_segments",
+      "summary_segments.select | period_start, period_end, period_start_ts, period_end_ts, content",
+      "summary_segments.eq | session_id | B48",
+      "summary_segments.order | period_start | {\"ascending\":true}",
+      "summary_segments.await",
+      "from:sessions",
+      "sessions.select | live_anchor_turn",
+      "sessions.eq | id | B48",
+      "sessions.maybeSingle",
+      "from:sessions",
+      "sessions.update | {\"live_anchor_turn\":-12}",
+      "sessions.eq | id | B48",
+      "sessions.await",
+      "from:sessions",
+      "sessions.update | {\"last_time_notice_at\":\"2026-09-10T12:00:00.000Z\"}",
+      "sessions.eq | id | B48",
+      "sessions.await"
+    ],
+    "logs": [
+      "log 🧩 [动态注入] session=B48 blocks=time prov=[time] last_msg=m3",
+      "log [ContextAssembly] {\"session\":\"B48\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5739,\"raw_estimated_tokens\":5739,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+    ],
+    "side": {
+      "consumed": [],
+      "saved": []
+    },
+    "threw": null,
+    "value": {
+      "hasCross": false
+    }
+  }
+}

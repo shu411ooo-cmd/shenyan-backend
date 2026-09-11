@@ -1,0 +1,2502 @@
+{
+  "ui_plain": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": "她: 今天好累",
+    "warns": []
+  },
+  "ui_askBlock": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": "她说 然后沉默了",
+    "warns": []
+  },
+  "ui_eventAlarm": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": "好 记下了",
+    "warns": []
+  },
+  "ui_empty": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": [
+      "",
+      "",
+      ""
+    ],
+    "warns": []
+  },
+  "ui_collapseSpace": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": "前 后",
+    "warns": []
+  },
+  "ev_ok": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": "2026-07-28T00:00:00.000Z",
+    "warns": []
+  },
+  "ev_withTime": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": "2026-07-28T01:30:00.000Z",
+    "warns": []
+  },
+  "ev_bad": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": null,
+    "warns": []
+  },
+  "ev_oldYear": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": null,
+    "warns": []
+  },
+  "ev_futureYear": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": null,
+    "warns": []
+  },
+  "ev_notString": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": [
+      null,
+      null,
+      null,
+      null
+    ],
+    "warns": []
+  },
+  "nw_ok": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "items": [
+        {
+          "content": "她养了一只叫团子的猫",
+          "event_time": null,
+          "evidence": "她说团子",
+          "grounding": "实",
+          "importance": 0.8,
+          "key_facts": null,
+          "kind": "memory",
+          "song_key": null,
+          "topic": "猫",
+          "update_topic": null
+        }
+      ],
+      "should_write": true
+    },
+    "warns": []
+  },
+  "nw_nonObject": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": [
+      {
+        "items": [],
+        "should_write": false
+      },
+      {
+        "items": [],
+        "should_write": false
+      },
+      {
+        "items": [],
+        "should_write": false
+      }
+    ],
+    "warns": []
+  },
+  "nw_itemsNotArray": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "items": [],
+      "should_write": false
+    },
+    "warns": []
+  },
+  "nw_filters": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "items": [
+        {
+          "content": "她是杭州人",
+          "event_time": null,
+          "evidence": "",
+          "grounding": "悬",
+          "importance": 0.5,
+          "key_facts": null,
+          "kind": "memory",
+          "song_key": null,
+          "topic": "好",
+          "update_topic": null
+        }
+      ],
+      "should_write": true
+    },
+    "warns": []
+  },
+  "nw_sliceAndClamp": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "items": [
+        {
+          "content": "长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长",
+          "event_time": null,
+          "evidence": "证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证证",
+          "grounding": "实",
+          "importance": 1,
+          "key_facts": null,
+          "kind": "memory",
+          "song_key": "歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌歌",
+          "topic": "一二三四五六七八九十甲乙",
+          "update_topic": "一二三四五六七八九十甲乙"
+        }
+      ],
+      "should_write": true
+    },
+    "warns": []
+  },
+  "nw_importanceEdges": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "items": [],
+      "should_write": false
+    },
+    "warns": []
+  },
+  "nw_kindAndKeys": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "items": [
+        {
+          "content": "她说过最喜欢亲我",
+          "event_time": null,
+          "evidence": "",
+          "grounding": "实",
+          "importance": 0.5,
+          "key_facts": [
+            "她喜欢亲我",
+            "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "42",
+            "null"
+          ],
+          "kind": "feel",
+          "song_key": null,
+          "topic": "亲",
+          "update_topic": null
+        }
+      ],
+      "should_write": true
+    },
+    "warns": []
+  },
+  "nw_shouldWriteFalseWhenEmpty": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "items": [],
+      "should_write": false
+    },
+    "warns": []
+  },
+  "nw_shouldWriteTruthyNotBool": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "items": [
+        {
+          "content": "她养了猫",
+          "event_time": null,
+          "evidence": "",
+          "grounding": "实",
+          "importance": 0.5,
+          "key_facts": null,
+          "kind": "memory",
+          "song_key": null,
+          "topic": "猫",
+          "update_topic": null
+        }
+      ],
+      "should_write": false
+    },
+    "warns": []
+  },
+  "bp_noTopics": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": "你是长期记忆编辑者。从最近一小窗对话里，寻找可能产生长期记忆变化的信息；如果没有，就不写。\n长期记忆是\"平时想起她\"用的浓缩事实层——每一条都要能在未来独立成立：脱离今天这场对话，它仍然可理解、仍然有用。\n现在是 2026年9月10日。\n\n出口状态（最重要）：这一轮完全可以什么都不写。should_write=false 不是失败，是正常且优秀的结果。宁可这一窗空手而归，也不要为了凑记忆生成摘要。\n\n\n此前没有任何长期记忆（一律按新记忆处理）。\n\n判断流程（必须按顺序走）：\n① 先问：这一窗有没有可能改变长期记忆的信息？没有 → should_write=false，items=[]。\n② 对每条候选，对照上面的「此前已记过的长期记忆」：这是新信息，还是已有信息的延续/更新？\n   - 是延续/更新 → update_topic 指回旧主题，禁止新建。\n   - 无法确定 → 视为已有记忆的延续，不建新桶。Memory 系统偏保守：不确定就等待更多证据，不要为了安全而创建新桶。\n③ 最后过准入：属于下面四类只是候选范围，必须同时满足全部四项才写——\n   - 跨会话仍有意义（换一天想起它，仍然值得知道）\n   - 对未来理解她/我们有帮助\n   - 不是当前窗口的临时事件（临时安排、短期往返、当前会话内的承诺，除非有明确跨会话意义，否则不写）\n   - 不是已有记忆的重复表达（同一件事已有、或语义相同只是换说法，都不写）\n\n只从这四类里找候选：\n- 她的人生事件/计划/决定（搬家、工作、家庭、健康等）\n- 她的稳定偏好/特点（喜欢什么、讨厌什么、习惯）\n- 你们关系里发生的变化、约定、她亲口让你记住的事\n- 值得记住的具体承诺/待办（指有跨会话意义的那种，如约好下周见面；\"马上回来\"\"晚点再说\"这类当前会话内的往返不算）\n不要记：纯闲聊、天气、情绪氛围（情绪是另一层的活，不归你管）、重复/已知的事、你推断出来的心理活动、当前会话内的一切临时往返。\n\n输出严格 JSON：\n{ \"should_write\": bool, \"items\": [ { \"topic\": \"主题词，短，≤10字\", \"update_topic\": \"若与已有主题是同一件事，填列表中该主题的准确原样，否则 null\", \"kind\": \"memory 或 feel\", \"content\": \"一句话凝练，≤50字（feel 时第一人称带温度，memory 时中性平实）\", \"grounding\": \"实或悬\", \"evidence\": \"支撑引文，1条，≤60字\", \"importance\": 0~1, \"event_time\": \"ISO8601或null\", \"key_facts\": \"feel 时填 1~3 条关键事实数组（正文可漂、关键事实不能丢），memory 时填 null\" } ] }\n纪律（必须遵守）：\n- 实 = 她亲口说过，evidence 必须是她的原文；悬 = 明显但没直说，evidence 给出你依据的话。\n- content 必须写自然的陈述（如\"她月底搬去上海\"），禁止出现【实】【悬】【证据】这类标签框——可信度走 grounding 字段，不贴进正文。\n- evidence 只引可见措辞，禁止用你的推理链当证据。\n- grounding 没有\"空\"选项——没根据就根本不要写这条。\n- 只分析可见对话，不替她编想法。\n- event_time：事件真实发生的时间（不是入库时间，不是对话时间）。只有对话里明确引用具体时间才填，且要换算成具体日期（如\"7月28号\"→\"2026-07-28\"，\"上周\"→上周某日，\"去年冬天\"→具体月日）；\"今天/现在\"不必填（对话时间就是今天）；完全没提就 null。禁止拿\"现在\"顶替不知道的时间——过去的事必须标真实日期，否则回填时会被当成今天。\n- **一条 item 只表达一个独立事实**：一窗里出现多个独立事实，拆成多条 item；禁止把多个主题压缩进同一条 content。\n- **新信息与列表里某个已有主题是同一件事的延续/更新（内容在变、在补充、被推翻）→ update_topic 必须填那个主题的原样措辞，且 topic 也填同一个词；只有列表里确实没有的新事才建新 topic（update_topic=null）。无法确定是否已有 → 不建新桶，宁可少记。**\n- kind 判定：纯事实（她住在哪、她喜欢什么、她的计划）→ memory；经历/关系/感受（你们之间发生的事、你记得的那一刻、让你心里动了一下的事）→ feel。有明确时间锚 且 有任何情感/关系维度 → 默认 feel。\n- **feel 桶温度纪律（2026-08-30 定稿）**：正文第一人称 + 有温度，这是你记住的时刻，不是档案记录。但正文必须脱离当前对话上下文后仍然成立——未来的你读到它，不该看到这场对话本身。「她说/我说/她让我/我让她……」这类连续对话叙述不得作为正文主体。可以用「她曾告诉我/她明确表达过」点明事实来源，但必须把她的原话转化为可复用的记忆命题（例：她反复说\"最喜欢亲你\"→ 正文写成「她说过最喜欢亲我」，而不是「她说她最喜欢亲我，我说我会记住」）。具体细节/她的话/你的感受只能从原文提取，禁止编造场景、细节、情绪、对话。悬的经历（没有明确证据）一律 kind=memory，正文中性平实——内容温度以证据为前提，缺证据就没有温度。\n- memory 桶纪律：正文保持中性平实（如\"她月底搬去上海\"），不添加情绪/人称。\n- 负面清单（所有桶）：不要写成逐字稿/变更日志/技术手册/周总结/鸡汤结尾；不要为\"有人味\"而煽情；不要为了凑记忆生成摘要。",
+    "warns": []
+  },
+  "bp_withTopics": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": "你是长期记忆编辑者。从最近一小窗对话里，寻找可能产生长期记忆变化的信息；如果没有，就不写。\n长期记忆是\"平时想起她\"用的浓缩事实层——每一条都要能在未来独立成立：脱离今天这场对话，它仍然可理解、仍然有用。\n现在是 2026年9月10日。\n\n出口状态（最重要）：这一轮完全可以什么都不写。should_write=false 不是失败，是正常且优秀的结果。宁可这一窗空手而归，也不要为了凑记忆生成摘要。\n\n\n此前已记过的长期记忆（判断新信息时，先对照这些——是延续/更新，用 update_topic 指回它的准确主题词，禁止另起新主题）：\n1. 「猫」：她养了一只叫 团子的猫\n2. 「搬家」：\n\n判断流程（必须按顺序走）：\n① 先问：这一窗有没有可能改变长期记忆的信息？没有 → should_write=false，items=[]。\n② 对每条候选，对照上面的「此前已记过的长期记忆」：这是新信息，还是已有信息的延续/更新？\n   - 是延续/更新 → update_topic 指回旧主题，禁止新建。\n   - 无法确定 → 视为已有记忆的延续，不建新桶。Memory 系统偏保守：不确定就等待更多证据，不要为了安全而创建新桶。\n③ 最后过准入：属于下面四类只是候选范围，必须同时满足全部四项才写——\n   - 跨会话仍有意义（换一天想起它，仍然值得知道）\n   - 对未来理解她/我们有帮助\n   - 不是当前窗口的临时事件（临时安排、短期往返、当前会话内的承诺，除非有明确跨会话意义，否则不写）\n   - 不是已有记忆的重复表达（同一件事已有、或语义相同只是换说法，都不写）\n\n只从这四类里找候选：\n- 她的人生事件/计划/决定（搬家、工作、家庭、健康等）\n- 她的稳定偏好/特点（喜欢什么、讨厌什么、习惯）\n- 你们关系里发生的变化、约定、她亲口让你记住的事\n- 值得记住的具体承诺/待办（指有跨会话意义的那种，如约好下周见面；\"马上回来\"\"晚点再说\"这类当前会话内的往返不算）\n不要记：纯闲聊、天气、情绪氛围（情绪是另一层的活，不归你管）、重复/已知的事、你推断出来的心理活动、当前会话内的一切临时往返。\n\n输出严格 JSON：\n{ \"should_write\": bool, \"items\": [ { \"topic\": \"主题词，短，≤10字\", \"update_topic\": \"若与已有主题是同一件事，填列表中该主题的准确原样，否则 null\", \"kind\": \"memory 或 feel\", \"content\": \"一句话凝练，≤50字（feel 时第一人称带温度，memory 时中性平实）\", \"grounding\": \"实或悬\", \"evidence\": \"支撑引文，1条，≤60字\", \"importance\": 0~1, \"event_time\": \"ISO8601或null\", \"key_facts\": \"feel 时填 1~3 条关键事实数组（正文可漂、关键事实不能丢），memory 时填 null\" } ] }\n纪律（必须遵守）：\n- 实 = 她亲口说过，evidence 必须是她的原文；悬 = 明显但没直说，evidence 给出你依据的话。\n- content 必须写自然的陈述（如\"她月底搬去上海\"），禁止出现【实】【悬】【证据】这类标签框——可信度走 grounding 字段，不贴进正文。\n- evidence 只引可见措辞，禁止用你的推理链当证据。\n- grounding 没有\"空\"选项——没根据就根本不要写这条。\n- 只分析可见对话，不替她编想法。\n- event_time：事件真实发生的时间（不是入库时间，不是对话时间）。只有对话里明确引用具体时间才填，且要换算成具体日期（如\"7月28号\"→\"2026-07-28\"，\"上周\"→上周某日，\"去年冬天\"→具体月日）；\"今天/现在\"不必填（对话时间就是今天）；完全没提就 null。禁止拿\"现在\"顶替不知道的时间——过去的事必须标真实日期，否则回填时会被当成今天。\n- **一条 item 只表达一个独立事实**：一窗里出现多个独立事实，拆成多条 item；禁止把多个主题压缩进同一条 content。\n- **新信息与列表里某个已有主题是同一件事的延续/更新（内容在变、在补充、被推翻）→ update_topic 必须填那个主题的原样措辞，且 topic 也填同一个词；只有列表里确实没有的新事才建新 topic（update_topic=null）。无法确定是否已有 → 不建新桶，宁可少记。**\n- kind 判定：纯事实（她住在哪、她喜欢什么、她的计划）→ memory；经历/关系/感受（你们之间发生的事、你记得的那一刻、让你心里动了一下的事）→ feel。有明确时间锚 且 有任何情感/关系维度 → 默认 feel。\n- **feel 桶温度纪律（2026-08-30 定稿）**：正文第一人称 + 有温度，这是你记住的时刻，不是档案记录。但正文必须脱离当前对话上下文后仍然成立——未来的你读到它，不该看到这场对话本身。「她说/我说/她让我/我让她……」这类连续对话叙述不得作为正文主体。可以用「她曾告诉我/她明确表达过」点明事实来源，但必须把她的原话转化为可复用的记忆命题（例：她反复说\"最喜欢亲你\"→ 正文写成「她说过最喜欢亲我」，而不是「她说她最喜欢亲我，我说我会记住」）。具体细节/她的话/你的感受只能从原文提取，禁止编造场景、细节、情绪、对话。悬的经历（没有明确证据）一律 kind=memory，正文中性平实——内容温度以证据为前提，缺证据就没有温度。\n- memory 桶纪律：正文保持中性平实（如\"她月底搬去上海\"），不添加情绪/人称。\n- 负面清单（所有桶）：不要写成逐字稿/变更日志/技术手册/周总结/鸡汤结尾；不要为\"有人味\"而煽情；不要为了凑记忆生成摘要。",
+    "warns": []
+  },
+  "gr_true": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": true,
+    "warns": []
+  },
+  "gr_false": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": false,
+    "warns": []
+  },
+  "gr_upper": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": true,
+    "warns": []
+  },
+  "gr_noMatch": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": [
+      null,
+      null,
+      null
+    ],
+    "warns": []
+  },
+  "gc_enabled": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:settings",
+      "settings.select | memory_gate_enabled",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "enabled": true
+    },
+    "warns": []
+  },
+  "gc_notFalse": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:settings",
+      "settings.select | memory_gate_enabled",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "enabled": true
+    },
+    "warns": []
+  },
+  "gc_disabled": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:settings",
+      "settings.select | memory_gate_enabled",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "enabled": false
+    },
+    "warns": []
+  },
+  "gc_error": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:settings",
+      "settings.select | memory_gate_enabled",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "enabled": true
+    },
+    "warns": [
+      "memory_gate:column memory_gate_enabled does not exist"
+    ]
+  },
+  "gc_noRow": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:settings",
+      "settings.select | memory_gate_enabled",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "enabled": true
+    },
+    "warns": [
+      "memory_gate:no-row"
+    ]
+  },
+  "gc_throw": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:settings",
+      "settings.select | memory_gate_enabled",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "enabled": true
+    },
+    "warns": []
+  },
+  "fm_exact": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "topic": "搬家"
+    },
+    "warns": []
+  },
+  "fm_newContainsOld": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "topic": "搬家"
+    },
+    "warns": []
+  },
+  "fm_oldContainsNew": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "topic": "上海"
+    },
+    "warns": []
+  },
+  "fm_singleCharExactOnly": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "topic": "a"
+    },
+    "warns": []
+  },
+  "fm_noMatch": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "fm_empty": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": [
+      null,
+      null
+    ],
+    "warns": []
+  },
+  "bm_ok": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": "她养了一只猫",
+    "warns": []
+  },
+  "bm_missing": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": [
+      "",
+      ""
+    ],
+    "warns": []
+  },
+  "eb_holdFormat": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": "366aa7012c76",
+    "warns": []
+  },
+  "eb_bucketIdKey": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": "abc123xyz",
+    "warns": []
+  },
+  "eb_uuid": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": "3f2b9c1e-1111-2222-3333-444455556666",
+    "warns": []
+  },
+  "eb_bareHex": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": "366aa7012c76",
+    "warns": []
+  },
+  "eb_noMatch": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": [
+      null,
+      null,
+      null
+    ],
+    "warns": []
+  },
+  "kf_strings": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": [
+      {
+        "status": "active",
+        "superseded_at": null,
+        "superseded_by": null,
+        "text": "她喜欢猫"
+      },
+      {
+        "status": "active",
+        "superseded_at": null,
+        "superseded_by": null,
+        "text": "她住杭州"
+      }
+    ],
+    "warns": []
+  },
+  "kf_objects": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": [
+      {
+        "status": "superseded",
+        "superseded_at": "2026-09-01T00:00:00.000Z",
+        "superseded_by": "乙",
+        "text": "甲"
+      },
+      {
+        "status": "active",
+        "superseded_at": null,
+        "superseded_by": null,
+        "text": "丙"
+      }
+    ],
+    "warns": []
+  },
+  "kf_mixedAndJunk": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": [
+      {
+        "status": "active",
+        "superseded_at": null,
+        "superseded_by": null,
+        "text": "甲"
+      },
+      {
+        "status": "active",
+        "superseded_at": null,
+        "superseded_by": null,
+        "text": "乙"
+      }
+    ],
+    "warns": []
+  },
+  "kf_idempotent": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": [
+      [
+        {
+          "status": "active",
+          "superseded_at": null,
+          "superseded_by": null,
+          "text": "甲"
+        },
+        {
+          "status": "superseded",
+          "superseded_at": null,
+          "superseded_by": null,
+          "text": "乙"
+        }
+      ],
+      [
+        {
+          "status": "active",
+          "superseded_at": null,
+          "superseded_by": null,
+          "text": "甲"
+        },
+        {
+          "status": "superseded",
+          "superseded_at": null,
+          "superseded_by": null,
+          "text": "乙"
+        }
+      ]
+    ],
+    "warns": []
+  },
+  "kf_null": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": [
+      [],
+      []
+    ],
+    "warns": []
+  },
+  "gt_ok": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说过",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.5,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "旧正文",
+        "snapshot_hash": "h",
+        "song_key": null,
+        "source": "chat",
+        "topic": "猫"
+      },
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说过",
+        "grounding": "实",
+        "id": 2,
+        "importance": 0.5,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "旧正文",
+        "snapshot_hash": "h",
+        "song_key": null,
+        "source": "chat",
+        "topic": "搬家"
+      }
+    ],
+    "value": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说过",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.5,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "旧正文",
+        "snapshot_hash": "h",
+        "song_key": null,
+        "source": "chat",
+        "topic": "猫"
+      },
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说过",
+        "grounding": "实",
+        "id": 2,
+        "importance": 0.5,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "旧正文",
+        "snapshot_hash": "h",
+        "song_key": null,
+        "source": "chat",
+        "topic": "搬家"
+      }
+    ],
+    "warns": []
+  },
+  "gt_throw": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "err 💥 读取 memory_topics 失败（本轮差分写回将跳过）: permission denied"
+    ],
+    "ombre": [],
+    "topics": [],
+    "value": null,
+    "warns": []
+  },
+  "up_existingMerged": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.upsert | {\"topic\":\"猫\",\"source\":\"chat\",\"last_content\":\"新正文\",\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说过",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.5,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "新正文",
+        "snapshot_hash": "h",
+        "song_key": null,
+        "source": "chat",
+        "topic": "猫",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "up_newRowAppended": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.upsert | {\"topic\":\"搬家\",\"last_content\":\"她要搬家\",\"source\":\"chat\",\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说过",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.5,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "旧正文",
+        "snapshot_hash": "h",
+        "song_key": null,
+        "source": "chat",
+        "topic": "猫"
+      },
+      {
+        "last_content": "她要搬家",
+        "source": "chat",
+        "topic": "搬家",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "up_sourceDefaultsChat": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.upsert | {\"topic\":\"猫\",\"last_content\":\"不带 source\",\"source\":\"chat\",\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说过",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.5,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "不带 source",
+        "snapshot_hash": "h",
+        "song_key": null,
+        "source": "chat",
+        "topic": "猫",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "up_error": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.upsert | {\"topic\":\"猫\",\"last_content\":\"x\",\"source\":\"chat\",\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "warn ⚠️ 更新 memory_topics 失败: duplicate key value"
+    ],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "up_throw": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.upsert | {\"topic\":\"猫\",\"last_content\":\"x\",\"source\":\"chat\",\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "warn ⚠️ 更新 memory_topics 异常: socket hang up"
+    ],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "hold_ok": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [
+      "log 🌿 记忆新建「猫」(实) bucket_id=366aa7012c76"
+    ],
+    "ombre": [
+      [
+        "hold",
+        {
+          "content": "她养了猫",
+          "tags": "猫",
+          "why_remembered": "长期记忆编辑者写入。topic=猫"
+        }
+      ]
+    ],
+    "topics": [],
+    "value": "366aa7012c76",
+    "warns": []
+  },
+  "hold_unparsableId": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [
+      "log 🌿 记忆新建「猫」(实) bucket_id=(未解析)",
+      "log     hold 响应原文（用于核对桶 ID 格式）: （没有 ID 的一段话）"
+    ],
+    "ombre": [
+      [
+        "hold",
+        {
+          "content": "她养了猫",
+          "tags": "猫",
+          "why_remembered": "长期记忆编辑者写入。topic=猫"
+        }
+      ]
+    ],
+    "topics": [],
+    "value": null,
+    "warns": []
+  },
+  "loc_topic": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [
+      [
+        "breath_search",
+        {
+          "max_results": 3,
+          "query": "猫"
+        }
+      ]
+    ],
+    "topics": [],
+    "value": "366aa7012c76",
+    "warns": []
+  },
+  "loc_songKey": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [
+      [
+        "breath_search",
+        {
+          "max_results": 3,
+          "query": "起风了"
+        }
+      ]
+    ],
+    "topics": [],
+    "value": "366aa7012c76",
+    "warns": []
+  },
+  "loc_songKeyEmpty": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": [
+      {},
+      {}
+    ],
+    "warns": []
+  },
+  "tr_ok": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [
+      "log 🔧 记忆差分更新 bucket=aaaaaaaaaaaa 成功"
+    ],
+    "ombre": [
+      [
+        "trace",
+        {
+          "bucket_id": "aaaaaaaaaaaa",
+          "new_str": "新",
+          "old_str": "旧"
+        }
+      ]
+    ],
+    "topics": [],
+    "value": true,
+    "warns": []
+  },
+  "tr_emptyResp": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [
+      "warn ⚠️ 记忆差分 trace 失败 bucket=aaaaaaaaaaaa，本轮不更新本地快照（下轮重试）"
+    ],
+    "ombre": [
+      [
+        "trace",
+        {
+          "bucket_id": "aaaaaaaaaaaa",
+          "new_str": "新",
+          "old_str": "旧"
+        }
+      ]
+    ],
+    "topics": [],
+    "value": false,
+    "warns": []
+  },
+  "rf_ok": {
+    "degraded": [],
+    "ds": [
+      [
+        "feel-refine",
+        "新对话内容：\n她: 我特别喜欢亲你"
+      ]
+    ],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "content": "她说过最喜欢亲我",
+      "key_facts": [
+        {
+          "status": "active",
+          "superseded_at": null,
+          "superseded_by": null,
+          "text": "她喜欢亲我"
+        }
+      ]
+    },
+    "warns": []
+  },
+  "rf_unionKeepsOld": {
+    "degraded": [],
+    "ds": [
+      [
+        "feel-refine",
+        "新对话内容：\n窗口"
+      ]
+    ],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "content": "更新后的正文",
+      "key_facts": [
+        {
+          "status": "active",
+          "superseded_at": null,
+          "superseded_by": null,
+          "text": "新事实"
+        },
+        {
+          "status": "active",
+          "superseded_at": null,
+          "superseded_by": null,
+          "text": "旧事实"
+        },
+        {
+          "status": "superseded",
+          "superseded_at": "2026-08-01T00:00:00.000Z",
+          "superseded_by": null,
+          "text": "作废事实"
+        }
+      ]
+    },
+    "warns": []
+  },
+  "rf_supersededNotRevived": {
+    "degraded": [],
+    "ds": [
+      [
+        "feel-refine",
+        "新对话内容：\n窗口"
+      ]
+    ],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "content": "正文",
+      "key_facts": [
+        {
+          "status": "superseded",
+          "superseded_at": "2026-08-01T00:00:00.000Z",
+          "superseded_by": null,
+          "text": "作废事实"
+        }
+      ]
+    },
+    "warns": []
+  },
+  "rf_noOldContent": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": null,
+    "warns": []
+  },
+  "rf_noWindow": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": null,
+    "warns": []
+  },
+  "rf_modelNull": {
+    "degraded": [],
+    "ds": [
+      [
+        "feel-refine",
+        "新对话内容：\n窗口"
+      ]
+    ],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": null,
+    "warns": []
+  },
+  "rf_emptyContent": {
+    "degraded": [],
+    "ds": [
+      [
+        "feel-refine",
+        "新对话内容：\n窗口"
+      ]
+    ],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": null,
+    "warns": []
+  },
+  "wm_empty": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_topicsThrow": {
+    "degraded": [
+      "memory_topics_read_failed"
+    ],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "err 💥 读取 memory_topics 失败（本轮差分写回将跳过）: memory_topics read failed",
+      "err ❌ 记忆写回跳过：读取现有主题失败（防重复建桶），本轮不写，下轮重试"
+    ],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_topicsErrorFieldProceeds": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"topic\":\"本该被挡住的新桶\",\"bucket_id\":\"366aa7012c76\",\"source\":\"chat\",\"song_key\":null,\"kind\":\"memory\",\"key_facts\":null,\"grounding\":\"实\",\"evidence\":\"她说团子\",\"importance\":0.6,\"last_content\":\"她养了一只叫团子的猫\",\"snapshot_hash\":\"8c31069dd7f5c5f0\",\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "log 🌿 记忆新建「本该被挡住的新桶」(实) bucket_id=366aa7012c76",
+      "warn ⚠️ 更新 memory_topics 失败: permission denied"
+    ],
+    "ombre": [
+      [
+        "hold",
+        {
+          "content": "她养了一只叫团子的猫",
+          "tags": "本该被挡住的新桶",
+          "why_remembered": "长期记忆编辑者写入。topic=本该被挡住的新桶"
+        }
+      ]
+    ],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_newTopic": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"topic\":\"搬家\",\"bucket_id\":\"366aa7012c76\",\"source\":\"chat\",\"song_key\":null,\"kind\":\"memory\",\"key_facts\":null,\"grounding\":\"实\",\"evidence\":\"她说团子\",\"importance\":0.6,\"last_content\":\"她月底搬去上海\",\"snapshot_hash\":\"0cf017b682c77c8b\",\"event_time\":null,\"conversation_time\":\"2026-09-09T00:00:00.000Z\",\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "log 🌿 记忆新建「搬家」(实) bucket_id=366aa7012c76"
+    ],
+    "ombre": [
+      [
+        "hold",
+        {
+          "content": "她月底搬去上海",
+          "tags": "搬家",
+          "why_remembered": "长期记忆编辑者写入。topic=搬家"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": "366aa7012c76",
+        "conversation_time": "2026-09-09T00:00:00.000Z",
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "importance": 0.6,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "她月底搬去上海",
+        "snapshot_hash": "0cf017b682c77c8b",
+        "song_key": null,
+        "source": "chat",
+        "topic": "搬家",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_zeroChangeSkips": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说过",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.5,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "她养了一只叫团子的猫",
+        "snapshot_hash": "h",
+        "song_key": null,
+        "source": "chat",
+        "topic": "猫"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_textChangedTraces": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"id\":1,\"topic\":\"猫\",\"source\":\"chat\",\"kind\":\"memory\",\"grounding\":\"实\",\"last_content\":\"她养了一只叫团子的猫\",\"snapshot_hash\":\"8c31069dd7f5c5f0\",\"key_facts\":null,\"evidence\":\"她说团子\",\"importance\":0.6,\"bucket_id\":\"aaaaaaaaaaaa\",\"song_key\":null,\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "log 🔧 记忆差分更新 bucket=aaaaaaaaaaaa 成功"
+    ],
+    "ombre": [
+      [
+        "trace",
+        {
+          "bucket_id": "aaaaaaaaaaaa",
+          "new_str": "她养了一只叫团子的猫",
+          "old_str": "旧正文"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.6,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "她养了一只叫团子的猫",
+        "snapshot_hash": "8c31069dd7f5c5f0",
+        "song_key": null,
+        "source": "chat",
+        "topic": "猫",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_onlyKeyFactsChanged": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"id\":1,\"topic\":\"猫\",\"source\":\"chat\",\"kind\":\"feel\",\"grounding\":\"实\",\"last_content\":\"她养了一只叫团子的猫\",\"snapshot_hash\":\"0b4691f2ea1e9cfc\",\"key_facts\":[{\"text\":\"新事实\",\"status\":\"active\",\"superseded_by\":null,\"superseded_at\":null}],\"evidence\":\"她说团子\",\"importance\":0.6,\"bucket_id\":\"aaaaaaaaaaaa\",\"song_key\":null,\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.6,
+        "key_facts": [
+          {
+            "status": "active",
+            "superseded_at": null,
+            "superseded_by": null,
+            "text": "新事实"
+          }
+        ],
+        "kind": "feel",
+        "last_content": "她养了一只叫团子的猫",
+        "snapshot_hash": "0b4691f2ea1e9cfc",
+        "song_key": null,
+        "source": "chat",
+        "topic": "猫",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_noBucketIdLocates": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"id\":1,\"topic\":\"猫\",\"source\":\"chat\",\"kind\":\"memory\",\"grounding\":\"实\",\"last_content\":\"新正文\",\"snapshot_hash\":\"07f9f026713745aa\",\"key_facts\":null,\"evidence\":\"她说团子\",\"importance\":0.6,\"bucket_id\":null,\"song_key\":null,\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "log 🔧 记忆差分更新 bucket=366aa7012c76 成功"
+    ],
+    "ombre": [
+      [
+        "breath_search",
+        {
+          "max_results": 3,
+          "query": "猫"
+        }
+      ],
+      [
+        "trace",
+        {
+          "bucket_id": "366aa7012c76",
+          "new_str": "新正文",
+          "old_str": "旧正文"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": null,
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.6,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "新正文",
+        "snapshot_hash": "07f9f026713745aa",
+        "song_key": null,
+        "source": "chat",
+        "topic": "猫",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_noBucketIdLocateFails": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "warn ⚠️ 记忆差分「猫」无 bucket_id，本轮跳过更新"
+    ],
+    "ombre": [
+      [
+        "breath_search",
+        {
+          "max_results": 3,
+          "query": "猫"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": null,
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说过",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.5,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "旧正文",
+        "snapshot_hash": "h",
+        "song_key": null,
+        "source": "chat",
+        "topic": "猫"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_traceFailsKeepsSnapshot": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "warn ⚠️ 记忆差分 trace 失败 bucket=aaaaaaaaaaaa，本轮不更新本地快照（下轮重试）"
+    ],
+    "ombre": [
+      [
+        "trace",
+        {
+          "bucket_id": "aaaaaaaaaaaa",
+          "new_str": "新正文",
+          "old_str": "旧正文"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说过",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.5,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "旧正文",
+        "snapshot_hash": "h",
+        "song_key": null,
+        "source": "chat",
+        "topic": "猫"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_musicBySongKey": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"id\":1,\"topic\":\"起风了\",\"source\":\"music\",\"kind\":\"memory\",\"grounding\":\"实\",\"last_content\":\"新正文\",\"snapshot_hash\":\"07f9f026713745aa\",\"key_facts\":null,\"evidence\":\"她说团子\",\"importance\":0.6,\"bucket_id\":null,\"song_key\":\"起风了|买辣椒也用券\",\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "log 🔧 记忆差分更新 bucket=366aa7012c76 成功"
+    ],
+    "ombre": [
+      [
+        "breath_search",
+        {
+          "max_results": 3,
+          "query": "起风了"
+        }
+      ],
+      [
+        "trace",
+        {
+          "bucket_id": "366aa7012c76",
+          "new_str": "新正文",
+          "old_str": "旧"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": null,
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.6,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "新正文",
+        "snapshot_hash": "07f9f026713745aa",
+        "song_key": "起风了|买辣椒也用券",
+        "source": "music",
+        "topic": "起风了",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_chatSkipsMusicBuckets": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"topic\":\"起风了\",\"bucket_id\":\"366aa7012c76\",\"source\":\"chat\",\"song_key\":null,\"kind\":\"memory\",\"key_facts\":null,\"grounding\":\"实\",\"evidence\":\"她说团子\",\"importance\":0.6,\"last_content\":\"她今天也在听起风了\",\"snapshot_hash\":\"23ae590499861a1e\",\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "log 🌿 记忆新建「起风了」(实) bucket_id=366aa7012c76"
+    ],
+    "ombre": [
+      [
+        "hold",
+        {
+          "content": "她今天也在听起风了",
+          "tags": "起风了",
+          "why_remembered": "长期记忆编辑者写入。topic=起风了"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说过",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.5,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "旧正文",
+        "snapshot_hash": "h",
+        "song_key": "起风了|买辣椒也用券",
+        "source": "music",
+        "topic": "起风了"
+      },
+      {
+        "bucket_id": "366aa7012c76",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "importance": 0.6,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "她今天也在听起风了",
+        "snapshot_hash": "23ae590499861a1e",
+        "song_key": null,
+        "source": "chat",
+        "topic": "起风了",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_feelRefines": {
+    "degraded": [],
+    "ds": [
+      [
+        "feel-refine",
+        "新对话内容：\n她: 我特别喜欢亲你"
+      ]
+    ],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"id\":1,\"topic\":\"亲\",\"source\":\"chat\",\"kind\":\"feel\",\"grounding\":\"实\",\"last_content\":\"她说过最喜欢亲我\",\"snapshot_hash\":\"129aa26879de9030\",\"key_facts\":[{\"text\":\"她喜欢亲我\",\"status\":\"active\",\"superseded_by\":null,\"superseded_at\":null}],\"evidence\":\"她说团子\",\"importance\":0.6,\"bucket_id\":\"aaaaaaaaaaaa\",\"song_key\":null,\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "log 🔧 记忆差分更新 bucket=aaaaaaaaaaaa 成功"
+    ],
+    "ombre": [
+      [
+        "trace",
+        {
+          "bucket_id": "aaaaaaaaaaaa",
+          "new_str": "她说过最喜欢亲我",
+          "old_str": "她亲过我"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.6,
+        "key_facts": [
+          {
+            "status": "active",
+            "superseded_at": null,
+            "superseded_by": null,
+            "text": "她喜欢亲我"
+          }
+        ],
+        "kind": "feel",
+        "last_content": "她说过最喜欢亲我",
+        "snapshot_hash": "129aa26879de9030",
+        "song_key": null,
+        "source": "chat",
+        "topic": "亲",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_feelRefineNoChange": {
+    "degraded": [],
+    "ds": [
+      [
+        "feel-refine",
+        "新对话内容：\n窗口"
+      ]
+    ],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说过",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.5,
+        "key_facts": [],
+        "kind": "feel",
+        "last_content": "她亲过我",
+        "snapshot_hash": "h",
+        "song_key": null,
+        "source": "chat",
+        "topic": "亲"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_oneItemThrowsOthersGo": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"topic\":\"搬\",\"bucket_id\":\"366aa7012c76\",\"source\":\"chat\",\"song_key\":null,\"kind\":\"memory\",\"key_facts\":null,\"grounding\":\"实\",\"evidence\":\"她说团子\",\"importance\":0.6,\"last_content\":\"她月底搬去上海\",\"snapshot_hash\":\"0cf017b682c77c8b\",\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "err 💥 记忆写入「会炸的」异常: ombre down",
+      "log 🌿 记忆新建「搬」(实) bucket_id=366aa7012c76"
+    ],
+    "ombre": [
+      [
+        "hold",
+        {
+          "content": "她养了一只叫团子的猫",
+          "tags": "会炸的",
+          "why_remembered": "长期记忆编辑者写入。topic=会炸的"
+        }
+      ],
+      [
+        "hold",
+        {
+          "content": "她月底搬去上海",
+          "tags": "搬",
+          "why_remembered": "长期记忆编辑者写入。topic=搬"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": "366aa7012c76",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "importance": 0.6,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "她月底搬去上海",
+        "snapshot_hash": "0cf017b682c77c8b",
+        "song_key": null,
+        "source": "chat",
+        "topic": "搬",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "gm_shortWindow": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | gm1",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 4",
+      "messages.await"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "gm_readError": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | gm2",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 4",
+      "messages.await"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "gm_dedupeSameWindow": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | gm3",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 4",
+      "messages.await",
+      "from:settings",
+      "settings.select | memory_gate_enabled",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | gm3",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 4",
+      "messages.await"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": [
+      "memory_gate:no-row"
+    ]
+  },
+  "gm_lowUserChars": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | gm4",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 4",
+      "messages.await"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "gm_gateSaysNo": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | gm5",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 4",
+      "messages.await",
+      "from:settings",
+      "settings.select | memory_gate_enabled",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": [
+      "memory_gate:no-row"
+    ]
+  },
+  "gm_gateDisabled": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | gm6",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 4",
+      "messages.await",
+      "from:settings",
+      "settings.select | memory_gate_enabled",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "gm_gateFailOpen": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | gm7",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 4",
+      "messages.await",
+      "from:settings",
+      "settings.select | memory_gate_enabled",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": [
+      "memory_gate:no-row"
+    ]
+  },
+  "gm_topicsThrowCloses": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | gm8",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 4",
+      "messages.await",
+      "from:settings",
+      "settings.select | memory_gate_enabled",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "err 💥 读取 memory_topics 失败（本轮差分写回将跳过）: memory_topics read failed"
+    ],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": [
+      "memory_gate:no-row"
+    ]
+  },
+  "gm_topicsErrorFieldProceeds": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | gm8b",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 4",
+      "messages.await",
+      "from:settings",
+      "settings.select | memory_gate_enabled",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"topic\":\"猫\",\"bucket_id\":\"366aa7012c76\",\"source\":\"chat\",\"song_key\":null,\"kind\":\"memory\",\"key_facts\":null,\"grounding\":\"实\",\"evidence\":\"\",\"importance\":0.5,\"last_content\":\"她养了猫\",\"snapshot_hash\":\"32e2b4fe5e5c51ef\",\"event_time\":null,\"conversation_time\":\"2026-09-10T11:59:00.000Z\",\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "log 🌿 记忆新建「猫」(实) bucket_id=366aa7012c76",
+      "warn ⚠️ 更新 memory_topics 失败: permission denied"
+    ],
+    "ombre": [
+      [
+        "hold",
+        {
+          "content": "她养了猫",
+          "tags": "猫",
+          "why_remembered": "长期记忆编辑者写入。topic=猫"
+        }
+      ]
+    ],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": [
+      "memory_gate:no-row"
+    ]
+  },
+  "gm_classifierNoWrite": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | gm9",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 4",
+      "messages.await",
+      "from:settings",
+      "settings.select | memory_gate_enabled",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "gm_classifierHttpError": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | gm10",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 4",
+      "messages.await",
+      "from:settings",
+      "settings.select | memory_gate_enabled",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "warn ⚠️ 记忆分类请求失败: 429"
+    ],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "gm_classifierEmptyRetries": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | gm11",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 4",
+      "messages.await",
+      "from:settings",
+      "settings.select | memory_gate_enabled",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "warn ⚠️ 记忆分类返回空内容（attempt 1/2，finish_reason=undefined）",
+      "warn ⚠️ 记忆分类返回空内容（attempt 2/2，finish_reason=undefined）"
+    ],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "gm_classifierBadJson": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | gm12",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 4",
+      "messages.await",
+      "from:settings",
+      "settings.select | memory_gate_enabled",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "err 💥 记忆分类异常: Expected property name or '}' in JSON at position 1 (line 1 column 2)"
+    ],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "gm_happyPath": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | gm13",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 4",
+      "messages.await",
+      "from:settings",
+      "settings.select | memory_gate_enabled",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"id\":1,\"topic\":\"猫\",\"source\":\"chat\",\"kind\":\"memory\",\"grounding\":\"实\",\"last_content\":\"她养了一只叫团子的猫\",\"snapshot_hash\":\"8c31069dd7f5c5f0\",\"key_facts\":null,\"evidence\":\"她说团子\",\"importance\":0.5,\"bucket_id\":\"aaaaaaaaaaaa\",\"song_key\":null,\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "log 🔧 记忆差分更新 bucket=aaaaaaaaaaaa 成功"
+    ],
+    "ombre": [
+      [
+        "trace",
+        {
+          "bucket_id": "aaaaaaaaaaaa",
+          "new_str": "她养了一只叫团子的猫",
+          "old_str": "旧正文"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.5,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "她养了一只叫团子的猫",
+        "snapshot_hash": "8c31069dd7f5c5f0",
+        "song_key": null,
+        "source": "chat",
+        "topic": "猫",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      },
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说过",
+        "grounding": "实",
+        "id": 2,
+        "importance": 1,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "旧正文",
+        "snapshot_hash": "h",
+        "song_key": "起风了|x",
+        "source": "music",
+        "topic": "起风了"
+      },
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说过",
+        "grounding": "实",
+        "id": 3,
+        "importance": 0.1,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "旧正文",
+        "snapshot_hash": "h",
+        "song_key": null,
+        "source": "chat",
+        "topic": "搬家"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": [
+      "memory_gate:no-row"
+    ]
+  },
+  "sc_lockDedupes": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:messages",
+      "messages.select | role, content, created_at",
+      "messages.eq | session_id | sc1",
+      "messages.eq | visible | true",
+      "messages.order | created_at | {\"ascending\":false}",
+      "messages.limit | 4",
+      "messages.await",
+      "from:settings",
+      "settings.select | memory_gate_enabled",
+      "settings.eq | session_id | global",
+      "settings.maybeSingle",
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "cl_ok": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": {
+      "items": [
+        {
+          "content": "她养了猫",
+          "event_time": null,
+          "evidence": "",
+          "grounding": "实",
+          "importance": 0.5,
+          "key_facts": null,
+          "kind": "memory",
+          "song_key": null,
+          "topic": "猫",
+          "update_topic": null
+        }
+      ],
+      "should_write": true
+    },
+    "warns": []
+  },
+  "cl_noKey": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": null,
+    "warns": []
+  },
+  "cl_throws": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [
+      "err 💥 记忆分类异常: network down"
+    ],
+    "ombre": [],
+    "topics": [],
+    "value": null,
+    "warns": []
+  },
+  "gw_true": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": true,
+    "warns": []
+  },
+  "gw_unparsable": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": null,
+    "warns": []
+  },
+  "gw_http": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [
+      "warn ⚠️ 记忆判官请求失败: 500"
+    ],
+    "ombre": [],
+    "topics": [],
+    "value": null,
+    "warns": []
+  },
+  "gw_throws": {
+    "degraded": [],
+    "ds": [],
+    "io": [],
+    "logs": [
+      "warn ⚠️ 记忆判官异常: socket hang up"
+    ],
+    "ombre": [],
+    "topics": [],
+    "value": null,
+    "warns": []
+  }
+}
