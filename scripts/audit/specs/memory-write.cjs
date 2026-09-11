@@ -274,6 +274,8 @@ C('gt_ok', () => { sb.__data.memory_topics = { rows: [ROW({ topic: '猫' }), ROW
   (A) => A.getAllMemoryTopics());
 // 回 [] 会把所有主题当不存在 → 全部重新 hold → Ombre 重复建桶（永久污染）。这条钉的是 null。
 C('gt_throw', () => { sb.__throw('permission denied'); }, (A) => A.getAllMemoryTopics());
+// supabase-js 最常见的失败形态：回 error 字段、不抛（列不存在 / RLS / 权限）
+C('gt_errorField', () => { sb.__data.memory_topics = { error: 'permission denied' }; }, (A) => A.getAllMemoryTopics());
 
 /* ═══════════ ⑫ upsertMemoryTopic（onConflict 是 (source,topic)） ═══════════ */
 C('up_existingMerged', () => {
@@ -395,6 +397,63 @@ C('wm_oneItemThrowsOthersGo', () => {
   sb.__data.memory_topics = { rows: [] };
   OMBRE.throwTag = '会炸的';
 }, (A) => A.writeMemoryItems([ITEM({ topic: '会炸的' }), ITEM({ topic: '搬', content: '她月底搬去上海' })], '', '窗口'));
+
+/* ═══════════ ⑰b 复查补的分支（2026-09-11 Opus 复查 §3）═══════════
+   spec 的 ITEM() 默认值太「乖」：update_topic 永远 null、一批一条、Ombre 永远成功、
+   feel 桶的 refine 要么完美成功要么根本不走。下面压的是不乖的那一半。 */
+// 一个 feel 桶的存量：一条现行事实 + 一条已作废（证据可废止不可撕掉 —— 作废行必须一直留着）
+const FEEL_KF = [
+  { text: '她喜欢亲我', status: 'active' },
+  { text: '她住杭州', status: 'superseded', superseded_by: '她住上海', superseded_at: '2026-08-01T00:00:00.000Z' },
+];
+const FEEL_ROW = () => ROW({ topic: '亲', kind: 'feel', last_content: '她亲过我', bucket_id: 'aaaaaaaaaaaa', key_facts: FEEL_KF });
+// A. feel 桶更新时 refine 失败（DeepSeek 挂了 → null）
+C('wm_feelRefineFails', () => { sb.__data.memory_topics = { rows: [FEEL_ROW()] }; DS.ret = null; },
+  (A) => A.writeMemoryItems([ITEM({ topic: '亲', kind: 'feel', content: '她今天又亲了我一下', key_facts: ['她今天亲了我'] })], '', '她: 亲你'));
+// B. refine 说「没变」（原样回旧正文 + 旧事实），但分类器这一轮给的 content 不一样
+C('wm_feelRefineSaysUnchanged', () => {
+  sb.__data.memory_topics = { rows: [FEEL_ROW()] };
+  DS.ret = { content: '她亲过我', key_facts: FEEL_KF };
+}, (A) => A.writeMemoryItems([ITEM({ topic: '亲', kind: 'feel', content: '她今天又亲了我一下', key_facts: ['她今天亲了我'] })], '', '她: 亲你'));
+// C. 原来是 feel 的桶，这一轮分类器标成 memory
+C('wm_feelBucketGetsMemoryItem', () => { sb.__data.memory_topics = { rows: [FEEL_ROW()] }; },
+  (A) => A.writeMemoryItems([ITEM({ topic: '亲', kind: 'memory', content: '她喜欢亲吻' })], '', '她: 亲你'));
+// feel 桶、没有窗口原文 → refine 根本不走（另一条绕开 refine 的路）
+C('wm_feelNoWindowText', () => { sb.__data.memory_topics = { rows: [FEEL_ROW()] }; },
+  (A) => A.writeMemoryItems([ITEM({ topic: '亲', kind: 'feel', content: '她今天又亲了我一下', key_facts: ['她今天亲了我'] })], '', ''));
+// memory 桶这一轮被标成 feel（升级方向）→ 走 refine
+C('wm_memoryBucketGetsFeelItem', () => {
+  sb.__data.memory_topics = { rows: [ROW({ topic: '猫', kind: 'memory', last_content: '她养了一只猫', key_facts: null })] };
+  DS.ret = { content: '她养的团子总爱趴在我身边', key_facts: [{ text: '她养了一只猫', status: 'active' }] };
+}, (A) => A.writeMemoryItems([ITEM({ topic: '猫', kind: 'feel', content: '团子趴在我身边', key_facts: ['她养了一只猫'] })], '', '她: 团子又来了'));
+// E. update_topic 指回旧桶（08-30 三刀的核心机制）/ 指向不存在的主题（幻觉）
+C('wm_updateTopicPointsBack', () => { sb.__data.memory_topics = { rows: [ROW({ topic: '搬家计划', last_content: '她打算搬家' })] }; },
+  (A) => A.writeMemoryItems([
+    ITEM({ topic: '新住处', update_topic: '搬家计划', content: '她月底搬去上海' }),
+    ITEM({ topic: '工作', update_topic: '不存在的主题', content: '她换了新工作' }),
+  ], '', 'w'));
+// D. 同一批两条同 topic（prompt 要求「一窗多事实拆多条」）
+C('wm_sameTopicTwiceInBatch', () => { sb.__data.memory_topics = { rows: [] }; },
+  (A) => A.writeMemoryItems([ITEM({ topic: '搬家', content: '她月底搬去上海' }), ITEM({ topic: '搬家', content: '她新家离公司很近' })], '', 'w'));
+// F. hold 失败（callOmbreTool → null）
+C('wm_holdFails', () => { sb.__data.memory_topics = { rows: [] }; OMBRE.resp = null; },
+  (A) => A.writeMemoryItems([ITEM({ topic: '生日', content: '她生日是三月五号' })], '', 'w'));
+// G. 新 topic 同时包含两个旧 topic —— 命中哪个取决于数组顺序（线上 select('*') 无 order）
+C('wm_containmentOrderDependent', () => {
+  sb.__data.memory_topics = { rows: [
+    ROW({ id: 1, topic: '上海', last_content: '旧-上海', bucket_id: 'b0b0b0b0b0b0' }),
+    ROW({ id: 2, topic: '搬家', last_content: '旧-搬家', bucket_id: 'b1b1b1b1b1b1' }),
+  ] };
+}, (A) => A.writeMemoryItems([ITEM({ topic: '上海搬家', content: '她月底搬去上海' })], '', 'w'));
+// H. 靠 breath_search 定位到的 bucket_id 会不会回写（现状：不回写）
+C('wm_locatedBucketIdNotPersisted', () => {
+  sb.__data.memory_topics = { rows: [ROW({ topic: '猫', bucket_id: null })] };
+  OMBRE.resp = '[bucket_id: 366aa7012c76]';
+}, (A) => A.writeMemoryItems([ITEM({ content: '新正文一' })], '', 'w'));
+// I. 正文没变、grounding 从悬升到实 → 零变化跳过（现状：升级不落库）
+C('wm_groundingUpgradeIgnored', () => {
+  sb.__data.memory_topics = { rows: [ROW({ topic: '猫', last_content: '她养了一只叫团子的猫', grounding: '悬', evidence: '旧证据' })] };
+}, (A) => A.writeMemoryItems([ITEM({ grounding: '实', evidence: '她亲口说团子' })], '', 'w'));
 
 /* ═══════════ ⑱ generateMemoryWriteIfNeeded（一整条链路，含几道闸） ═══════════ */
 const gmSetup = (sid, n, tag, o = {}) => () => {

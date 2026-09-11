@@ -852,6 +852,20 @@
     "value": null,
     "warns": []
   },
+  "gt_errorField": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [],
+    "value": [],
+    "warns": []
+  },
   "up_existingMerged": {
     "degraded": [],
     "ds": [],
@@ -1909,6 +1923,624 @@
         "source": "chat",
         "topic": "搬",
         "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_feelRefineFails": {
+    "degraded": [],
+    "ds": [
+      [
+        "feel-refine",
+        "新对话内容：\n她: 亲你"
+      ]
+    ],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"id\":1,\"topic\":\"亲\",\"source\":\"chat\",\"kind\":\"feel\",\"grounding\":\"实\",\"last_content\":\"她今天又亲了我一下\",\"snapshot_hash\":\"5036482c99ef2da2\",\"key_facts\":[{\"text\":\"她今天亲了我\",\"status\":\"active\",\"superseded_by\":null,\"superseded_at\":null}],\"evidence\":\"她说团子\",\"importance\":0.6,\"bucket_id\":\"aaaaaaaaaaaa\",\"song_key\":null,\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "log 🔧 记忆差分更新 bucket=aaaaaaaaaaaa 成功"
+    ],
+    "ombre": [
+      [
+        "trace",
+        {
+          "bucket_id": "aaaaaaaaaaaa",
+          "new_str": "她今天又亲了我一下",
+          "old_str": "她亲过我"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.6,
+        "key_facts": [
+          {
+            "status": "active",
+            "superseded_at": null,
+            "superseded_by": null,
+            "text": "她今天亲了我"
+          }
+        ],
+        "kind": "feel",
+        "last_content": "她今天又亲了我一下",
+        "snapshot_hash": "5036482c99ef2da2",
+        "song_key": null,
+        "source": "chat",
+        "topic": "亲",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_feelRefineSaysUnchanged": {
+    "degraded": [],
+    "ds": [
+      [
+        "feel-refine",
+        "新对话内容：\n她: 亲你"
+      ]
+    ],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"id\":1,\"topic\":\"亲\",\"source\":\"chat\",\"kind\":\"feel\",\"grounding\":\"实\",\"last_content\":\"她今天又亲了我一下\",\"snapshot_hash\":\"5036482c99ef2da2\",\"key_facts\":[{\"text\":\"她今天亲了我\",\"status\":\"active\",\"superseded_by\":null,\"superseded_at\":null}],\"evidence\":\"她说团子\",\"importance\":0.6,\"bucket_id\":\"aaaaaaaaaaaa\",\"song_key\":null,\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "log 🔧 记忆差分更新 bucket=aaaaaaaaaaaa 成功"
+    ],
+    "ombre": [
+      [
+        "trace",
+        {
+          "bucket_id": "aaaaaaaaaaaa",
+          "new_str": "她今天又亲了我一下",
+          "old_str": "她亲过我"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.6,
+        "key_facts": [
+          {
+            "status": "active",
+            "superseded_at": null,
+            "superseded_by": null,
+            "text": "她今天亲了我"
+          }
+        ],
+        "kind": "feel",
+        "last_content": "她今天又亲了我一下",
+        "snapshot_hash": "5036482c99ef2da2",
+        "song_key": null,
+        "source": "chat",
+        "topic": "亲",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_feelBucketGetsMemoryItem": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"id\":1,\"topic\":\"亲\",\"source\":\"chat\",\"kind\":\"memory\",\"grounding\":\"实\",\"last_content\":\"她喜欢亲吻\",\"snapshot_hash\":\"e3facbb94466647c\",\"key_facts\":null,\"evidence\":\"她说团子\",\"importance\":0.6,\"bucket_id\":\"aaaaaaaaaaaa\",\"song_key\":null,\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "log 🔧 记忆差分更新 bucket=aaaaaaaaaaaa 成功"
+    ],
+    "ombre": [
+      [
+        "trace",
+        {
+          "bucket_id": "aaaaaaaaaaaa",
+          "new_str": "她喜欢亲吻",
+          "old_str": "她亲过我"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.6,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "她喜欢亲吻",
+        "snapshot_hash": "e3facbb94466647c",
+        "song_key": null,
+        "source": "chat",
+        "topic": "亲",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_feelNoWindowText": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"id\":1,\"topic\":\"亲\",\"source\":\"chat\",\"kind\":\"feel\",\"grounding\":\"实\",\"last_content\":\"她今天又亲了我一下\",\"snapshot_hash\":\"5036482c99ef2da2\",\"key_facts\":[{\"text\":\"她今天亲了我\",\"status\":\"active\",\"superseded_by\":null,\"superseded_at\":null}],\"evidence\":\"她说团子\",\"importance\":0.6,\"bucket_id\":\"aaaaaaaaaaaa\",\"song_key\":null,\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "log 🔧 记忆差分更新 bucket=aaaaaaaaaaaa 成功"
+    ],
+    "ombre": [
+      [
+        "trace",
+        {
+          "bucket_id": "aaaaaaaaaaaa",
+          "new_str": "她今天又亲了我一下",
+          "old_str": "她亲过我"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.6,
+        "key_facts": [
+          {
+            "status": "active",
+            "superseded_at": null,
+            "superseded_by": null,
+            "text": "她今天亲了我"
+          }
+        ],
+        "kind": "feel",
+        "last_content": "她今天又亲了我一下",
+        "snapshot_hash": "5036482c99ef2da2",
+        "song_key": null,
+        "source": "chat",
+        "topic": "亲",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_memoryBucketGetsFeelItem": {
+    "degraded": [],
+    "ds": [
+      [
+        "feel-refine",
+        "新对话内容：\n她: 团子又来了"
+      ]
+    ],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"id\":1,\"topic\":\"猫\",\"source\":\"chat\",\"kind\":\"feel\",\"grounding\":\"实\",\"last_content\":\"她养的团子总爱趴在我身边\",\"snapshot_hash\":\"2040d1dfb5ae2679\",\"key_facts\":[{\"text\":\"她养了一只猫\",\"status\":\"active\",\"superseded_by\":null,\"superseded_at\":null}],\"evidence\":\"她说团子\",\"importance\":0.6,\"bucket_id\":\"aaaaaaaaaaaa\",\"song_key\":null,\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "log 🔧 记忆差分更新 bucket=aaaaaaaaaaaa 成功"
+    ],
+    "ombre": [
+      [
+        "trace",
+        {
+          "bucket_id": "aaaaaaaaaaaa",
+          "new_str": "她养的团子总爱趴在我身边",
+          "old_str": "她养了一只猫"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.6,
+        "key_facts": [
+          {
+            "status": "active",
+            "superseded_at": null,
+            "superseded_by": null,
+            "text": "她养了一只猫"
+          }
+        ],
+        "kind": "feel",
+        "last_content": "她养的团子总爱趴在我身边",
+        "snapshot_hash": "2040d1dfb5ae2679",
+        "song_key": null,
+        "source": "chat",
+        "topic": "猫",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_updateTopicPointsBack": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"id\":1,\"topic\":\"搬家计划\",\"source\":\"chat\",\"kind\":\"memory\",\"grounding\":\"实\",\"last_content\":\"她月底搬去上海\",\"snapshot_hash\":\"0cf017b682c77c8b\",\"key_facts\":null,\"evidence\":\"她说团子\",\"importance\":0.6,\"bucket_id\":\"aaaaaaaaaaaa\",\"song_key\":null,\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"topic\":\"工作\",\"bucket_id\":\"366aa7012c76\",\"source\":\"chat\",\"song_key\":null,\"kind\":\"memory\",\"key_facts\":null,\"grounding\":\"实\",\"evidence\":\"她说团子\",\"importance\":0.6,\"last_content\":\"她换了新工作\",\"snapshot_hash\":\"714cc1cd7d5ae374\",\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "log 🔧 记忆差分更新 bucket=aaaaaaaaaaaa 成功",
+      "log 🌿 记忆新建「工作」(实) bucket_id=366aa7012c76"
+    ],
+    "ombre": [
+      [
+        "trace",
+        {
+          "bucket_id": "aaaaaaaaaaaa",
+          "new_str": "她月底搬去上海",
+          "old_str": "她打算搬家"
+        }
+      ],
+      [
+        "hold",
+        {
+          "content": "她换了新工作",
+          "tags": "工作",
+          "why_remembered": "长期记忆编辑者写入。topic=工作"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.6,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "她月底搬去上海",
+        "snapshot_hash": "0cf017b682c77c8b",
+        "song_key": null,
+        "source": "chat",
+        "topic": "搬家计划",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      },
+      {
+        "bucket_id": "366aa7012c76",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "importance": 0.6,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "她换了新工作",
+        "snapshot_hash": "714cc1cd7d5ae374",
+        "song_key": null,
+        "source": "chat",
+        "topic": "工作",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_sameTopicTwiceInBatch": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"topic\":\"搬家\",\"bucket_id\":\"366aa7012c76\",\"source\":\"chat\",\"song_key\":null,\"kind\":\"memory\",\"key_facts\":null,\"grounding\":\"实\",\"evidence\":\"她说团子\",\"importance\":0.6,\"last_content\":\"她新家离公司很近\",\"snapshot_hash\":\"e655d510ab675a3f\",\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"topic\":\"搬家\",\"bucket_id\":\"366aa7012c76\",\"source\":\"chat\",\"song_key\":null,\"kind\":\"memory\",\"key_facts\":null,\"grounding\":\"实\",\"evidence\":\"她说团子\",\"importance\":0.6,\"last_content\":\"她新家离公司很近\",\"snapshot_hash\":\"e655d510ab675a3f\",\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "log 🌿 记忆新建「搬家」(实) bucket_id=366aa7012c76",
+      "log 🔧 记忆差分更新 bucket=366aa7012c76 成功"
+    ],
+    "ombre": [
+      [
+        "hold",
+        {
+          "content": "她月底搬去上海",
+          "tags": "搬家",
+          "why_remembered": "长期记忆编辑者写入。topic=搬家"
+        }
+      ],
+      [
+        "trace",
+        {
+          "bucket_id": "366aa7012c76",
+          "new_str": "她新家离公司很近",
+          "old_str": "她月底搬去上海"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": "366aa7012c76",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "importance": 0.6,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "她新家离公司很近",
+        "snapshot_hash": "e655d510ab675a3f",
+        "song_key": null,
+        "source": "chat",
+        "topic": "搬家",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_holdFails": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"topic\":\"生日\",\"bucket_id\":null,\"source\":\"chat\",\"song_key\":null,\"kind\":\"memory\",\"key_facts\":null,\"grounding\":\"实\",\"evidence\":\"她说团子\",\"importance\":0.6,\"last_content\":\"她生日是三月五号\",\"snapshot_hash\":\"d68073ee02e6d303\",\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "log 🌿 记忆新建「生日」(实) bucket_id=(未解析)",
+      "log     hold 响应原文（用于核对桶 ID 格式）: null"
+    ],
+    "ombre": [
+      [
+        "hold",
+        {
+          "content": "她生日是三月五号",
+          "tags": "生日",
+          "why_remembered": "长期记忆编辑者写入。topic=生日"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": null,
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "importance": 0.6,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "她生日是三月五号",
+        "snapshot_hash": "d68073ee02e6d303",
+        "song_key": null,
+        "source": "chat",
+        "topic": "生日",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_containmentOrderDependent": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"id\":1,\"topic\":\"上海\",\"source\":\"chat\",\"kind\":\"memory\",\"grounding\":\"实\",\"last_content\":\"她月底搬去上海\",\"snapshot_hash\":\"0cf017b682c77c8b\",\"key_facts\":null,\"evidence\":\"她说团子\",\"importance\":0.6,\"bucket_id\":\"b0b0b0b0b0b0\",\"song_key\":null,\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "log 🔧 记忆差分更新 bucket=b0b0b0b0b0b0 成功"
+    ],
+    "ombre": [
+      [
+        "trace",
+        {
+          "bucket_id": "b0b0b0b0b0b0",
+          "new_str": "她月底搬去上海",
+          "old_str": "旧-上海"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": "b0b0b0b0b0b0",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.6,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "她月底搬去上海",
+        "snapshot_hash": "0cf017b682c77c8b",
+        "song_key": null,
+        "source": "chat",
+        "topic": "上海",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      },
+      {
+        "bucket_id": "b1b1b1b1b1b1",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说过",
+        "grounding": "实",
+        "id": 2,
+        "importance": 0.5,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "旧-搬家",
+        "snapshot_hash": "h",
+        "song_key": null,
+        "source": "chat",
+        "topic": "搬家"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_locatedBucketIdNotPersisted": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.upsert | {\"id\":1,\"topic\":\"猫\",\"source\":\"chat\",\"kind\":\"memory\",\"grounding\":\"实\",\"last_content\":\"新正文一\",\"snapshot_hash\":\"905a8ff70f88a6f0\",\"key_facts\":null,\"evidence\":\"她说团子\",\"importance\":0.6,\"bucket_id\":null,\"song_key\":null,\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await"
+    ],
+    "logs": [
+      "log 🔧 记忆差分更新 bucket=366aa7012c76 成功"
+    ],
+    "ombre": [
+      [
+        "breath_search",
+        {
+          "max_results": 3,
+          "query": "猫"
+        }
+      ],
+      [
+        "trace",
+        {
+          "bucket_id": "366aa7012c76",
+          "new_str": "新正文一",
+          "old_str": "旧正文"
+        }
+      ]
+    ],
+    "topics": [
+      {
+        "bucket_id": null,
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "她说团子",
+        "grounding": "实",
+        "id": 1,
+        "importance": 0.6,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "新正文一",
+        "snapshot_hash": "905a8ff70f88a6f0",
+        "song_key": null,
+        "source": "chat",
+        "topic": "猫",
+        "updated_at": "2026-09-10T12:00:00.000Z"
+      }
+    ],
+    "value": {
+      "__undefined": true
+    },
+    "warns": []
+  },
+  "wm_groundingUpgradeIgnored": {
+    "degraded": [],
+    "ds": [],
+    "io": [
+      "from:memory_topics",
+      "memory_topics.select | *",
+      "memory_topics.await"
+    ],
+    "logs": [],
+    "ombre": [],
+    "topics": [
+      {
+        "bucket_id": "aaaaaaaaaaaa",
+        "conversation_time": null,
+        "event_time": null,
+        "evidence": "旧证据",
+        "grounding": "悬",
+        "id": 1,
+        "importance": 0.5,
+        "key_facts": null,
+        "kind": "memory",
+        "last_content": "她养了一只叫团子的猫",
+        "snapshot_hash": "h",
+        "song_key": null,
+        "source": "chat",
+        "topic": "猫"
       }
     ],
     "value": {

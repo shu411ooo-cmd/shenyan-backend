@@ -1,7 +1,8 @@
 // ===== lib/memory/index.js + lib/ui-markers.js 单元测试（node:test）=====
 //
 // 两层，和前四片同构：
-//   ① 「与搬迁前等价」—— 拿搬迁前 HEAD（f7e49da）的真实输出逐字节压住（108 组向量）。
+//   ① 「与搬迁前等价」—— 拿搬迁前 HEAD（f7e49da）的真实输出逐字节压住（108 组搬迁向量 + 12 组复查补的分支，
+//      后者同样从 f7e49da 录，2026-09-11 Opus 复查 §3）。
 //      每组比五样：返回值 / 落库后的表快照 / 假 supabase 的查询序列 /
 //      **Ombre 与 DeepSeek 的调用参数** / 日志与告警与降级标记。
 //      ⚠️ 基线**不要**在重构里更新。它红了 = 你改了行为，先解释清楚再谈更新。
@@ -45,7 +46,7 @@ const fixture = (n) => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures
 
 /* ═════════════ ① 与搬迁前逐字节等价 ═════════════ */
 
-test('等价搬迁：记忆编辑者 108 组向量（返回值 + 表快照 + 查询序列 + Ombre/DeepSeek 调用参数 + 日志告警）逐字节一致', async () => {
+test('等价搬迁：记忆编辑者全部向量（返回值 + 表快照 + 查询序列 + Ombre/DeepSeek 调用参数 + 日志告警）逐字节一致', async () => {
   const SPEC = require('../scripts/audit/specs/memory-write.cjs');
   // ⚠️ 必须走 SPEC.adapt：它按 server.js 的接法把工厂拼起来（stripUiMarkers 从 lib/ui-markers.js 取，
   //    因为它没跟着这一片走）—— 拼错本身就算搬迁出错，基线要能抓住。
