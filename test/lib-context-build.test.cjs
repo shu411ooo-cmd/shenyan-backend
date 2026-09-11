@@ -8,10 +8,9 @@
 //   ② 「语义断言」—— 把基线说不清「为什么」的行为用白话钉死：分页 / 锚点 fast path /
 //      同轮最多 3 块 + prio 先丢谁 / 保留席不受限 / 唤醒轮不串味 / 裁剪保底 / 天气口子。
 //
-// ⚠️ 两条基线记的都是**搬迁前**的行为，其中 build_attention_hit / build_blocks_overflow_drop
-//    两组记的是**一次崩溃**（`ReferenceError: attention is not defined`，server.js 里
-//    `const attention` 声明在 try 块内、引用在块外，2026-08-30 那次 provenance 改动引入）。
-//    基线照原样压住它 —— 搬迁不许顺手修，也不许改成别的错。见交接文档。
+// ⚠️ 两条基线记的都是**搬迁前**的行为，唯一的有意偏离：build_attention_hit /
+//    build_blocks_overflow_drop 两组在搬迁时记的是一次崩溃（`ReferenceError: attention is not defined`，
+//    2026-08-30 provenance 改动引入）。2026-09-11 单独一条提交修掉，基线只有这两组跟着变。
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -61,16 +60,19 @@ test('等价搬迁：buildModelContext 47 组向量（messages + diagnostics + �
   for (const c of SPEC.calls) out[c.name] = norm(await c.run(A));
   assert.deepStrictEqual(out, fixture('context-build.baseline.json'),
     '组装层的输出与搬迁前不同 —— 搬迁必须是行为等价的。\n' +
-    '注意：其中两组向量记的是搬迁前就存在的 ReferenceError（attention 越作用域），不是搬迁引入的。');
+    '（唯一的有意偏离是 attention 崩溃那两组，2026-09-11 已修，基线已随之更新。）');
 });
 
-test('基线里那两组崩溃是**同一句话**：ReferenceError: attention is not defined', () => {
+test('注意力命中不再崩：整轮照常组装，注意力块带着 refs 进注入台账（2026-09-11 修 attention 越作用域）', () => {
   const B = fixture('context-build.baseline.json');
   for (const k of ['build_attention_hit', 'build_blocks_overflow_drop']) {
-    assert.match(B[k].threw, /^ReferenceError: attention is not defined$/,
-      `${k} 记的不再是那句 ReferenceError —— 要么有人修好了（那是好事，但得同步改基线并写进交接文档），` +
-      '要么搬迁把它改成了别的错（那不行，等价搬迁不许换错法）。');
+    assert.strictEqual(B[k].threw, null, `${k} 又抛了：${B[k].threw}`);
+    assert.strictEqual(B[k].value.diag.attention_injected, true, `${k} 注意力没注入`);
   }
+  const att = B.build_attention_hit.inj.find((x) => x.layer === 'attention');
+  assert.ok(att, '命中那组的注入台账里没有 attention 块');
+  assert.deepStrictEqual(att.prov.refs.map((r) => r.topicId), [7, 8],
+    'provenance 的 refs 丢了 —— 那正是当初读越界变量想拿的东西');
 });
 
 /* ═════════════ ② 语义断言 ═════════════ */

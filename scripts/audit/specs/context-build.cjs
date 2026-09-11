@@ -31,8 +31,10 @@
      server.js 那两条路由改成调它。函数体一个字没改（`currentWeather` 仍是闭包变量），
      变的是「谁持有它」。基线用 __setWeather 驱动这条路径。
 
-   ⚠️⚠️ 已知会抛的向量：build_attention_hit 记的是 ReferenceError（见 spec 里那段长注释）。
-     基线把它当**行为**压住 —— 搬迁不许「顺手修好」，也不许改成别的错。 */
+   ⚠️⚠️ 基线的来历：搬迁那条提交（09d2856）里，build_attention_hit / build_blocks_overflow_drop
+     两组记的是搬迁前就有的 ReferenceError（attention 越作用域）。2026-09-11 单独一条提交修掉了，
+     基线**只有这两组**跟着变（其余 46 组逐字节不动）。所以从这之后
+     `--rev f7e49da --compare` 会在这两组上红 —— 那是旧代码在崩，是预期的，不是搬迁错了。 */
 
 const ROOT = require('path').resolve(__dirname, '..', '..', '..');
 const { estimateTokens, sha256, withCacheControl } = require(ROOT + '/lib/cache-control.js');
@@ -321,15 +323,10 @@ C('build_keepaliveOpt', () => world({
 });
 
 /* ═══════════ ⑦ 注意力 / 世界书 ═══════════ */
-/* ⚠️⚠️ 这条向量记的是**一次崩溃**，不是一次注入。
-   server.js:2701 的 `const attention` 声明在 try 块里（块作用域），而 2719 行的
-   `prov: { … refs: (attention && attention.refs) … }` 在 try 块**外面**引用它 →
-   `ReferenceError: attention is not defined`。
-   这段 prov 是 2026-08-30 那次 provenance 改动加进来的（提交 f05766c）；此前那行只写
-   `{ prio: 1, tag, msg }`，不碰 attention，所以一直没暴露。
-   实测（把这段代码单独切出来跑，见本节向量）：🔔 [注意力] 日志照常打印，
-   紧接着整轮抛错。**这条不是本次搬迁引入的，也不是我改出来的 —— 是搬迁前就有的。**
-   基线照原样压住它：搬迁不许顺手修，也不许改成别的错。修不修由程芥定（见交接文档）。 */
+/* 注意力命中 → 注入一块，provenance 里挂着 refs（topicId 7/8）。
+   历史：2026-08-30 f05766c 的 provenance 改动在 try 块**外面**读了 try 块里的 `const attention`，
+   命中一次整轮 ReferenceError（🔔 日志照常打印，紧接着整轮抛错）。搬迁时基线原样压住那次崩溃，
+   2026-09-11 单独修掉（refs 改在 try 外用 attentionRefs 接住），这条向量随之从 threw 变成真注入。 */
 C('build_attention_hit', () => world({
   turns: 2, sessionRow: { last_time_notice_at: new Date(FROZEN - 10 * 60000).toISOString() },
   attention: { text: '搬家的事还没说完', hits: 2, refs: [{ topicId: 7, title: '搬家' }, { topicId: 8, title: '院子' }] },
@@ -373,8 +370,9 @@ C('build_blocks_overflow_drop', () => world({
   A.__setWeather(null);
   return { dropped: (LOGS.find((l) => l.includes('🧩 [动态注入]')) || '').match(/dropped=[^\s]*/), diag: r.diagnostics };
 });
-/* 上面那条在「世界书推入之前」就撞上 attention 的 ReferenceError，压根走不到排序那几行 ——
-   所以丢弃逻辑靠这条**不带 attention**的同族向量压住。
+/* 上面那条在 attention 崩溃修好之前，会在「世界书推入之前」就撞上 ReferenceError、走不到排序；
+   修好后它也走全了（dropped=world(1),attention(1)）。这条**不带 attention**的同族向量照留，
+   它压的是另一种组合：丢 world + residue 两块。
    隔 90 分钟回来（resumeGap>60min）→ 一次凑齐 5 块：world(2) + residue(3) + weather(4)
    + calendar(4) + time(5)，上限 3 → 留 time/weather/calendar，丢 world + residue（**两块**，
    slice(3).map 那一支才真的走全）。device 块与 time 互斥（`!injectTime`），所以不传 device，

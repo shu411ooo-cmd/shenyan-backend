@@ -3640,7 +3640,27 @@
     }
   },
   "build_attention_hit": {
-    "inj": [],
+    "inj": [
+      {
+        "content": "【你心底想起的旧事 · 是你自己的记忆，不是她发来的】\n搬家的事还没说完",
+        "layer": "attention",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "attention",
+          "refs": [
+            {
+              "title": "搬家",
+              "topicId": 7
+            },
+            {
+              "title": "院子",
+              "topicId": 8
+            }
+          ]
+        },
+        "tag": "attention(2)"
+      }
+    ],
     "io": [
       "from:settings",
       "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
@@ -3677,15 +3697,56 @@
       "sessions.await"
     ],
     "logs": [
-      "log 🔔 [注意力] session=B34 hits=2 · 搬家的事还没说完"
+      "log 🔔 [注意力] session=B34 hits=2 · 搬家的事还没说完",
+      "log 🧩 [动态注入] session=B34 blocks=attention(2) prov=[attention#7,8] last_msg=m3",
+      "log [ContextAssembly] {\"session\":\"B34\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5723,\"raw_estimated_tokens\":5723,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"596cf8b6a59a9e0c\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":true,\"attention_hits\":2,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
       "saved": []
     },
-    "threw": "ReferenceError: attention is not defined",
+    "threw": null,
     "value": {
-      "__undefined": true
+      "diag": {
+        "attention_hits": 2,
+        "attention_injected": true,
+        "estimated_tokens": 5723,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 2,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -12,
+        "live_collapsed": false,
+        "live_hash": "596cf8b6a59a9e0c",
+        "live_tokens_est": 0,
+        "live_turns": 2,
+        "messages_sent": 6,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5723,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 0,
+          "frozen": 0,
+          "live": 4,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": false,
+        "world_kinds": null,
+        "world_mode": null
+      }
     }
   },
   "build_attention_null": {
@@ -4407,7 +4468,35 @@
     }
   },
   "build_blocks_overflow_drop": {
-    "inj": [],
+    "inj": [
+      {
+        "content": "【当前时间】\n⟨time gap=false asks=false now=1789041600000 prev=NaN",
+        "layer": "time",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "time"
+        },
+        "tag": "time"
+      },
+      {
+        "content": "【她那边】\n她在杭州，晴。",
+        "layer": "weather",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "weather"
+        },
+        "tag": "weather"
+      },
+      {
+        "content": "【今天与临近的日子】\n⟨cal⟩",
+        "layer": "calendar",
+        "prov": {
+          "expression_eligible": false,
+          "layer": "calendar"
+        },
+        "tag": "calendar"
+      }
+    ],
     "io": [
       "from:settings",
       "settings.select | frozen_rounds, live_rounds, max_context_tokens, live_max_tokens",
@@ -4441,15 +4530,62 @@
       "sessions.await"
     ],
     "logs": [
-      "log 🔔 [注意力] session=B42 hits=1 · 旧事"
+      "log 🔔 [注意力] session=B42 hits=1 · 旧事",
+      "log 📖 [世界书] session=B42 hits=1 kinds=[setting] mode=闲聊 → 注入",
+      "log 🧩 [动态注入] session=B42 blocks=time,weather,calendar prov=[time|weather|calendar] dropped=world(1),attention(1) last_msg=几点了？",
+      "log [ContextAssembly] {\"session\":\"B42\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":4,\"estimated_tokens\":5753,\"raw_estimated_tokens\":5753,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":34},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"cc868c0fb3f96fdd\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":true,\"attention_hits\":1,\"world_injected\":true,\"world_kinds\":[\"setting\"],\"world_mode\":\"闲聊\"}"
     ],
     "side": {
       "consumed": [],
       "saved": []
     },
-    "threw": "ReferenceError: attention is not defined",
+    "threw": null,
     "value": {
-      "__undefined": true
+      "diag": {
+        "attention_hits": 1,
+        "attention_injected": true,
+        "estimated_tokens": 5753,
+        "frozen_prefix_hash": "e3b0c44298fc1c14",
+        "frozen_turns": 0,
+        "history_turns": 0,
+        "keepalive_injected_ids": [],
+        "live_anchor_turn": -14,
+        "live_collapsed": false,
+        "live_hash": "cc868c0fb3f96fdd",
+        "live_tokens_est": 0,
+        "live_turns": 0,
+        "messages_sent": 4,
+        "middle_raw_turns": 0,
+        "raw_estimated_tokens": 5753,
+        "residue_injected": false,
+        "residue_mode": null,
+        "residue_text": null,
+        "resume_gap_min": null,
+        "segments_count": 0,
+        "summary_from": null,
+        "summary_hash": null,
+        "summary_present": false,
+        "summary_range": null,
+        "summary_to": null,
+        "token_breakdown": {
+          "dynamic": 34,
+          "frozen": 0,
+          "live": 0,
+          "middle": 0,
+          "stable": 648,
+          "summary": 0,
+          "tools": 5071
+        },
+        "trimmed_turns": 0,
+        "world_injected": true,
+        "world_kinds": [
+          "setting"
+        ],
+        "world_mode": "闲聊"
+      },
+      "dropped": [
+        "dropped=world(1),attention(1)"
+      ]
     }
   },
   "build_blocks_overflow_drop_noAttention": {
