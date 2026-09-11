@@ -1345,6 +1345,11 @@
       "memory_topics.await",
       "from:memory_topics",
       "memory_topics.upsert | {\"topic\":\"搬家\",\"bucket_id\":\"366aa7012c76\",\"source\":\"chat\",\"song_key\":null,\"kind\":\"memory\",\"key_facts\":null,\"grounding\":\"实\",\"evidence\":\"她说团子\",\"importance\":0.6,\"last_content\":\"她月底搬去上海\",\"snapshot_hash\":\"0cf017b682c77c8b\",\"event_time\":null,\"conversation_time\":\"2026-09-09T00:00:00.000Z\",\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
+      "memory_topics.await",
+      "from:memory_topics",
+      "memory_topics.select | topic, last_content, grounding, importance",
+      "memory_topics.order | updated_at | {\"ascending\":false}",
+      "memory_topics.limit | 200",
       "memory_topics.await"
     ],
     "logs": [

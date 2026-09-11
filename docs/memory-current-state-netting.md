@@ -19,7 +19,7 @@
 
 | 部件 | 状态 | 说明 / 代码锚点 |
 |---|---|---|
-| 原文/余温/时间/语义记忆（OB 存取） | ✅ | 记忆编辑者统一落 `memory_topics`/`memory_relations`；semantic 通道独立。[lib/memory/index.js](file:///c:/Users/hbyll/shenyan-backend/lib/memory/index.js) |
+| 原文/余温/时间/语义记忆（OB 存取） | ✅ | 记忆编辑者统一落 `memory_topics`；`memory_relations` 关系边 2026-09-12 起由写入链尾部自动连边（30min 节流、fail-open、`MEMORY_AUTOLINK=off` 可关）。[lib/memory/index.js](file:///c:/Users/hbyll/shenyan-backend/lib/memory/index.js) · [lib/memory/link-relations.js](file:///c:/Users/hbyll/shenyan-backend/lib/memory/link-relations.js) |
 | 记忆门控（判官） | ✅ | DeepSeek-v4-flash、temperature 0、max_tokens 100；**fail-open**（调用/解析失败 → 回到原流程）；12 字符机械预筛。[lib/memory/index.js:213-243](file:///c:/Users/hbyll/shenyan-backend/lib/memory/index.js#L213-L243) |
 | 写入时序 | ✅ | 记忆/语义写入在 LLM 调用成功之后，避免数据不一致。 |
 | 时间前缀 | ✅ | 注入条目带 `[8月25日]`／跨年 `[2025年…]` 前缀。 |
@@ -157,8 +157,11 @@
 | want handler 失败静默 | list/touch/reflect/history 的 catch 与中途 DB 错误全补 `console.error` | [server.js:545-711](file:///c:/Users/hbyll/shenyan-backend/server.js#L545-L711) |
 | 注意力召回池无排序 | `.limit(60)` 补 `.order('importance', desc)`，防表增长后候选池任意化 | [retrieval.js:165-171](file:///c:/Users/hbyll/shenyan-backend/lib/context/retrieval.js#L165-L171) |
 | 基线夹具滞后 | 重录 memory-write（120 组）/ context-retrieval（39 组）基线；前者顺带转正 09-11 未提交的 fail-closed 改动 | [test/fixtures/](file:///c:/Users/hbyll/shenyan-backend/test/fixtures) |
+| 关系边只有手动生产者（联想图静默挨饿） | 连边接进写入链尾部：新主题写进后触发一轮，30min 节流 + fail-open + 主题名候选校验（孤儿边不入库，比旧脚本多一道）；手动脚本改走同一 lib | [lib/memory/link-relations.js](file:///c:/Users/hbyll/shenyan-backend/lib/memory/link-relations.js) · [lib/memory/index.js:583-589](file:///c:/Users/hbyll/shenyan-backend/lib/memory/index.js#L583-L589) |
+| fail-closed 语义断言滞后 | 78409d5 修了 getAllMemoryTopics 但漏改对应语义测试（一直红着没人发现）；已改成钉「修复后行为」 | [test/lib-memory.test.cjs:140-161](file:///c:/Users/hbyll/shenyan-backend/test/lib-memory.test.cjs#L140-L161) |
 
 > 校验：两份基线重录后 `--compare` 逐字节一致；memory-write 重录前的 4 组差异全部归属 09-11 未提交的 fail-closed 改动（非本次新改），context-retrieval 差异仅 `order importance` 一步（本次新改的预期形态）。
+> 校验（2026-09-12 自动连边）：memory-write 基线再重录一次——120 组里**只有 wm_newTopic 一组**多了连边前置的三步（首写触发、其后 30min 节流、冻钟下确定）；全套 128 个测试绿。
 
 ---
 

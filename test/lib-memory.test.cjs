@@ -8,13 +8,11 @@
 //      ⚠️ 基线**不要**在重构里更新。它红了 = 你改了行为，先解释清楚再谈更新。
 //   ② 「语义断言」—— 把基线说不清「为什么」的行为用白话钉死。
 //
-// ⚠️ 这一片里有一条**真发现**，基线照原样压住了、测试也照原样断言了：
-//    getAllMemoryTopics 只解构 `data`，所以 PostgREST 的 `{error}` 响应会走到 `data || []`，
-//    变成 **[]** 而不是注释声称的 null —— fail-closed 那道闸（调用方的 `topics === null`）
-//    对**最常见的失败形态**根本不响。后果是「看不见旧桶 → 每个主题都当新的 → 全部 hold →
-//    Ombre 重复建桶」。只有**真抛**才会回 null。
-//    这是搬迁前就有的行为（f05766c 之后一直如此），**搬迁不许顺手修**，
-//    所以基线里两条相邻向量（wm_topicsThrow / wm_topicsErrorFieldProceeds）的输出**故意不一样**。
+// ⚠️ 这一片曾有一条**真发现**（2026-09-11 修复，78409d5 转正）：
+//    getAllMemoryTopics 只解构 `data`，PostgREST 的 `{error}` 响应会走到 `data || []`，
+//    变成 **[]** 而不是注释声称的 null —— fail-closed 那道闸对**最常见的失败形态**不响。
+//    修复后两条路（真抛 / error 字段）都回 null、都挡写回，语义断言已改成钉「修复后行为」，
+//    基线里 wm_topicsErrorFieldProceeds / gm_topicsErrorFieldProceeds 两组向量也随 78409d5 重录。
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -137,8 +135,8 @@ const dsRaw = (s) => async () => ({ ok: true, json: async () => ({ choices: [{ m
 const dsReply = (o) => async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(o) } }] }) });
 const dsSeq = (...fs2) => { let i = 0; return () => fs2[Math.min(i++, fs2.length - 1)](); };
 
-/* ── 真发现：fail-closed 的闸只对「真抛」响，对「error 字段」不响 ── */
-test('fail-closed 的缺口：主题表**真抛**才挡得住写回，回 error 字段挡不住（真发现，没修）', async () => {
+/* ── fail-closed：真抛和 error 字段两条路都挡得住（2026-09-11 修复，78409d5 转正） ── */
+test('fail-closed：主题表真抛 / 回 error 字段，两条路都挡写回', async () => {
   const k = kit();
 
   // (a) 真抛 → 该挡：既不 hold，也不 upsert，还要留两个痕
@@ -148,17 +146,16 @@ test('fail-closed 的缺口：主题表**真抛**才挡得住写回，回 error 
   assert.deepStrictEqual(thrown.degraded, ['memory_topics_read_failed'], '真抛必须打 memory_degraded 标记');
   assert.match(thrown.logs.join('\n'), /记忆写回跳过：读取现有主题失败/);
 
-  // (b) 回 error 字段 → **挡不住**：照样 hold 了一个新桶
+  // (b) 回 error 字段 → 同样挡：修复前这条路会 hold 出新桶（「重复建桶」的成因），
+  //    78409d5 起 getAllMemoryTopics 对 error 字段也回 null，闸门两条路都响
   const errored = await k.run(() => { k.sb.__data.memory_topics = { error: 'permission denied' }; },
     () => k.mem.writeMemoryItems([ITEM({ topic: '本该被挡住的新桶' })]));
-  assert.strictEqual(errored.ombre.length, 1,
-    'error 字段那条路本来应该被 fail-closed 挡住，实际却 hold 了新桶 —— 这正是「重复建桶」的成因。');
-  assert.strictEqual(errored.ombre[0][0], 'hold');
-  assert.deepStrictEqual(errored.degraded, [], '这条路连降级标记都不打 —— 静默');
+  assert.deepStrictEqual(errored.ombre, [], 'error 字段也必须被 fail-closed 挡住');
+  assert.deepStrictEqual(errored.degraded, ['memory_topics_read_failed'], 'error 字段同样要打降级标记');
 
-  // 落差本身：两条路一个该响一个不响，根因是 getAllMemoryTopics 只解构 data
-  assert.deepStrictEqual(await k.run(null, () => k.mem.getAllMemoryTopics()).then((r) => r.value), [],
-    'getAllMemoryTopics 在 error 字段下回的是 []，不是注释说的 null —— 闸门（=== null）就是这么漏的。');
+  // 两条路的返回值一致都是 null（修复前 error 字段漏成 []，闸门（=== null）就是这么漏的）
+  assert.strictEqual(await k.run(() => { k.sb.__data.memory_topics = { error: 'permission denied' }; },
+    () => k.mem.getAllMemoryTopics()).then((r) => r.value), null);
 });
 
 test('hold 的 tags 必须是 string、trace 的必填是 bucket_id —— 传错的形状在返回值上看不出来', async () => {
