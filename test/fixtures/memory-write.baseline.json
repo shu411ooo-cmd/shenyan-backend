@@ -860,10 +860,12 @@
       "memory_topics.select | *",
       "memory_topics.await"
     ],
-    "logs": [],
+    "logs": [
+      "err 💥 读取 memory_topics 失败（本轮差分写回将跳过）: permission denied"
+    ],
     "ombre": [],
     "topics": [],
-    "value": [],
+    "value": null,
     "warns": []
   },
   "up_existingMerged": {
@@ -1314,30 +1316,20 @@
     "warns": []
   },
   "wm_topicsErrorFieldProceeds": {
-    "degraded": [],
+    "degraded": [
+      "memory_topics_read_failed"
+    ],
     "ds": [],
     "io": [
       "from:memory_topics",
       "memory_topics.select | *",
-      "memory_topics.await",
-      "from:memory_topics",
-      "memory_topics.upsert | {\"topic\":\"本该被挡住的新桶\",\"bucket_id\":\"366aa7012c76\",\"source\":\"chat\",\"song_key\":null,\"kind\":\"memory\",\"key_facts\":null,\"grounding\":\"实\",\"evidence\":\"她说团子\",\"importance\":0.6,\"last_content\":\"她养了一只叫团子的猫\",\"snapshot_hash\":\"8c31069dd7f5c5f0\",\"event_time\":null,\"conversation_time\":null,\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
       "memory_topics.await"
     ],
     "logs": [
-      "log 🌿 记忆新建「本该被挡住的新桶」(实) bucket_id=366aa7012c76",
-      "warn ⚠️ 更新 memory_topics 失败: permission denied"
+      "err 💥 读取 memory_topics 失败（本轮差分写回将跳过）: permission denied",
+      "err ❌ 记忆写回跳过：读取现有主题失败（防重复建桶），本轮不写，下轮重试"
     ],
-    "ombre": [
-      [
-        "hold",
-        {
-          "content": "她养了一只叫团子的猫",
-          "tags": "本该被挡住的新桶",
-          "why_remembered": "长期记忆编辑者写入。topic=本该被挡住的新桶"
-        }
-      ]
-    ],
+    "ombre": [],
     "topics": [],
     "value": {
       "__undefined": true
@@ -2724,7 +2716,9 @@
     ]
   },
   "gm_topicsThrowCloses": {
-    "degraded": [],
+    "degraded": [
+      "memory_topics_read_failed"
+    ],
     "ds": [],
     "io": [
       "from:messages",
@@ -2755,7 +2749,9 @@
     ]
   },
   "gm_topicsErrorFieldProceeds": {
-    "degraded": [],
+    "degraded": [
+      "memory_topics_read_failed"
+    ],
     "ds": [],
     "io": [
       "from:messages",
@@ -2771,28 +2767,12 @@
       "settings.maybeSingle",
       "from:memory_topics",
       "memory_topics.select | *",
-      "memory_topics.await",
-      "from:memory_topics",
-      "memory_topics.select | *",
-      "memory_topics.await",
-      "from:memory_topics",
-      "memory_topics.upsert | {\"topic\":\"猫\",\"bucket_id\":\"366aa7012c76\",\"source\":\"chat\",\"song_key\":null,\"kind\":\"memory\",\"key_facts\":null,\"grounding\":\"实\",\"evidence\":\"\",\"importance\":0.5,\"last_content\":\"她养了猫\",\"snapshot_hash\":\"32e2b4fe5e5c51ef\",\"event_time\":null,\"conversation_time\":\"2026-09-10T11:59:00.000Z\",\"updated_at\":\"2026-09-10T12:00:00.000Z\"} | {\"onConflict\":\"source,topic\"}",
       "memory_topics.await"
     ],
     "logs": [
-      "log 🌿 记忆新建「猫」(实) bucket_id=366aa7012c76",
-      "warn ⚠️ 更新 memory_topics 失败: permission denied"
+      "err 💥 读取 memory_topics 失败（本轮差分写回将跳过）: permission denied"
     ],
-    "ombre": [
-      [
-        "hold",
-        {
-          "content": "她养了猫",
-          "tags": "猫",
-          "why_remembered": "长期记忆编辑者写入。topic=猫"
-        }
-      ]
-    ],
+    "ombre": [],
     "topics": [],
     "value": {
       "__undefined": true

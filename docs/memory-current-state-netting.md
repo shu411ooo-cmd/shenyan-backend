@@ -41,7 +41,7 @@
 | 执念毕业进河（第⑥） | ✅ | 实际已建（旧文档标 ⬜ 已过时）。`graduateThoughts` 写 `desire_id` 血缘 + settled。[server.js:2855-2883](file:///c:/Users/hbyll/shenyan-backend/server.js#L2855-L2883) |
 | 仅她能写 | ✅ | 系统不创造「想要」本体，北极星纪律守住。 |
 | **kind 词表漂移** | ✅→已修复 | 手动 `want_add` 用五类（experience/creation/understanding/relationship/self_direction）；自动 `graduateThoughts` 用 `DRIVE_KIND_MAP` 驱动力词（关于我们/我的沉淀/想去看看）。**2026-09-11 已拆列**：自动通道改写 `desires.drive_category`，`kind` 专留手动分类标签，两套不再共用一列。遗留决策（want_add 是否加白名单）见 [implementation-frontage-assessment.md](file:///c:/Users/hbyll/shenyan-backend/docs/implementation-frontage-assessment.md) §1.3 A2。 |
-| **失败全静默** | ❗ | 5 个 handler 均 `try/catch → {ok:false,error}`，**不进日志**。河写失败不可观测 → 无法评估健康度。 |
+| **失败全静默** | ✅→已修复 | 5 个 handler 曾 `try/catch → {ok:false,error}` 不进日志。**2026-09-12 已补**：list/touch/reflect/history 的 catch 与中途 DB 错误全部 `console.error`（add 原有）。[server.js:545-711](file:///c:/Users/hbyll/shenyan-backend/server.js#L545-L711) |
 | `surfaced_count` | ⚠ | 有写入端（want_touch 清计数）、无消费端（唯一读者是 keepalive 唤醒，已关）。死字段但非 bug。 |
 
 ### §2.2 镜子卡 · mirror_cards —— `✅ 防御设计重工且正确`
@@ -134,22 +134,31 @@
 ## §7 真缺口清单（按实害排序，均待办）
 
 1. **❗ provenance 审计能力**（§4）——标签驱动，不敢审计。
-2. **❗ 失败全静默**（§2.1 河 / 多数 claim handler）——`{ok:false}` 不进日志，退化不出声。
-3. **❗ kind 词表漂移**（§2.1）——两条入河通道两套语义坐标。
+2. ~~**❗ 失败全静默**（§2.1 河）~~ —— **2026-09-12 已修**（want 五 handler 全量补日志）。
+3. ~~**❗ kind 词表漂移**（§2.1）~~ —— 2026-09-11 已拆列（`kind` 手动标签 / `drive_category` 自动维度）。
 4. **❗ voiceifyMemory 不可审计**——读写在路径上但查不到。
-5. **❓ 历史 claim 回响污染**（§2.4）——待她拍板是否重审。
+5. ~~**❓ 历史 claim 回响污染**（§2.4）~~ —— 2026-09-11 只读探针核实未污染，无需处置（§2.4 详）。
+
+**2026-09-12 复查新发现的工程项（当日已修，见 §7b）**：`memoryWriteProcessed` 无界增长（09-03 交接声称有防护，实际从未落地）；注意力召回池 `.limit(60)` 无 ORDER BY（表超 60 行后候选池任意，召回质量随表增长静默退化）。
+**剩余静默点（低危，已核实）**：claim/镜子区 catch 大多已有日志；仍无声的只有 [server.js:507](file:///c:/Users/hbyll/shenyan-backend/server.js#L507)（日记读取 `{ok:false}` 无日志）与几个回默认值的小助手（[server.js:993,1383,1532,1539](file:///c:/Users/hbyll/shenyan-backend/server.js#L993)）。要补随时可补，非紧急。
 
 **（§3 keepalive 关闭 / §4 want 注入默认关 = ⚠ 成本或默认决定，不计入缺口。）**
 
 ---
 
-## §7b 近期已处置的工程项（2026-09-11 收口）
+## §7b 近期已处置的工程项（2026-09-11 收口；2026-09-12 追加）
 
 | 项 | 处置 | 代码锚点 |
 |---|---|---|
 | 朋友圈动态回复温度残留 0.9 | 改 0.7（对齐 09-03 交接文档「0.9→0.7 共 4 处」，此前漏改了这一处） | [routes/moments.js:71](file:///c:/Users/hbyll/shenyan-backend/routes/moments.js#L71) |
 | `callDeepSeek` / `callReplyModel` 默认温度 0.8 | 改 0.7（对齐项目硬约束） | [lib/llm.js:32,55](file:///c:/Users/hbyll/shenyan-backend/lib/llm.js#L32) |
 | 台账 prompt_injections 空转风险 | 新增启动健康检查：账空+有对话 → warnOnce 大声报（防空转再现） | [server.js:791-805](file:///c:/Users/hbyll/shenyan-backend/server.js#L791) |
+| `memoryWriteProcessed` 无界增长 | >5000 丢最旧一半（09-03 交接声称有此防护，实际从未落地；补 Landing） | [lib/memory/index.js:278-283](file:///c:/Users/hbyll/shenyan-backend/lib/memory/index.js#L278-L283) |
+| want handler 失败静默 | list/touch/reflect/history 的 catch 与中途 DB 错误全补 `console.error` | [server.js:545-711](file:///c:/Users/hbyll/shenyan-backend/server.js#L545-L711) |
+| 注意力召回池无排序 | `.limit(60)` 补 `.order('importance', desc)`，防表增长后候选池任意化 | [retrieval.js:165-171](file:///c:/Users/hbyll/shenyan-backend/lib/context/retrieval.js#L165-L171) |
+| 基线夹具滞后 | 重录 memory-write（120 组）/ context-retrieval（39 组）基线；前者顺带转正 09-11 未提交的 fail-closed 改动 | [test/fixtures/](file:///c:/Users/hbyll/shenyan-backend/test/fixtures) |
+
+> 校验：两份基线重录后 `--compare` 逐字节一致；memory-write 重录前的 4 组差异全部归属 09-11 未提交的 fail-closed 改动（非本次新改），context-retrieval 差异仅 `order importance` 一步（本次新改的预期形态）。
 
 ---
 

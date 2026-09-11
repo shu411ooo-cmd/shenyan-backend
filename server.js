@@ -552,7 +552,7 @@ async function handleWantList(args = {}) {
       .limit(200);
     if (!includeArchived) q = q.in('status', ['active']);
     const { data, error } = await q;
-    if (error) return { ok: false, error: '翻不了本子。' };
+    if (error) { console.error('❌ [want] 列表读取失败:', error.message); return { ok: false, error: '翻不了本子。' }; }
     // 批量化（2026-09-03）：原实现每条 want 查 2 次（count + 最近一条），200 条 = 400 查询。
     // 改为一次 in 查询全量足迹（按时间倒序），内存里分桶出 footprints + last_note。
     const wants = data || [];
@@ -578,6 +578,7 @@ async function handleWantList(args = {}) {
     }
     return { ok: true, count: rows.length, wants: rows };
   } catch (e) {
+    console.error('💥 [want] 列表异常:', e.message);
     return { ok: false, error: '翻不了本子。' };
   }
 }
@@ -593,6 +594,7 @@ async function handleWantTouch(args = {}) {
       .select('id, text, status')
       .eq('id', id)
       .maybeSingle();
+    if (wErr) console.error('❌ [want] touch 读取失败:', wErr.message);
     if (wErr || !want) return { ok: false, error: '这条想要不在了。' };
     // 回显来路：最近 8 步
     const { data: trail, error: tErr } = await supabase
@@ -606,13 +608,13 @@ async function handleWantTouch(args = {}) {
       const { error: insErr } = await supabase
         .from('desire_notes')
         .insert({ desire_id: id, note, kind: done ? 'transform' : 'footprint' });
-      if (insErr) return { ok: false, error: '足迹没记上。' };
+      if (insErr) { console.error('❌ [want] 足迹写入失败:', insErr.message); return { ok: false, error: '足迹没记上。' }; }
     }
     // 更新 last_touched_at + 清 surfaced_count；done 则 status
     const patch = { last_touched_at: new Date().toISOString(), surfaced_count: 0, updated_at: new Date().toISOString() };
     if (done) patch.status = 'done';
     const { error: upErr } = await supabase.from('desires').update(patch).eq('id', id);
-    if (upErr) return { ok: false, error: '没碰上。' };
+    if (upErr) { console.error('❌ [want] touch 更新失败:', upErr.message); return { ok: false, error: '没碰上。' }; }
     const trailOut = (tErr ? [] : (trail || [])).map(n => n.note).filter(Boolean).reverse();
     return {
       ok: true,
@@ -624,6 +626,7 @@ async function handleWantTouch(args = {}) {
         : `碰了一下：「${want.text}」。这条已走过 ${trailOut.length} 步，接着走，别把旧步重走一遍。`
     };
   } catch (e) {
+    console.error('💥 [want] touch 异常:', e.message);
     return { ok: false, error: '没碰上。' };
   }
 }
@@ -639,13 +642,14 @@ async function handleWantReflect(args = {}) {
       .select('id, text, status')
       .eq('id', id)
       .maybeSingle();
+    if (wErr) console.error('❌ [want] reflect 读取失败:', wErr.message);
     if (wErr || !want) return { ok: false, error: '这条想要不在了。' };
 
     if (action === 'note') {
       const note = String(args.note || '').trim().slice(0, 400);
       if (!note) return { ok: false, error: '留一句反思吧。' };
       const { error: insErr } = await supabase.from('desire_notes').insert({ desire_id: id, note, kind: 'reflection' });
-      if (insErr) return { ok: false, error: '反思没留上。' };
+      if (insErr) { console.error('❌ [want] 反思写入失败:', insErr.message); return { ok: false, error: '反思没留上。' }; }
       return { ok: true, id, action: 'note', note: '留住了。' };
     }
 
@@ -653,10 +657,10 @@ async function handleWantReflect(args = {}) {
       const why = String(args.note || '').trim().slice(0, 400);
       if (why) {
         const { error: insErr } = await supabase.from('desire_notes').insert({ desire_id: id, note: `放下了：${why}`, kind: 'reflection' });
-        if (insErr) return { ok: false, error: '没放干净。' };
+        if (insErr) { console.error('❌ [want] 放下留痕失败:', insErr.message); return { ok: false, error: '没放干净。' }; }
       }
       const { error: upErr } = await supabase.from('desires').update({ status: 'released', updated_at: new Date().toISOString() }).eq('id', id);
-      if (upErr) return { ok: false, error: '没放下。' };
+      if (upErr) { console.error('❌ [want] release 更新失败:', upErr.message); return { ok: false, error: '没放下。' }; }
       return { ok: true, id, action: 'release', note: '放下了。不是做完了，是它不是我了。' };
     }
 
@@ -664,19 +668,20 @@ async function handleWantReflect(args = {}) {
       const newText = String(args.note || '').trim().slice(0, DESIRE_MAX_CHARS);
       if (!newText) return { ok: false, error: '改写后想要什么？' };
       const { error: insErr } = await supabase.from('desire_notes').insert({ desire_id: id, note: `转化成了：「${newText.slice(0, 60)}」`, kind: 'transform' });
-      if (insErr) return { ok: false, error: '转化没记上。' };
+      if (insErr) { console.error('❌ [want] 转化留痕失败:', insErr.message); return { ok: false, error: '转化没记上。' }; }
       const { error: upErr } = await supabase.from('desires').update({ status: 'changed', updated_at: new Date().toISOString() }).eq('id', id);
-      if (upErr) return { ok: false, error: '旧条没封存。' };
+      if (upErr) { console.error('❌ [want] 旧条封存失败:', upErr.message); return { ok: false, error: '旧条没封存。' }; }
       const { data: created, error: newErr } = await supabase
         .from('desires')
         .insert({ text: newText, lineage_parent_id: id })
         .select('id, text')
         .single();
-      if (newErr) return { ok: false, error: '新的没记上。' };
+      if (newErr) { console.error('❌ [want] 改写新条写入失败:', newErr.message); return { ok: false, error: '新的没记上。' }; }
       return { ok: true, id: created.id, action: 'rewrite', old_id: id, note: '改写了。长成新的它了。' };
     }
     return { ok: false, error: '照镜子没照成。' };
   } catch (e) {
+    console.error('💥 [want] reflect 异常:', e.message);
     return { ok: false, error: '照镜子没照成。' };
   }
 }
@@ -690,15 +695,17 @@ async function handleWantHistory(args = {}) {
       .select('id, text, why_mine, status, track, state, visibility, lineage_parent_id, kind, surfaced_count, last_touched_at, created_at')
       .eq('id', id)
       .maybeSingle();
+    if (wErr) console.error('❌ [want] history 读取失败:', wErr.message);
     if (wErr || !want) return { ok: false, error: '这条想要不在了。' };
     const { data: notes, error: nErr } = await supabase
       .from('desire_notes')
       .select('note, kind, created_at')
       .eq('desire_id', id)
       .order('created_at', { ascending: true });
-    if (nErr) return { ok: false, error: '来路翻不了。' };
+    if (nErr) { console.error('❌ [want] 来路读取失败:', nErr.message); return { ok: false, error: '来路翻不了。' }; }
     return { ok: true, want, notes: notes || [] };
   } catch (e) {
+    console.error('💥 [want] history 异常:', e.message);
     return { ok: false, error: '来路翻不了。' };
   }
 }
