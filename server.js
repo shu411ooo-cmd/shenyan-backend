@@ -22,6 +22,7 @@ const { callDeepSeekJson } = require('./lib/deepseek-json');
 // （callOpenRouter 确实只在 lib/llm.js 内部被 callReplyModel 的降级链调用，
 //   本文件用不到；一并引入只是图整齐，代价为零，不值得再冒一次裁剪的风险。）
 const { randomDelay, parseJsonLoose, callDeepSeek, callReplyModel, callOpenRouter, callVisionModel } = require('./lib/llm');
+const { runClaudeAgent, shouldUseClaudeAgent } = require('./lib/claude-agent');
 // 上下文检索层的纯选择器（分区第 3 步 · 2026-09-10 搬去 lib/context/select.js）。
 // ⚠️ 这些名字还在文件底部的 module.exports 里被**裸引用**导出（topicHits / RELATION_TYPES
 //   还被 scripts/smoke-attention-temp.js 直接使用），所以不许按「调用点」裁剪这行。
@@ -3299,6 +3300,63 @@ async function finalizeChat(sessionId, res, finalReply, thinkingText, opts, diag
 // order=优先而非 only=唯一：Anthropic 正常永远走官方（缓存稳定），故障时兜底别家（宁慢勿挂）。
 const OPENROUTER_PROVIDER = { order: ['anthropic'] };
 
+// Claude Agent SDK 主对话适配：沿用现有 SSE 契约，SDK 内部只暴露沈晏的领域工具。
+// 会话历史仍以 Supabase/Context Assembly 为准，不使用 Claude Code 本地 session。
+async function streamClaudeAgentChat(messages, res, opts, sessionId) {
+  const abortController = new AbortController();
+  const onClose = () => {
+    if (!res.writableEnded) abortController.abort();
+  };
+  res.once('close', onClose);
+  // SDK 冷启动或工具执行期间可能几十秒没有 token；SSE 注释帧防 Zeabur/代理误断流。
+  const heartbeat = setInterval(() => {
+    if (!res.writableEnded) res.write(': claude-agent heartbeat\n\n');
+  }, 15000);
+  heartbeat.unref?.();
+
+  try {
+    console.log(`🟠 [Claude Agent] session=${sessionId} model=${String(opts.model || 'claude-sonnet-4-6')}`);
+    const out = await runClaudeAgent({
+      messages,
+      opts,
+      definitions: getTools(),
+      executeTool: (name, args) => dispatchTool(name, args, sessionId),
+      serializeToolResult: (name, result) => serializeToolResult(name, result, opts.degraded),
+      observer: {
+        signal: abortController.signal,
+        onText: (text) => sendSSE(res, 'text', {
+          text,
+          sentence_end: /[。！？!?…~.]/.test(text),
+        }),
+        onThinking: (thought) => sendSSE(res, 'thinking', { thought }),
+        onToolCall: (payload) => sendSSE(res, 'tool_call', payload),
+        onToolResult: (payload) => sendSSE(res, 'tool_result', payload),
+      },
+    });
+    const usageList = out.usage ? [out.usage] : [];
+    if (out.usage) logCacheRound(1, out.usage, []);
+    return { content: out.content, thinkingText: out.thinkingText, usageList };
+  } finally {
+    clearInterval(heartbeat);
+    res.removeListener('close', onClose);
+  }
+}
+
+async function callClaudeAgentNonStream(messages, tools, opts, sessionId) {
+  const out = await runClaudeAgent({
+    messages,
+    opts: { ...opts, tools: tools ? opts.tools : 'off' },
+    definitions: tools || [],
+    executeTool: (name, args) => dispatchTool(name, args, sessionId),
+    serializeToolResult: (name, result) => serializeToolResult(name, result, opts.degraded),
+  });
+  return {
+    msg: { role: 'assistant', content: out.content },
+    usage: out.usage,
+    thinkingText: out.thinkingText,
+  };
+}
+
 // 流式对话：纯流式 + 工具循环，思考链实时转发
 // resume：MCP 续调上下文（{ finalContent, thinkingTextAll, usageList }），续调轮不带 tools（与「下一轮不带」一致）
 async function handleStreamChat(messages, res, opts = {}, sessionId, resume = null) {
@@ -3308,6 +3366,10 @@ async function handleStreamChat(messages, res, opts = {}, sessionId, resume = nu
   const hasReasoning = thinkingMode !== 'off';
   const effort = thinkingEffort(thinkingMode);
   const withTools = opts.tools !== 'off';
+
+  if (shouldUseClaudeAgent(opts, resume)) {
+    return streamClaudeAgentChat(messages, res, opts, sessionId);
+  }
 
   let loop = 0;
   let finalContent = resume?.finalContent || '';
@@ -5660,7 +5722,11 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
   } else {
     const tools = opts.tools === 'off' ? null : getTools();
     const usageList = [];
-    const nonStream = isDeepSeekModel(opts.model) ? callDeepSeekNonStream : callOpenRouterNonStream; // 测试模式走 DeepSeek
+    const nonStream = isDeepSeekModel(opts.model)
+      ? callDeepSeekNonStream
+      : shouldUseClaudeAgent(opts)
+        ? (msgs, toolDefs, callOpts) => callClaudeAgentNonStream(msgs, toolDefs, callOpts, sessionId)
+        : callOpenRouterNonStream; // 测试模式走 DeepSeek；订阅 token 存在时主对话走 Agent SDK
     const { msg: assistantMessage, usage: usage1, thinkingText: thinking1 = '' } = await nonStream(messages, tools, opts);
     let thinkingText = thinking1; // 工具二轮会追加拼接（2026-09-03）
     if (usage1) { usageList.push(usage1); logCacheRound(1, usage1, []); }
