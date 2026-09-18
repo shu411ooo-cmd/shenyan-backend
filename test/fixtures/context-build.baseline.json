@@ -52,7 +52,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B1 blocks=time prov=[time] last_msg=m3",
-      "log [ContextAssembly] {\"session\":\"B1\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5739,\"raw_estimated_tokens\":5739,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B1\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5756,\"raw_estimated_tokens\":5756,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -63,7 +63,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5739,
+        "estimated_tokens": 5756,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 2,
@@ -75,7 +75,7 @@
         "live_turns": 2,
         "messages_sent": 6,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5739,
+        "raw_estimated_tokens": 5756,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -93,7 +93,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -181,7 +181,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B2 blocks=time prov=[time] last_msg=",
-      "log [ContextAssembly] {\"session\":\"B2\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":2,\"estimated_tokens\":5733,\"raw_estimated_tokens\":5733,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":14},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"5806403fbee5d9e6\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B2\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":2,\"estimated_tokens\":5750,\"raw_estimated_tokens\":5750,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":14},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"5806403fbee5d9e6\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -192,7 +192,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5733,
+        "estimated_tokens": 5750,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 0,
@@ -204,7 +204,7 @@
         "live_turns": 0,
         "messages_sent": 2,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5733,
+        "raw_estimated_tokens": 5750,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -222,7 +222,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -298,7 +298,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B3 blocks=time,calendar prov=[time|calendar] last_msg=在吗",
-      "log [ContextAssembly] {\"session\":\"B3\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":3,\"estimated_tokens\":5751,\"raw_estimated_tokens\":5751,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":32},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"a50fdcb8bdea16cb\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[11],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B3\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":3,\"estimated_tokens\":5768,\"raw_estimated_tokens\":5768,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":32},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"a50fdcb8bdea16cb\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[11],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -309,7 +309,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5751,
+        "estimated_tokens": 5768,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 0,
@@ -323,7 +323,7 @@
         "live_turns": 0,
         "messages_sent": 3,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5751,
+        "raw_estimated_tokens": 5768,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -341,7 +341,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -420,7 +420,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B4 blocks=time prov=[time] last_msg=m59",
-      "log [ContextAssembly] {\"session\":\"B4\",\"history_turns\":30,\"frozen_turns\":3,\"summary_present\":true,\"summary_range\":[1,6],\"summary_from\":1,\"summary_to\":6,\"segments_count\":1,\"middle_raw_turns\":16,\"live_turns\":5,\"live_anchor_turn\":26,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":50,\"estimated_tokens\":5783,\"raw_estimated_tokens\":5783,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":6,\"summary\":0,\"middle\":32,\"live\":10,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"050e3245aaa05cf9\",\"summary_hash\":\"67978326b6953f84\",\"live_hash\":\"b6da615152bd9a11\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B4\",\"history_turns\":30,\"frozen_turns\":3,\"summary_present\":true,\"summary_range\":[1,6],\"summary_from\":1,\"summary_to\":6,\"segments_count\":1,\"middle_raw_turns\":16,\"live_turns\":5,\"live_anchor_turn\":26,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":50,\"estimated_tokens\":5800,\"raw_estimated_tokens\":5800,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":6,\"summary\":0,\"middle\":32,\"live\":10,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"050e3245aaa05cf9\",\"summary_hash\":\"67978326b6953f84\",\"live_hash\":\"b6da615152bd9a11\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -431,7 +431,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5783,
+        "estimated_tokens": 5800,
         "frozen_prefix_hash": "050e3245aaa05cf9",
         "frozen_turns": 3,
         "history_turns": 30,
@@ -443,7 +443,7 @@
         "live_turns": 5,
         "messages_sent": 50,
         "middle_raw_turns": 16,
-        "raw_estimated_tokens": 5783,
+        "raw_estimated_tokens": 5800,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -464,7 +464,7 @@
           "middle": 32,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -559,7 +559,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B5 blocks=time prov=[time] last_msg=m59",
-      "log [ContextAssembly] {\"session\":\"B5\",\"history_turns\":30,\"frozen_turns\":5,\"summary_present\":true,\"summary_range\":[1,20],\"summary_from\":1,\"summary_to\":20,\"segments_count\":1,\"middle_raw_turns\":0,\"live_turns\":5,\"live_anchor_turn\":26,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":22,\"estimated_tokens\":5755,\"raw_estimated_tokens\":5755,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":10,\"summary\":0,\"middle\":0,\"live\":10,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"4aca0a20fb8b3195\",\"summary_hash\":null,\"live_hash\":\"b6da615152bd9a11\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B5\",\"history_turns\":30,\"frozen_turns\":5,\"summary_present\":true,\"summary_range\":[1,20],\"summary_from\":1,\"summary_to\":20,\"segments_count\":1,\"middle_raw_turns\":0,\"live_turns\":5,\"live_anchor_turn\":26,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":22,\"estimated_tokens\":5772,\"raw_estimated_tokens\":5772,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":10,\"summary\":0,\"middle\":0,\"live\":10,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"4aca0a20fb8b3195\",\"summary_hash\":null,\"live_hash\":\"b6da615152bd9a11\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -570,7 +570,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5755,
+        "estimated_tokens": 5772,
         "frozen_prefix_hash": "4aca0a20fb8b3195",
         "frozen_turns": 5,
         "history_turns": 30,
@@ -582,7 +582,7 @@
         "live_turns": 5,
         "messages_sent": 22,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5755,
+        "raw_estimated_tokens": 5772,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -603,7 +603,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -687,7 +687,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B6 blocks=time prov=[time] last_msg=m59",
-      "log [ContextAssembly] {\"session\":\"B6\",\"history_turns\":30,\"frozen_turns\":4,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":21,\"live_turns\":5,\"live_anchor_turn\":26,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":62,\"estimated_tokens\":5795,\"raw_estimated_tokens\":5795,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":8,\"summary\":0,\"middle\":42,\"live\":10,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"f4e8105b1bef5b20\",\"summary_hash\":\"ecf6245f8d7bc983\",\"live_hash\":\"b6da615152bd9a11\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B6\",\"history_turns\":30,\"frozen_turns\":4,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":21,\"live_turns\":5,\"live_anchor_turn\":26,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":62,\"estimated_tokens\":5812,\"raw_estimated_tokens\":5812,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":8,\"summary\":0,\"middle\":42,\"live\":10,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"f4e8105b1bef5b20\",\"summary_hash\":\"ecf6245f8d7bc983\",\"live_hash\":\"b6da615152bd9a11\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -698,7 +698,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5795,
+        "estimated_tokens": 5812,
         "frozen_prefix_hash": "f4e8105b1bef5b20",
         "frozen_turns": 4,
         "history_turns": 30,
@@ -710,7 +710,7 @@
         "live_turns": 5,
         "messages_sent": 62,
         "middle_raw_turns": 21,
-        "raw_estimated_tokens": 5795,
+        "raw_estimated_tokens": 5812,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -728,7 +728,7 @@
           "middle": 42,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -791,7 +791,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B7 blocks=time prov=[time] last_msg=m1",
-      "log [ContextAssembly] {\"session\":\"B7\",\"history_turns\":1,\"frozen_turns\":0,\"summary_present\":true,\"summary_range\":[1,4],\"summary_from\":1,\"summary_to\":4,\"segments_count\":1,\"middle_raw_turns\":0,\"live_turns\":1,\"live_anchor_turn\":-13,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":4,\"estimated_tokens\":5737,\"raw_estimated_tokens\":5737,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":2,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"d85890f5216bcb73\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B7\",\"history_turns\":1,\"frozen_turns\":0,\"summary_present\":true,\"summary_range\":[1,4],\"summary_from\":1,\"summary_to\":4,\"segments_count\":1,\"middle_raw_turns\":0,\"live_turns\":1,\"live_anchor_turn\":-13,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":4,\"estimated_tokens\":5754,\"raw_estimated_tokens\":5754,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":2,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"d85890f5216bcb73\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -802,7 +802,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5737,
+        "estimated_tokens": 5754,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 1,
@@ -814,7 +814,7 @@
         "live_turns": 1,
         "messages_sent": 4,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5737,
+        "raw_estimated_tokens": 5754,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -835,7 +835,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -919,7 +919,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B8 blocks=time prov=[time] last_msg=m11",
-      "log [ContextAssembly] {\"session\":\"B8\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":true,\"summary_range\":[1,4],\"summary_from\":1,\"summary_to\":4,\"segments_count\":1,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":15,\"estimated_tokens\":5751,\"raw_estimated_tokens\":5751,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":4,\"middle\":0,\"live\":12,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":\"0decba21d405bfcc\",\"live_hash\":\"c1106b1b68abe0f2\",\"resume_gap_min\":182,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B8\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":true,\"summary_range\":[1,4],\"summary_from\":1,\"summary_to\":4,\"segments_count\":1,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":15,\"estimated_tokens\":5768,\"raw_estimated_tokens\":5768,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":4,\"middle\":0,\"live\":12,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":\"0decba21d405bfcc\",\"live_hash\":\"c1106b1b68abe0f2\",\"resume_gap_min\":182,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -930,7 +930,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5751,
+        "estimated_tokens": 5768,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 6,
@@ -942,7 +942,7 @@
         "live_turns": 6,
         "messages_sent": 15,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5751,
+        "raw_estimated_tokens": 5768,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -963,7 +963,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 4,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -1102,7 +1102,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B9 blocks=time prov=[time] last_msg=m11",
-      "log [ContextAssembly] {\"session\":\"B9\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":true,\"summary_range\":[1,2],\"summary_from\":1,\"summary_to\":2,\"segments_count\":1,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":14,\"estimated_tokens\":5747,\"raw_estimated_tokens\":5747,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":12,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"c0cef940f0bd3dfd\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B9\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":true,\"summary_range\":[1,2],\"summary_from\":1,\"summary_to\":2,\"segments_count\":1,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":14,\"estimated_tokens\":5764,\"raw_estimated_tokens\":5764,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":12,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"c0cef940f0bd3dfd\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -1113,7 +1113,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5747,
+        "estimated_tokens": 5764,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 6,
@@ -1125,7 +1125,7 @@
         "live_turns": 6,
         "messages_sent": 14,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5747,
+        "raw_estimated_tokens": 5764,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -1146,7 +1146,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -1206,7 +1206,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B10 blocks=time prov=[time] last_msg=m59",
-      "log [ContextAssembly] {\"session\":\"B10\",\"history_turns\":30,\"frozen_turns\":4,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":15,\"live_turns\":11,\"live_anchor_turn\":20,\"live_collapsed\":false,\"live_tokens_est\":22,\"messages_sent\":62,\"estimated_tokens\":5795,\"raw_estimated_tokens\":5795,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":8,\"summary\":0,\"middle\":30,\"live\":22,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"f4e8105b1bef5b20\",\"summary_hash\":\"4b625cb8cfed4c84\",\"live_hash\":\"600f467790616c9b\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B10\",\"history_turns\":30,\"frozen_turns\":4,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":15,\"live_turns\":11,\"live_anchor_turn\":20,\"live_collapsed\":false,\"live_tokens_est\":22,\"messages_sent\":62,\"estimated_tokens\":5812,\"raw_estimated_tokens\":5812,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":8,\"summary\":0,\"middle\":30,\"live\":22,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"f4e8105b1bef5b20\",\"summary_hash\":\"4b625cb8cfed4c84\",\"live_hash\":\"600f467790616c9b\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -1217,7 +1217,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5795,
+        "estimated_tokens": 5812,
         "frozen_prefix_hash": "f4e8105b1bef5b20",
         "frozen_turns": 4,
         "history_turns": 30,
@@ -1229,7 +1229,7 @@
         "live_turns": 11,
         "messages_sent": 62,
         "middle_raw_turns": 15,
-        "raw_estimated_tokens": 5795,
+        "raw_estimated_tokens": 5812,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -1247,7 +1247,7 @@
           "middle": 30,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -1310,7 +1310,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B11 blocks=time prov=[time] last_msg=m59",
-      "log [ContextAssembly] {\"session\":\"B11\",\"history_turns\":30,\"frozen_turns\":10,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":15,\"live_turns\":5,\"live_anchor_turn\":26,\"live_collapsed\":true,\"live_tokens_est\":58,\"messages_sent\":62,\"estimated_tokens\":5795,\"raw_estimated_tokens\":5795,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":20,\"summary\":0,\"middle\":30,\"live\":10,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"20130d8c53095f92\",\"summary_hash\":\"03e433acbdef7a95\",\"live_hash\":\"b6da615152bd9a11\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B11\",\"history_turns\":30,\"frozen_turns\":10,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":15,\"live_turns\":5,\"live_anchor_turn\":26,\"live_collapsed\":true,\"live_tokens_est\":58,\"messages_sent\":62,\"estimated_tokens\":5812,\"raw_estimated_tokens\":5812,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":20,\"summary\":0,\"middle\":30,\"live\":10,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"20130d8c53095f92\",\"summary_hash\":\"03e433acbdef7a95\",\"live_hash\":\"b6da615152bd9a11\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -1321,7 +1321,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5795,
+        "estimated_tokens": 5812,
         "frozen_prefix_hash": "20130d8c53095f92",
         "frozen_turns": 10,
         "history_turns": 30,
@@ -1333,7 +1333,7 @@
         "live_turns": 5,
         "messages_sent": 62,
         "middle_raw_turns": 15,
-        "raw_estimated_tokens": 5795,
+        "raw_estimated_tokens": 5812,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -1351,7 +1351,7 @@
           "middle": 30,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -1414,7 +1414,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B12 blocks=time prov=[time] last_msg=m39",
-      "log [ContextAssembly] {\"session\":\"B12\",\"history_turns\":20,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":20,\"live_anchor_turn\":6,\"live_collapsed\":true,\"live_tokens_est\":38,\"messages_sent\":42,\"estimated_tokens\":5775,\"raw_estimated_tokens\":5775,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":40,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"0de9226b0a6e4f5f\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B12\",\"history_turns\":20,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":20,\"live_anchor_turn\":6,\"live_collapsed\":true,\"live_tokens_est\":38,\"messages_sent\":42,\"estimated_tokens\":5792,\"raw_estimated_tokens\":5792,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":40,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"0de9226b0a6e4f5f\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -1425,7 +1425,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5775,
+        "estimated_tokens": 5792,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 20,
@@ -1437,7 +1437,7 @@
         "live_turns": 20,
         "messages_sent": 42,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5775,
+        "raw_estimated_tokens": 5792,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -1455,7 +1455,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -1517,7 +1517,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B13 blocks=time prov=[time] last_msg=m19",
-      "log [ContextAssembly] {\"session\":\"B13\",\"history_turns\":10,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":10,\"live_anchor_turn\":-4,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":22,\"estimated_tokens\":5755,\"raw_estimated_tokens\":5755,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":20,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"3d5ea75cfefad5a8\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B13\",\"history_turns\":10,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":10,\"live_anchor_turn\":-4,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":22,\"estimated_tokens\":5772,\"raw_estimated_tokens\":5772,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":20,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"3d5ea75cfefad5a8\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -1528,7 +1528,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5755,
+        "estimated_tokens": 5772,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 10,
@@ -1540,7 +1540,7 @@
         "live_turns": 10,
         "messages_sent": 22,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5755,
+        "raw_estimated_tokens": 5772,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -1558,7 +1558,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -1620,7 +1620,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B14 blocks=time prov=[time] last_msg=m19",
-      "log [ContextAssembly] {\"session\":\"B14\",\"history_turns\":10,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":10,\"live_anchor_turn\":-4,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":22,\"estimated_tokens\":5755,\"raw_estimated_tokens\":5755,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":20,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"3d5ea75cfefad5a8\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B14\",\"history_turns\":10,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":10,\"live_anchor_turn\":-4,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":22,\"estimated_tokens\":5772,\"raw_estimated_tokens\":5772,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":20,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"3d5ea75cfefad5a8\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -1631,7 +1631,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5755,
+        "estimated_tokens": 5772,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 10,
@@ -1643,7 +1643,7 @@
         "live_turns": 10,
         "messages_sent": 22,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5755,
+        "raw_estimated_tokens": 5772,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -1661,7 +1661,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -1723,7 +1723,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B15 blocks=time prov=[time] last_msg=m59",
-      "log [ContextAssembly] {\"session\":\"B15\",\"history_turns\":30,\"frozen_turns\":0,\"summary_present\":true,\"summary_range\":[1,20],\"summary_from\":1,\"summary_to\":20,\"segments_count\":1,\"middle_raw_turns\":0,\"live_turns\":15,\"live_anchor_turn\":16,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":32,\"estimated_tokens\":5765,\"raw_estimated_tokens\":5765,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":30,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"6ef755bb25fa2e3f\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B15\",\"history_turns\":30,\"frozen_turns\":0,\"summary_present\":true,\"summary_range\":[1,20],\"summary_from\":1,\"summary_to\":20,\"segments_count\":1,\"middle_raw_turns\":0,\"live_turns\":15,\"live_anchor_turn\":16,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":32,\"estimated_tokens\":5782,\"raw_estimated_tokens\":5782,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":30,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"6ef755bb25fa2e3f\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -1734,7 +1734,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5765,
+        "estimated_tokens": 5782,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 30,
@@ -1746,7 +1746,7 @@
         "live_turns": 15,
         "messages_sent": 32,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5765,
+        "raw_estimated_tokens": 5782,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -1767,7 +1767,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -1829,7 +1829,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B16 blocks=time prov=[time] last_msg=m19",
-      "log [ContextAssembly] {\"session\":\"B16\",\"history_turns\":10,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":10,\"live_anchor_turn\":-4,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":22,\"estimated_tokens\":5755,\"raw_estimated_tokens\":5755,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":20,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"3d5ea75cfefad5a8\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B16\",\"history_turns\":10,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":10,\"live_anchor_turn\":-4,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":22,\"estimated_tokens\":5772,\"raw_estimated_tokens\":5772,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":20,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"3d5ea75cfefad5a8\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -1840,7 +1840,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5755,
+        "estimated_tokens": 5772,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 10,
@@ -1852,7 +1852,7 @@
         "live_turns": 10,
         "messages_sent": 22,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5755,
+        "raw_estimated_tokens": 5772,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -1870,7 +1870,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -1932,7 +1932,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B17 blocks=time prov=[time] last_msg=m3",
-      "log [ContextAssembly] {\"session\":\"B17\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5739,\"raw_estimated_tokens\":5739,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B17\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5756,\"raw_estimated_tokens\":5756,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -1943,7 +1943,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5739,
+        "estimated_tokens": 5756,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 2,
@@ -1955,7 +1955,7 @@
         "live_turns": 2,
         "messages_sent": 6,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5739,
+        "raw_estimated_tokens": 5756,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -1973,7 +1973,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -2020,7 +2020,7 @@
       "sessions.await"
     ],
     "logs": [
-      "log [ContextAssembly] {\"session\":\"B18\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":5,\"estimated_tokens\":5723,\"raw_estimated_tokens\":5723,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"2089b25f0ac10559\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B18\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":5,\"estimated_tokens\":5740,\"raw_estimated_tokens\":5740,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"2089b25f0ac10559\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -2031,7 +2031,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5723,
+        "estimated_tokens": 5740,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 2,
@@ -2043,7 +2043,7 @@
         "live_turns": 2,
         "messages_sent": 5,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5723,
+        "raw_estimated_tokens": 5740,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -2061,7 +2061,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -2109,7 +2109,7 @@
       "sessions.await"
     ],
     "logs": [
-      "log [ContextAssembly] {\"session\":\"B19\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":5,\"estimated_tokens\":5723,\"raw_estimated_tokens\":5723,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"2089b25f0ac10559\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B19\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":5,\"estimated_tokens\":5740,\"raw_estimated_tokens\":5740,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"2089b25f0ac10559\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -2120,7 +2120,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5723,
+        "estimated_tokens": 5740,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 2,
@@ -2132,7 +2132,7 @@
         "live_turns": 2,
         "messages_sent": 5,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5723,
+        "raw_estimated_tokens": 5740,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -2150,7 +2150,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -2213,7 +2213,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B20 blocks=time prov=[time] last_msg=现在几点了？",
-      "log [ContextAssembly] {\"session\":\"B20\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5744,\"raw_estimated_tokens\":5744,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":9,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"6eef83d05774ca2f\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B20\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5761,\"raw_estimated_tokens\":5761,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":9,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"6eef83d05774ca2f\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -2224,7 +2224,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5744,
+        "estimated_tokens": 5761,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 2,
@@ -2236,7 +2236,7 @@
         "live_turns": 2,
         "messages_sent": 6,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5744,
+        "raw_estimated_tokens": 5761,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -2254,7 +2254,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -2319,7 +2319,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B21 blocks=time,weather prov=[time|weather] last_msg=在吗",
-      "log [ContextAssembly] {\"session\":\"B21\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":3,\"estimated_tokens\":5745,\"raw_estimated_tokens\":5745,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":26},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"0c15630d28f5b3b2\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B21\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":3,\"estimated_tokens\":5762,\"raw_estimated_tokens\":5762,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":26},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"0c15630d28f5b3b2\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -2330,7 +2330,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5745,
+        "estimated_tokens": 5762,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 0,
@@ -2342,7 +2342,7 @@
         "live_turns": 0,
         "messages_sent": 3,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5745,
+        "raw_estimated_tokens": 5762,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -2360,7 +2360,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -2425,7 +2425,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B22 blocks=time,weather prov=[time|weather] last_msg=在吗",
-      "log [ContextAssembly] {\"session\":\"B22\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":3,\"estimated_tokens\":5738,\"raw_estimated_tokens\":5738,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":19},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"27139fcfcc3ca733\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B22\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":3,\"estimated_tokens\":5755,\"raw_estimated_tokens\":5755,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":19},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"27139fcfcc3ca733\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -2436,7 +2436,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5738,
+        "estimated_tokens": 5755,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 0,
@@ -2448,7 +2448,7 @@
         "live_turns": 0,
         "messages_sent": 3,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5738,
+        "raw_estimated_tokens": 5755,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -2466,7 +2466,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -2529,7 +2529,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B23 blocks=time prov=[time] last_msg=m7",
-      "log [ContextAssembly] {\"session\":\"B23\",\"history_turns\":4,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":4,\"live_anchor_turn\":-10,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":10,\"estimated_tokens\":5743,\"raw_estimated_tokens\":5743,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":8,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"26b4194e706a7e23\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B23\",\"history_turns\":4,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":4,\"live_anchor_turn\":-10,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":10,\"estimated_tokens\":5760,\"raw_estimated_tokens\":5760,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":8,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"26b4194e706a7e23\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -2541,7 +2541,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5743,
+        "estimated_tokens": 5760,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 4,
@@ -2553,7 +2553,7 @@
         "live_turns": 4,
         "messages_sent": 10,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5743,
+        "raw_estimated_tokens": 5760,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -2571,7 +2571,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -2635,7 +2635,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B24 blocks=time,calendar prov=[time|calendar] last_msg=在吗",
-      "log [ContextAssembly] {\"session\":\"B24\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":3,\"estimated_tokens\":5740,\"raw_estimated_tokens\":5740,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":21},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"52ca5da995c4e650\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B24\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":3,\"estimated_tokens\":5757,\"raw_estimated_tokens\":5757,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":21},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"52ca5da995c4e650\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -2646,7 +2646,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5740,
+        "estimated_tokens": 5757,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 0,
@@ -2658,7 +2658,7 @@
         "live_turns": 0,
         "messages_sent": 3,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5740,
+        "raw_estimated_tokens": 5757,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -2676,7 +2676,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -2731,7 +2731,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B25 blocks=time prov=[time] last_msg=在吗",
-      "log [ContextAssembly] {\"session\":\"B25\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":2,\"estimated_tokens\":5749,\"raw_estimated_tokens\":5749,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":30},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"4640bd265d882838\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B25\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":2,\"estimated_tokens\":5766,\"raw_estimated_tokens\":5766,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":30},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"4640bd265d882838\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -2742,7 +2742,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5749,
+        "estimated_tokens": 5766,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 0,
@@ -2754,7 +2754,7 @@
         "live_turns": 0,
         "messages_sent": 2,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5749,
+        "raw_estimated_tokens": 5766,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -2772,7 +2772,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -2820,7 +2820,7 @@
       "sessions.await"
     ],
     "logs": [
-      "log [ContextAssembly] {\"session\":\"B26\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":5,\"estimated_tokens\":5723,\"raw_estimated_tokens\":5723,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"2089b25f0ac10559\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B26\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":5,\"estimated_tokens\":5740,\"raw_estimated_tokens\":5740,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"2089b25f0ac10559\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -2831,7 +2831,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5723,
+        "estimated_tokens": 5740,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 2,
@@ -2843,7 +2843,7 @@
         "live_turns": 2,
         "messages_sent": 5,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5723,
+        "raw_estimated_tokens": 5740,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -2861,7 +2861,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -2936,7 +2936,7 @@
     "logs": [
       "log 🌿 [余温注入] session=B27 grounding=实 concern=0.9 mode=深入: 【上次对话的余温】⟨mode 深入⟩。",
       "log 🧩 [动态注入] session=B27 blocks=time,residue prov=[time|residue#77] last_msg=我回来了",
-      "log [ContextAssembly] {\"session\":\"B27\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":15,\"estimated_tokens\":5761,\"raw_estimated_tokens\":5761,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":12,\"dynamic\":30},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"2ed8b5ef67535049\",\"resume_gap_min\":182,\"residue_injected\":true,\"residue_text\":\"【上次对话的余温】⟨mode 深入⟩。\",\"residue_mode\":\"深入\",\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B27\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":15,\"estimated_tokens\":5778,\"raw_estimated_tokens\":5778,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":12,\"dynamic\":30},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"2ed8b5ef67535049\",\"resume_gap_min\":182,\"residue_injected\":true,\"residue_text\":\"【上次对话的余温】⟨mode 深入⟩。\",\"residue_mode\":\"深入\",\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [
@@ -2949,7 +2949,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5761,
+        "estimated_tokens": 5778,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 6,
@@ -2961,7 +2961,7 @@
         "live_turns": 6,
         "messages_sent": 15,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5761,
+        "raw_estimated_tokens": 5778,
         "residue_injected": true,
         "residue_mode": "深入",
         "residue_text": "【上次对话的余温】⟨mode 深入⟩。",
@@ -2979,7 +2979,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -3053,7 +3053,7 @@
     "logs": [
       "log 🌿 [余温注入] session=B28 grounding=实 concern=0.9 mode=亲密: 【上次对话的余温】⟨mode 亲密⟩。",
       "log 🧩 [动态注入] session=B28 blocks=time,residue prov=[time|residue#78] last_msg=修好了",
-      "log [ContextAssembly] {\"session\":\"B28\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":15,\"estimated_tokens\":5761,\"raw_estimated_tokens\":5761,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":12,\"dynamic\":30},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"7bef5b64da411138\",\"resume_gap_min\":182,\"residue_injected\":true,\"residue_text\":\"【上次对话的余温】⟨mode 亲密⟩。\",\"residue_mode\":\"亲密\",\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B28\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":15,\"estimated_tokens\":5778,\"raw_estimated_tokens\":5778,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":12,\"dynamic\":30},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"7bef5b64da411138\",\"resume_gap_min\":182,\"residue_injected\":true,\"residue_text\":\"【上次对话的余温】⟨mode 亲密⟩。\",\"residue_mode\":\"亲密\",\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [
@@ -3066,7 +3066,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5761,
+        "estimated_tokens": 5778,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 6,
@@ -3078,7 +3078,7 @@
         "live_turns": 6,
         "messages_sent": 15,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5761,
+        "raw_estimated_tokens": 5778,
         "residue_injected": true,
         "residue_mode": "亲密",
         "residue_text": "【上次对话的余温】⟨mode 亲密⟩。",
@@ -3096,7 +3096,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -3159,7 +3159,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B29 blocks=time prov=[time] last_msg=在吗",
-      "log [ContextAssembly] {\"session\":\"B29\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":14,\"estimated_tokens\":5747,\"raw_estimated_tokens\":5747,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":12,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"c1106b1b68abe0f2\",\"resume_gap_min\":182,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B29\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":14,\"estimated_tokens\":5764,\"raw_estimated_tokens\":5764,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":12,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"c1106b1b68abe0f2\",\"resume_gap_min\":182,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -3170,7 +3170,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5747,
+        "estimated_tokens": 5764,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 6,
@@ -3182,7 +3182,7 @@
         "live_turns": 6,
         "messages_sent": 14,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5747,
+        "raw_estimated_tokens": 5764,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -3200,7 +3200,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -3273,7 +3273,7 @@
     "logs": [
       "log 🌿 [余温注入] session=B30 grounding=空 concern=0.9 mode=—: 【上次对话的余温】⟨thread —|182m⟩。",
       "log 🧩 [动态注入] session=B30 blocks=time,residue prov=[time|residue#79] last_msg=在吗",
-      "log [ContextAssembly] {\"session\":\"B30\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":15,\"estimated_tokens\":5761,\"raw_estimated_tokens\":5761,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":12,\"dynamic\":30},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"4cc124d053a9b3c7\",\"resume_gap_min\":182,\"residue_injected\":true,\"residue_text\":\"【上次对话的余温】⟨thread —|182m⟩。\",\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B30\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":15,\"estimated_tokens\":5778,\"raw_estimated_tokens\":5778,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":12,\"dynamic\":30},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"4cc124d053a9b3c7\",\"resume_gap_min\":182,\"residue_injected\":true,\"residue_text\":\"【上次对话的余温】⟨thread —|182m⟩。\",\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [
@@ -3286,7 +3286,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5761,
+        "estimated_tokens": 5778,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 6,
@@ -3298,7 +3298,7 @@
         "live_turns": 6,
         "messages_sent": 15,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5761,
+        "raw_estimated_tokens": 5778,
         "residue_injected": true,
         "residue_mode": null,
         "residue_text": "【上次对话的余温】⟨thread —|182m⟩。",
@@ -3316,7 +3316,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -3378,7 +3378,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B31 blocks=time prov=[time] last_msg=m11",
-      "log [ContextAssembly] {\"session\":\"B31\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":14,\"estimated_tokens\":5747,\"raw_estimated_tokens\":5747,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":12,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"c0cef940f0bd3dfd\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B31\",\"history_turns\":6,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":6,\"live_anchor_turn\":-8,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":14,\"estimated_tokens\":5764,\"raw_estimated_tokens\":5764,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":12,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"c0cef940f0bd3dfd\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -3389,7 +3389,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5747,
+        "estimated_tokens": 5764,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 6,
@@ -3401,7 +3401,7 @@
         "live_turns": 6,
         "messages_sent": 14,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5747,
+        "raw_estimated_tokens": 5764,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -3419,7 +3419,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -3481,7 +3481,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B32 blocks=time prov=[time] last_msg=m3",
-      "log [ContextAssembly] {\"session\":\"B32\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5758,\"raw_estimated_tokens\":5758,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":35},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"eda3c101d7e48889\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[31,32],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B32\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5775,\"raw_estimated_tokens\":5775,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":35},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"eda3c101d7e48889\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[31,32],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -3492,7 +3492,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5758,
+        "estimated_tokens": 5775,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 2,
@@ -3507,7 +3507,7 @@
         "live_turns": 2,
         "messages_sent": 6,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5758,
+        "raw_estimated_tokens": 5775,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -3525,7 +3525,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -3699,7 +3699,7 @@
     "logs": [
       "log 🔔 [注意力] session=B34 hits=2 · 搬家的事还没说完",
       "log 🧩 [动态注入] session=B34 blocks=attention(2) prov=[attention#7,8] last_msg=m3",
-      "log [ContextAssembly] {\"session\":\"B34\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5723,\"raw_estimated_tokens\":5723,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"596cf8b6a59a9e0c\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":true,\"attention_hits\":2,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B34\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5740,\"raw_estimated_tokens\":5740,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"596cf8b6a59a9e0c\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":true,\"attention_hits\":2,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -3710,7 +3710,7 @@
       "diag": {
         "attention_hits": 2,
         "attention_injected": true,
-        "estimated_tokens": 5723,
+        "estimated_tokens": 5740,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 2,
@@ -3722,7 +3722,7 @@
         "live_turns": 2,
         "messages_sent": 6,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5723,
+        "raw_estimated_tokens": 5740,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -3740,7 +3740,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -3787,7 +3787,7 @@
       "sessions.await"
     ],
     "logs": [
-      "log [ContextAssembly] {\"session\":\"B35\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":5,\"estimated_tokens\":5723,\"raw_estimated_tokens\":5723,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"2089b25f0ac10559\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B35\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":5,\"estimated_tokens\":5740,\"raw_estimated_tokens\":5740,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"2089b25f0ac10559\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -3798,7 +3798,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5723,
+        "estimated_tokens": 5740,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 2,
@@ -3810,7 +3810,7 @@
         "live_turns": 2,
         "messages_sent": 5,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5723,
+        "raw_estimated_tokens": 5740,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -3828,7 +3828,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -3890,7 +3890,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B36 blocks=time prov=[time] last_msg=m3",
-      "log [ContextAssembly] {\"session\":\"B36\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5739,\"raw_estimated_tokens\":5739,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B36\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5756,\"raw_estimated_tokens\":5756,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -3901,7 +3901,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5739,
+        "estimated_tokens": 5756,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 2,
@@ -3913,7 +3913,7 @@
         "live_turns": 2,
         "messages_sent": 6,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5739,
+        "raw_estimated_tokens": 5756,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -3931,7 +3931,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -3993,7 +3993,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B37 blocks=time prov=[time] last_msg=",
-      "log [ContextAssembly] {\"session\":\"B37\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5739,\"raw_estimated_tokens\":5739,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B37\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5756,\"raw_estimated_tokens\":5756,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -4004,7 +4004,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5739,
+        "estimated_tokens": 5756,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 2,
@@ -4016,7 +4016,7 @@
         "live_turns": 2,
         "messages_sent": 6,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5739,
+        "raw_estimated_tokens": 5756,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -4034,7 +4034,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -4096,7 +4096,7 @@
     "logs": [
       "log 📖 [世界书] session=B38 保留席 亲密+remind+exact title=怕打雷 → 注入",
       "log 🧩 [动态注入] session=B38 blocks=world-seat(remind) prov=[world-seat#11] last_msg=晚上打雷了",
-      "log [ContextAssembly] {\"session\":\"B38\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5723,\"raw_estimated_tokens\":5723,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"ac44ac4e17608084\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":true,\"world_kinds\":[\"remind\"],\"world_mode\":\"亲密\"}"
+      "log [ContextAssembly] {\"session\":\"B38\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5740,\"raw_estimated_tokens\":5740,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"ac44ac4e17608084\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":true,\"world_kinds\":[\"remind\"],\"world_mode\":\"亲密\"}"
     ],
     "side": {
       "consumed": [],
@@ -4107,7 +4107,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5723,
+        "estimated_tokens": 5740,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 2,
@@ -4119,7 +4119,7 @@
         "live_turns": 2,
         "messages_sent": 6,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5723,
+        "raw_estimated_tokens": 5740,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -4137,7 +4137,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": true,
@@ -4208,7 +4208,7 @@
     "logs": [
       "log 📖 [世界书] session=B39 hits=1 kinds=[setting] mode=闲聊 → 注入",
       "log 🧩 [动态注入] session=B39 blocks=world(1) prov=[world#12] last_msg=猫呢",
-      "log [ContextAssembly] {\"session\":\"B39\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5723,\"raw_estimated_tokens\":5723,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"32ab8b6b00a3214b\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":true,\"world_kinds\":[\"setting\"],\"world_mode\":\"闲聊\"}"
+      "log [ContextAssembly] {\"session\":\"B39\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5740,\"raw_estimated_tokens\":5740,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"32ab8b6b00a3214b\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":true,\"world_kinds\":[\"setting\"],\"world_mode\":\"闲聊\"}"
     ],
     "side": {
       "consumed": [],
@@ -4219,7 +4219,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5723,
+        "estimated_tokens": 5740,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 2,
@@ -4231,7 +4231,7 @@
         "live_turns": 2,
         "messages_sent": 6,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5723,
+        "raw_estimated_tokens": 5740,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -4249,7 +4249,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": true,
@@ -4314,7 +4314,7 @@
     "logs": [
       "log 📖 [世界书] session=B40 hits=1 矩阵过滤后无允许项 mode=亲密 → 不注入",
       "log 🧩 [动态注入] session=B40 blocks=time prov=[time] last_msg=猫呢",
-      "log [ContextAssembly] {\"session\":\"B40\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5739,\"raw_estimated_tokens\":5739,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":\"亲密\"}"
+      "log [ContextAssembly] {\"session\":\"B40\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5756,\"raw_estimated_tokens\":5756,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":\"亲密\"}"
     ],
     "side": {
       "consumed": [],
@@ -4325,7 +4325,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5739,
+        "estimated_tokens": 5756,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 2,
@@ -4337,7 +4337,7 @@
         "live_turns": 2,
         "messages_sent": 6,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5739,
+        "raw_estimated_tokens": 5756,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -4355,7 +4355,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -4417,7 +4417,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B41 blocks=time prov=[time] last_msg=m3",
-      "log [ContextAssembly] {\"session\":\"B41\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5739,\"raw_estimated_tokens\":5739,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B41\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5756,\"raw_estimated_tokens\":5756,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -4428,7 +4428,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5739,
+        "estimated_tokens": 5756,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 2,
@@ -4440,7 +4440,7 @@
         "live_turns": 2,
         "messages_sent": 6,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5739,
+        "raw_estimated_tokens": 5756,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -4458,7 +4458,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -4533,7 +4533,7 @@
       "log 🔔 [注意力] session=B42 hits=1 · 旧事",
       "log 📖 [世界书] session=B42 hits=1 kinds=[setting] mode=闲聊 → 注入",
       "log 🧩 [动态注入] session=B42 blocks=time,weather,calendar prov=[time|weather|calendar] dropped=world(1),attention(1) last_msg=几点了？",
-      "log [ContextAssembly] {\"session\":\"B42\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":4,\"estimated_tokens\":5753,\"raw_estimated_tokens\":5753,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":34},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"cc868c0fb3f96fdd\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":true,\"attention_hits\":1,\"world_injected\":true,\"world_kinds\":[\"setting\"],\"world_mode\":\"闲聊\"}"
+      "log [ContextAssembly] {\"session\":\"B42\",\"history_turns\":0,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":0,\"live_anchor_turn\":-14,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":4,\"estimated_tokens\":5770,\"raw_estimated_tokens\":5770,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":0,\"dynamic\":34},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"cc868c0fb3f96fdd\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":true,\"attention_hits\":1,\"world_injected\":true,\"world_kinds\":[\"setting\"],\"world_mode\":\"闲聊\"}"
     ],
     "side": {
       "consumed": [],
@@ -4544,7 +4544,7 @@
       "diag": {
         "attention_hits": 1,
         "attention_injected": true,
-        "estimated_tokens": 5753,
+        "estimated_tokens": 5770,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 0,
@@ -4556,7 +4556,7 @@
         "live_turns": 0,
         "messages_sent": 4,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5753,
+        "raw_estimated_tokens": 5770,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -4574,7 +4574,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": true,
@@ -4661,7 +4661,7 @@
       "log 🌿 [余温注入] session=B43 grounding=实 concern=0.9 mode=深入: 【上次对话的余温】⟨mode 深入⟩；⟨thread 搬家|92m⟩。",
       "log 📖 [世界书] session=B43 hits=1 kinds=[setting] mode=闲聊 → 注入",
       "log 🧩 [动态注入] session=B43 blocks=time,weather,calendar prov=[time|weather|calendar] dropped=residue,world(1) last_msg=几点了？",
-      "log [ContextAssembly] {\"session\":\"B43\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":8,\"estimated_tokens\":5770,\"raw_estimated_tokens\":5770,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":7,\"dynamic\":44},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"69e5bc05305d9a2c\",\"resume_gap_min\":92,\"residue_injected\":true,\"residue_text\":\"【上次对话的余温】⟨mode 深入⟩；⟨thread 搬家|92m⟩。\",\"residue_mode\":\"深入\",\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":true,\"world_kinds\":[\"setting\"],\"world_mode\":\"闲聊\"}"
+      "log [ContextAssembly] {\"session\":\"B43\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":8,\"estimated_tokens\":5787,\"raw_estimated_tokens\":5787,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":7,\"dynamic\":44},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"69e5bc05305d9a2c\",\"resume_gap_min\":92,\"residue_injected\":true,\"residue_text\":\"【上次对话的余温】⟨mode 深入⟩；⟨thread 搬家|92m⟩。\",\"residue_mode\":\"深入\",\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":true,\"world_kinds\":[\"setting\"],\"world_mode\":\"闲聊\"}"
     ],
     "side": {
       "consumed": [
@@ -4674,7 +4674,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5770,
+        "estimated_tokens": 5787,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 2,
@@ -4686,7 +4686,7 @@
         "live_turns": 2,
         "messages_sent": 8,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5770,
+        "raw_estimated_tokens": 5787,
         "residue_injected": true,
         "residue_mode": "深入",
         "residue_text": "【上次对话的余温】⟨mode 深入⟩；⟨thread 搬家|92m⟩。",
@@ -4704,7 +4704,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": true,
@@ -4940,7 +4940,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B46 blocks=time prov=[time] last_msg=m7",
-      "log [ContextAssembly] {\"session\":\"B46\",\"history_turns\":4,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":4,\"live_anchor_turn\":-10,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":10,\"estimated_tokens\":5743,\"raw_estimated_tokens\":5743,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":8,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"26b4194e706a7e23\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B46\",\"history_turns\":4,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":4,\"live_anchor_turn\":-10,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":10,\"estimated_tokens\":5760,\"raw_estimated_tokens\":5760,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":8,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"26b4194e706a7e23\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -4948,7 +4948,7 @@
     },
     "threw": null,
     "value": {
-      "toolsTokens": 5071
+      "toolsTokens": 5088
     }
   },
   "build_crossFlow_on": {
@@ -5006,7 +5006,7 @@
       "messages.await"
     ],
     "logs": [
-      "log [ContextAssembly] {\"session\":\"B47\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5723,\"raw_estimated_tokens\":5723,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"a409e7d0c71e31fa\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B47\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5740,\"raw_estimated_tokens\":5740,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":0},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"a409e7d0c71e31fa\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],
@@ -5017,7 +5017,7 @@
       "diag": {
         "attention_hits": 0,
         "attention_injected": false,
-        "estimated_tokens": 5723,
+        "estimated_tokens": 5740,
         "frozen_prefix_hash": "e3b0c44298fc1c14",
         "frozen_turns": 0,
         "history_turns": 2,
@@ -5029,7 +5029,7 @@
         "live_turns": 2,
         "messages_sent": 6,
         "middle_raw_turns": 0,
-        "raw_estimated_tokens": 5723,
+        "raw_estimated_tokens": 5740,
         "residue_injected": false,
         "residue_mode": null,
         "residue_text": null,
@@ -5047,7 +5047,7 @@
           "middle": 0,
           "stable": 648,
           "summary": 0,
-          "tools": 5071
+          "tools": 5088
         },
         "trimmed_turns": 0,
         "world_injected": false,
@@ -5110,7 +5110,7 @@
     ],
     "logs": [
       "log 🧩 [动态注入] session=B48 blocks=time prov=[time] last_msg=m3",
-      "log [ContextAssembly] {\"session\":\"B48\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5739,\"raw_estimated_tokens\":5739,\"token_breakdown\":{\"tools\":5071,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
+      "log [ContextAssembly] {\"session\":\"B48\",\"history_turns\":2,\"frozen_turns\":0,\"summary_present\":false,\"summary_range\":null,\"summary_from\":null,\"summary_to\":null,\"segments_count\":0,\"middle_raw_turns\":0,\"live_turns\":2,\"live_anchor_turn\":-12,\"live_collapsed\":false,\"live_tokens_est\":0,\"messages_sent\":6,\"estimated_tokens\":5756,\"raw_estimated_tokens\":5756,\"token_breakdown\":{\"tools\":5088,\"stable\":648,\"frozen\":0,\"summary\":0,\"middle\":0,\"live\":4,\"dynamic\":16},\"trimmed_turns\":0,\"frozen_prefix_hash\":\"e3b0c44298fc1c14\",\"summary_hash\":null,\"live_hash\":\"05023fb12d8f6319\",\"resume_gap_min\":null,\"residue_injected\":false,\"residue_text\":null,\"residue_mode\":null,\"keepalive_injected_ids\":[],\"attention_injected\":false,\"attention_hits\":0,\"world_injected\":false,\"world_kinds\":null,\"world_mode\":null}"
     ],
     "side": {
       "consumed": [],

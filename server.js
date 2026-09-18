@@ -24,6 +24,8 @@ const { buildMemoryMcpHeaders, resolveMemoryMcpConfig } = require('./lib/memory-
 //   本文件用不到；一并引入只是图整齐，代价为零，不值得再冒一次裁剪的风险。）
 const { randomDelay, parseJsonLoose, callDeepSeek, callReplyModel, callOpenRouter, callVisionModel } = require('./lib/llm');
 const { getClaudeAgentRuntimeStatus, resolveModel, runClaudeAgent, shouldUseClaudeAgent } = require('./lib/claude-agent');
+// 流内帧（发给前端的跨仓库契约面）：改字段名必须回头看前端的 ChatScreen
+const { routeFrame } = require('./lib/stream-frames');
 const {
   clearSessionLink,
   createSupabaseSessionStore,
@@ -221,7 +223,9 @@ async function callOmbreTool(toolName, args = {}) {
   }
 
   try {
-    console.log(`🚀 [调试] 正在调用工具 ${toolName}，参数:`, args);
+    // 只记字段名与长度，不记值（2026-09-18）：这里以前把完整 args 打进生产日志，
+    // 而 hold / grow / trace 的 content 就是记忆正文本身 —— 记忆会落进日志。
+    console.log(`🚀 [工具] ${toolName} 入参 字段=[${Object.keys(args || {}).join(',')}] 长=${JSON.stringify(args || {}).length}`);
 
     const response = await fetch(memoryMcp.endpoint, {
       method: 'POST',
@@ -238,10 +242,9 @@ async function callOmbreTool(toolName, args = {}) {
       })
     });
 
-    console.log('📡 tools/call 响应状态:', response.status);
-
     const rawText = await response.text();
-    console.log('📡 [调试] 响应原文:', rawText);
+    // 只记状态与长度，不记正文（2026-09-18）：rawText 是 Ombre 的原始响应，内容就是记忆正文。
+    console.log(`📡 [工具] ${toolName} 响应 status=${response.status} 长=${rawText.length}`);
 
     const parsed = parseSSEResponse(rawText);
 
@@ -258,10 +261,13 @@ async function callOmbreTool(toolName, args = {}) {
       // 修复：Ombre 工具执行失败时 isError=true（如参数校验错误），
       // 之前不检查会把这堆错误文本当成功返回，调用方误记快照、掩盖真 bug。
       if (parsed.result.isError) {
-        console.error('❌ 工具执行失败(isError=true):', resultText.slice(0, 300));
+        // 只留 Ombre 自己的错误码（形如 ❌[OB-E004]），不留正文——错误文本可能回显入参。
+        // 保留错误码是因为「每轮都报同一行→变成噪音→没人看」正是这套系统最贵的失败模式。
+        const code = (resultText.match(/❌\[\s*OB-[A-Z0-9]+\s*\]/) || [])[0] || '(无错误码)';
+        console.error(`❌ [工具] ${toolName} 执行失败 isError=true ${code} 长=${resultText.length}`);
         return null;
       }
-      console.log('🎉 工具调用成功，返回:', resultText);
+      console.log(`🎉 [工具] ${toolName} 成功 长=${resultText.length}`);
       return resultText;
     }
 
@@ -1291,18 +1297,28 @@ async function handleVerdict(args = {}) {
   if (!card) return { ok: false, error: '找不到这张卡' };
   if (card.verdict) return { ok: false, error: `这张卡已经拍过了（${card.verdict}）` };
 
+  const direction = card.direction || 'support';
+
+  /* 反证卡的闸必须在**落库之前**（2026-09-18 修）。
+     以前是先无条件写 verdict=action、之后才按卡类型分叉，而反证卡那支只回一句「先放着」
+     就返回了 —— 库里其实已经躺着一个 verdict='confirm'。后果是这张卡此后被上面的
+     「已经拍过了」永久挡住，**连本来该允许的 drop 都做不了**：单向烧卡，且落库值与话术矛盾。
+     现在：先判卡类型，不合格直接拒、一个字都不写。 */
+  if (direction === 'doubting' && action !== 'drop' && action !== 'pass') {
+    return { ok: false, error: `反证卡只接受 drop（这段自我怀疑不算数）或 pass（先放着），不接受 ${action}。这张卡没有被改动。` };
+  }
+
   const upd = { verdict: action, verdict_at: new Date().toISOString() };
   if (note) upd.verdict_note = note;
   const { error } = await supabase.from('mirror_cards').update(upd).eq('id', cardId);
   if (error) return { ok: false, error: `落库失败: ${error.message}` };
 
-  const direction = card.direction || 'support';
-
-  // 冲突卡裁决（第⑤b）：confirm = 确认有效冲突 → contradiction_count+1（不改石头不自动压回）；drop = 不采纳，留审计
+  // 冲突卡裁决（第⑤b）：confirm/revise = 确认有效冲突 → contradiction_count+1（不改石头不自动压回）；drop = 不采纳，留审计
   if (direction === 'conflict') {
     if (action === 'confirm' || action === 'revise') {
       await bumpClaimContradiction(card.claim, card.domain || 'me');   // dyad：冲突计数按 domain 隔离
-      return { ok: true, card_id: cardId, action: 'confirm', direction: 'conflict',
+      // 回话里的 action 必须是**实际落库的那个**（以前 revise 会落 verdict='revise' 却回 action='confirm'）
+      return { ok: true, card_id: cardId, action, direction: 'conflict',
         message: `已记录这条与石头相悖的证据（contradiction+1）。冲突是信息——改不改石头由你 rewrite_stone 时决定。` };
     }
     if (action === 'drop') {
@@ -1313,9 +1329,8 @@ async function handleVerdict(args = {}) {
     return { ok: true, card_id: cardId, action: 'pass', direction: 'conflict', message: '这条冲突先放着，下次再看。' };
   }
 
-  // 反证卡：verdict 不应直接拍（它走自动压回逻辑），这里只允许 drop/pass（他看完不认同这条反证）
+  // 反证卡走到这里只剩 drop/pass（上面已闸过）
   if (direction === 'doubting') {
-    const verb2 = { drop: '放弃', pass: '先跳过' }[action] || action;
     return { ok: true, card_id: cardId, action, direction: 'doubting', message: `这条反证记录${action === 'drop' ? '已标记 drop（审计保留）' : '先放着'}` };
   }
 
@@ -1636,6 +1651,13 @@ async function handleRewriteStone(args = {}) {
   const content = String(args.content || '').trim();
   if (!content) return { ok: false, error: '缺 content：新石头全文' };
   if (content.length > 12000) return { ok: false, error: '石头太长（≤12000 字）' };
+  /* 长度下限必须在**落 ring 之前**判（2026-09-18 修）。setSystemPrompt 对 <MIN_PERSONA_CHARS
+     会抛（它是人格锚的写入闸），但它跑在 ring 插入**之后** —— 于是抛出去时 ring 已落库、
+     change_ledger 还没写，留下「账本说存在第 N 环、人格锚其实没变」的分裂状态，
+     且下一轮重写会从 N+1 接着数。提前拦住，一个字都不落。 */
+  if (content.length < MIN_PERSONA_CHARS) {
+    return { ok: false, error: `石头太短（${content.length} 字 < ${MIN_PERSONA_CHARS}）。人格锚是唯一来源，写空等于让你哑掉——这一版没有落，ring 也没留。` };
+  }
   let prev;
   try {
     prev = await getSystemPrompt();
@@ -1659,7 +1681,7 @@ async function handleRewriteStone(args = {}) {
     .insert({
       version,
       content,
-      prev_content: prev === content ? null : prev,
+      prev_content: prev,   // 上面已 early-return 掉「与上一版逐字相同」，这里恒为上一版
       changed_summary: String(args.changed || '').trim(),
       why: String(args.why || '').trim(),
       unchanged: String(args.unchanged || '').trim(),
@@ -3206,7 +3228,7 @@ setInterval(() => {
 // 极端挤压（名字被截断后仍撞）→ 宁可少暴露一个工具，也不覆盖 registry。
 function sanitizeMcpTools(rawTools) {
   if (!Array.isArray(rawTools)) return { tools: [], registry: {} };
-  const builtins = new Set(getTools().map((t) => t.function.name)); // 内置 13 工具名 = 保留名（MCP 不得抢占）
+  const builtins = new Set(getTools().map((t) => t.function.name)); // 内置 24 工具名 = 保留名（MCP 不得抢占）
   const sanitize = (s) => String(s || '').replace(/[^a-zA-Z0-9_-]/g, '_');
 
   const clean = [];
@@ -3446,6 +3468,17 @@ async function handleStreamChat(messages, res, opts = {}, sessionId, resume = nu
   const hasReasoning = thinkingMode !== 'off';
   const effort = thinkingEffort(thinkingMode);
   const withTools = opts.tools !== 'off';
+
+  /* 本轮真实线路，先报给前端（2026-09-18）。
+     头两个调用点都是先 flushHeaders 再进这里，所以这一帧一定在正文之前到达。
+     报的是**实际会走哪条线**、不是前端请求了什么 —— 「请求的线路」和「真实线路」
+     在这套系统里可以不一致（图片 / 委托 MCP / 续调轮 / token 缺失都会静默改道），
+     不一致时前端必须显示真实那条。 */
+  // routeFrame 必须带 kind：前端（angel-garden-diary/src/chat/ChatScreen.jsx）只解析 data: 行、
+  // 按 payload 字段分发（event: 行不认），没有判别字段的帧会一路穿过所有分支（与 mcp_delegate 同约定）。
+  const route = routeFrame(opts, resume);
+  try { sendSSE(res, 'route', route); } catch { /* 客户端已断，不影响本轮 */ }
+  console.log(`🧭 [线路] transport=${route.transport}${route.reason ? ` reason=${route.reason}` : ''}`);
 
   if (shouldUseClaudeAgent(opts, resume)) {
     return streamClaudeAgentChat(messages, res, opts, sessionId);
@@ -5858,7 +5891,9 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
         const fnName = tc.function.name;
         let fnArgs;
         try { fnArgs = JSON.parse(tc.function.arguments); } catch (e) { fnArgs = {}; }
-        console.log(`🔧 AI 决定调用工具: ${fnName}`, fnArgs);
+        // 只记字段名与长度，不记值（2026-09-18）：与 callOmbreTool 同一处整改，
+        // 这里以前把 arguments 原样打进生产日志，而 hold/grow/trace 的 content 就是记忆正文。
+        console.log(`🔧 AI 决定调用工具: ${fnName} 字段=[${Object.keys(fnArgs || {}).join(',')}]`);
 
         let toolResult;
         try {

@@ -6,11 +6,14 @@ const {
   contentToText,
   detectSessionFork,
   normalizeUsage,
+  readInitInfo,
+  resolveTransport,
   shouldUseClaudeAgent,
   thinkingOptions,
   toolShape,
 } = require('../lib/claude-agent');
 const { getTools } = require('../lib/tools-schema');
+const { z } = require('zod');
 
 test('buildAgentPrompt separates the system prompt and preserves ordered history', () => {
   const built = buildAgentPrompt([
@@ -73,6 +76,121 @@ test('all domain tool JSON schemas convert to valid Zod raw shapes', () => {
       assert.equal(typeof schema.safeParse, 'function', fn.name);
     }
   }
+});
+
+// retreat 是唯一零参数工具：上面那条测试对它的内层循环零次迭代，等于没测。
+// 空 ZodRawShape 是 SDK tool() 的边界形状，单独钉一条，别让它再滑过去。
+test('retreat 是零参数工具，空 shape 仍能构造合法的 Zod object', () => {
+  const retreat = getTools().find((t) => t.function.name === 'retreat');
+  assert.ok(retreat, 'retreat 工具不存在');
+  const shape = toolShape(retreat.function.parameters);
+  assert.deepStrictEqual(Object.keys(shape), [], 'retreat 不应有任何参数');
+  const parsed = z.object(shape).safeParse({});
+  assert.equal(parsed.success, true, 'retreat 空 shape 应接受空参数');
+  assert.deepStrictEqual(Object.keys(parsed.data), []);
+});
+
+/* resolveTransport：报给前端的「本轮真实线路」。
+   核心不是枚举对不对，而是 ①deepseek 不能被报成 api（它是独立省额度通道，报错会误导账）；
+   ②没走订阅线时**必须带结构化原因**（静默改道正是「请求什么 ≠ 走什么」的根源）；
+   ③布尔版 shouldUseClaudeAgent 永远是它的投影 —— 两份条件各写各的就会漂移。 */
+const withEnv = (patch, fn) => {
+  const saved = {};
+  for (const [k, v] of Object.entries(patch)) {
+    saved[k] = process.env[k];
+    if (v === undefined) delete process.env[k]; else process.env[k] = v;
+  }
+  try { return fn(); } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  }
+};
+const TOKEN = { CLAUDE_CODE_OAUTH_TOKEN: 'test-token', CLAUDE_AGENT_ENABLED: undefined };
+
+test('resolveTransport：正常主对话报 claude-subscription 且不带原因', () => {
+  withEnv(TOKEN, () => {
+    assert.deepStrictEqual(resolveTransport({ model: 'claude-sonnet-4-6' }), {
+      transport: 'claude-subscription', reason: null,
+    });
+  });
+});
+
+test('resolveTransport：deepseek 是独立通道，不能被报成 api', () => {
+  withEnv(TOKEN, () => {
+    const r = resolveTransport({ model: 'deepseek' });
+    assert.equal(r.transport, 'deepseek');
+    assert.equal(r.reason, 'model_deepseek');
+  });
+});
+
+test('resolveTransport：每一种静默改道都带结构化原因（图片 / 委托 MCP / 续调 / 无 token / 被关）', () => {
+  withEnv(TOKEN, () => {
+    assert.equal(resolveTransport({ images: ['x'] }).reason, 'images_unsupported');
+    assert.equal(resolveTransport({ mcpTools: [{ name: 't' }] }).reason, 'frontend_mcp_unsupported');
+    assert.equal(resolveTransport({}, { finalContent: 'x' }).reason, 'delegated_resume');
+  });
+  withEnv({ ...TOKEN, CLAUDE_CODE_OAUTH_TOKEN: undefined }, () => {
+    assert.equal(resolveTransport({}).transport, 'api');
+    assert.equal(resolveTransport({}).reason, 'subscription_unconfigured');
+  });
+  withEnv({ ...TOKEN, CLAUDE_AGENT_ENABLED: 'false' }, () => {
+    assert.equal(resolveTransport({}).transport, 'api');
+    assert.equal(resolveTransport({}).reason, 'subscription_disabled');
+  });
+});
+
+test('resolveTransport：布尔版永远是它的投影（防两份条件漂移）', () => {
+  const cases = [
+    [{ model: 'claude-sonnet-4-6' }, null],
+    [{ model: 'deepseek' }, null],
+    [{ model: 'x', images: ['i'] }, null],
+    [{ model: 'x', mcpTools: [{ name: 't' }] }, null],
+    [{ model: 'claude-sonnet-4-6' }, { finalContent: 'y' }],
+  ];
+  for (const env of [TOKEN, { ...TOKEN, CLAUDE_CODE_OAUTH_TOKEN: undefined }, { ...TOKEN, CLAUDE_AGENT_ENABLED: 'false' }]) {
+    withEnv(env, () => {
+      for (const [opts, resume] of cases) {
+        assert.equal(
+          shouldUseClaudeAgent(opts, resume),
+          resolveTransport(opts, resume).transport === 'claude-subscription',
+          `不一致：${JSON.stringify(opts)} resume=${JSON.stringify(resume)}`,
+        );
+      }
+    });
+  }
+});
+
+/* 注：route 帧的字段集测试放在 test/lib-stream-frames.test.cjs。
+   本文件只管「选哪条线」（resolveTransport），不管「怎么报给前端」。 */
+
+/* system/init 是「这一轮实际拿到了什么」的唯一权威自述。2026-09-18 之前我们只从里面取
+   4 个字段，把 tools 和 mcp_servers 丢了 —— 于是「首轮工具表为空」这件事既报不出来也证不了。
+   这条测试钉住这两个字段不再被丢，顺带钉住「只取数量与状态、不取内容」。 */
+test('readInitInfo 取到工具表与 MCP 连接状态（首轮空工具表要靠它定案）', () => {
+  const info = readInitInfo({
+    apiKeySource: 'none',
+    claude_code_version: '2.1.274',
+    model: 'claude-sonnet-4-6',
+    slash_commands: ['compact', 'clear'],
+    tools: ['mcp__shenyan__recall', 'mcp__shenyan__hold', 'Read'],
+    mcp_servers: [{ name: 'shenyan', status: 'connected', source: 'sdk' }],
+  });
+  assert.equal(info.toolsCount, 3);
+  assert.equal(info.shenyanToolsCount, 2, '只数 mcp__shenyan__ 前缀的');
+  assert.deepStrictEqual(info.mcpServers, ['shenyan=connected']);
+  assert.equal(info.apiKeySource, 'none');
+
+  // 首轮真的没工具时，必须能如实报出来（而不是像以前那样静默变成 undefined）
+  const empty = readInitInfo({ tools: [], mcp_servers: [{ name: 'shenyan', status: 'pending' }] });
+  assert.equal(empty.toolsCount, 0, '空工具表要报 0，不能报 null');
+  assert.equal(empty.shenyanToolsCount, 0);
+  assert.deepStrictEqual(empty.mcpServers, ['shenyan=pending']);
+
+  // 字段缺失（旧 CLI）时给 null，不伪造 0
+  const legacy = readInitInfo({});
+  assert.equal(legacy.toolsCount, null);
+  assert.equal(legacy.mcpServers, null);
 });
 
 test('normalizeUsage maps Anthropic cache buckets into request_stats shape', () => {
