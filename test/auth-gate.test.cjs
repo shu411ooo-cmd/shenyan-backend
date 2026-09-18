@@ -46,7 +46,7 @@ function hit(method, path, body) {
 
 test('登录门：未登录访问受保护的 /api/* 必须 401', async () => {
   // 这几条是「有真实数据、泄露了要命」的代表：对话、记忆、日记、人格锚
-  for (const p of ['/api/messages', '/api/memories', '/api/diary', '/api/system-prompt', '/api/conversation']) {
+  for (const p of ['/api/messages', '/api/memories', '/api/diary', '/api/system-prompt', '/api/conversation', '/api/claude-agent/quota']) {
     assert.strictEqual(await hit('GET', p), 401, `${p} 未登录时应当 401（门被拆了？）`);
   }
 });

@@ -24,6 +24,7 @@ const { buildMemoryMcpHeaders, resolveMemoryMcpConfig } = require('./lib/memory-
 //   本文件用不到；一并引入只是图整齐，代价为零，不值得再冒一次裁剪的风险。）
 const { randomDelay, parseJsonLoose, callDeepSeek, callReplyModel, callOpenRouter, callVisionModel } = require('./lib/llm');
 const { getClaudeAgentRuntimeStatus, resolveModel, runClaudeAgent, shouldUseClaudeAgent } = require('./lib/claude-agent');
+const { getClaudeQuotaSnapshot } = require('./lib/claude-quota');
 // 流内帧（发给前端的跨仓库契约面）：改字段名必须回头看前端的 ChatScreen
 const { routeFrame } = require('./lib/stream-frames');
 const {
@@ -4880,6 +4881,13 @@ app.get('/health', (req, res) => {
       automaticCleanup: false,
     },
   });
+});
+
+// 只读最近一次活跃 Agent Query 顺手取得的额度快照；不会为查询额度新开 Claude 进程。
+// 受全局登录门保护，且明确 no-store，避免浏览器把旧窗口再缓存一层。
+app.get('/api/claude-agent/quota', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(getClaudeQuotaSnapshot());
 });
 
 // ===== 语音通话（ringdonut 子服务挂载）=====
