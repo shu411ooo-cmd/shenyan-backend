@@ -14,6 +14,7 @@ const createMoments = require('./routes/moments');
 // module.exports 仍导出 extractMetaHtml / digXhsNote（外部消费者用），故此处仍需引入
 const { extractMetaHtml, digXhsNote } = require('./lib/share-parse');
 const { callDeepSeekJson } = require('./lib/deepseek-json');
+const { buildOmbreHeaders } = require('./lib/ombre-auth');
 // ⚠️ 别按「grep 带括号的函数调用」来裁剪这行 import。
 // callDeepSeek 在本文件里没有 callDeepSeek(...) 形式的调用，但它**作为依赖被注入**：
 //   app.use('/api/music', createMusicRouter({ supabase, warnOnce, callDeepSeek }))
@@ -119,19 +120,6 @@ function parseSSEResponse(text) {
 let ombreSessionId = null;
 let ombreCallId = 0;
 
-function buildOmbreHeaders(extraHeaders = {}) {
-  const token = process.env.OMBRE_STATIC_TOKEN || '';
-
-  return {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json, text/event-stream',
-    // 兼容两种常见鉴权头，尽量把问题从“头名不对”里排掉
-    Authorization: `Bearer ${token}`,
-    'Ombre-MCP-Token': token,
-    ...extraHeaders,
-  };
-}
-
 async function readResponseBody(response) {
   const rawText = await response.text();
   console.log('📡 [调试] 响应原文:', rawText);
@@ -140,12 +128,12 @@ async function readResponseBody(response) {
 
 async function initOmbreSession() {
   try {
-    const headers = buildOmbreHeaders();
+    const headers = buildOmbreHeaders(process.env);
 
     console.log('========== OMBRE INIT REQUEST ==========');
     console.log('OMBRE_BRAIN_URL:', process.env.OMBRE_BRAIN_URL);
     console.log('Token length:', process.env.OMBRE_STATIC_TOKEN?.length || 0);
-    console.log('Authorization:', headers.Authorization);
+    console.log('Authorization set:', !!headers.Authorization);
     console.log('Ombre-MCP-Token set:', !!headers['Ombre-MCP-Token']);
 
     const response = await fetch(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
@@ -201,7 +189,7 @@ async function initOmbreSession() {
     await fetch(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
       method: 'POST',
       signal: AbortSignal.timeout(15000),
-      headers: buildOmbreHeaders({
+      headers: buildOmbreHeaders(process.env, {
         'Mcp-Session-Id': ombreSessionId,
       }),
       body: JSON.stringify({
@@ -225,17 +213,12 @@ async function callOmbreTool(toolName, args = {}) {
   }
 
   try {
-    const token = process.env.OMBRE_STATIC_TOKEN || '';
     console.log(`🚀 [调试] 正在调用工具 ${toolName}，参数:`, args);
 
     const response = await fetch(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
       method: 'POST',
       signal: AbortSignal.timeout(30000),
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream',
-        Authorization: `Bearer ${token}`
-      },
+      headers: buildOmbreHeaders(process.env),
       body: JSON.stringify({
         jsonrpc: '2.0',
         method: 'tools/call',
