@@ -7,6 +7,17 @@
 > **本文件写过两轮。** 第一轮是会话层审计（§〇–§二、§四–§六）。第二轮补了 **§2.5 的 system 消息观测**和 **§三末尾的「平台事实」** —— 后者是**全新知识**（SDK 自己到底记了什么，实测出来的），接手前值得先读那一节。
 > 本文所有技术断言都附了来源：SDK 类型定义的行号、Supabase 里的实测行、或外部仓库。**带「未定」字样的就是没定论，别当结论用。**
 
+## Codex 复核勘误（当前状态优先看这里）
+
+自动 retention 已撤下，相关 migration 也已删除；当前服务**不会自动删除** Claude Agent transcript 或 session link。`GET /health` 以 `claudeAgentSessions.automaticCleanup=false` 明示这一点。
+
+原因不是会话级口径有误，而是原实现仍有两个不能上线的边界：
+
+1. 「确认整会话过期」与「删除整会话」不是原子操作，可能和刚启动的 resume 交错，重新制造断头 transcript。
+2. 固定扫描最老 500 条会被拥有大量旧条目的活跃长会话长期占满，让其他过期会话饥饿。
+
+因此本文后续所有“清理已修”“默认 90 天”“首次上线会删”的描述均为历史审计记录，**不代表当前代码行为**。`forked/auth/compact` 等只读观测仍保留。另请注意：SDK 类型定义明确写明 `apiKeySource='none'` 也可能是 bearer token 或第三方云；在本项目剥离 API key 并显式传 OAuth token 的前提下，它与订阅线路一致，但不是单独一项就能完成的身份证明。
+
 ---
 
 ## 〇、先看这里：这棵树被谁动了
@@ -140,7 +151,7 @@ tr -dc '\000' < 文件 | wc -c     # 非 0 = 中招了
 
 | 消息 | 现在打出来的日志 | 为什么重要 |
 |---|---|---|
-| `system/init` | `⚙️ [Claude Agent] auth=… cli=… model=… slash=N（含 compact / 无 compact）` | **`apiKeySource` 是唯一能证伪「这一轮真走了订阅线」的信号**（`'none'` = OAuth/订阅线；出现别的字样 = 被别的凭据接管）。`slash_commands` 顺带回答 `/compact` 可不可用 |
+| `system/init` | `⚙️ [Claude Agent] auth=… cli=… model=… slash=N（含 compact / 无 compact）` | `apiKeySource` 非 `none` 能直接证伪「这一轮走了订阅线」；`none` 仍需结合受控子进程 env 判断。`slash_commands` 顺带回答 `/compact` 可不可用 |
 | `system/compact_boundary` | `📦 [Claude Compact] trigger=auto pre=… post=… ms=…` | SDK 自己的上下文压缩就发生在这里；`trigger` 区分 auto / manual |
 | `system/status`（带 `compact_result`） | `📦 [Claude Compact] result=success\|failed error=…` | 压缩的收尾判定，失败原文必须留痕 |
 
