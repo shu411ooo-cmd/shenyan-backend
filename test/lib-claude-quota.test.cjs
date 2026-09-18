@@ -69,8 +69,12 @@ test('rate_limit_event 按窗口合并，并兼容秒级 epoch reset', () => {
     subscription_type: 'max', rate_limits_available: true,
     rate_limits: { seven_day: { utilization: 10, resets_at: null } },
   });
+  // ⚠️ 事件这条的 utilization 是 **0–1 小数**，不是百分数（2026-09-18 生产实采 + 核对 sdk.d.ts）。
+  //    这条用例原来喂的是 91（按百分数），把错误的单位假设写进了测试；
+  //    而且它偏偏只断言了 seven_day 的值，没断言 five_hour —— 盲区正好落在 bug 上。
+  //    现在按真实形状喂 0.92，并断言归一到 92。
   cache.observeRateLimit({
-    rateLimitType: 'five_hour', status: 'allowed_warning', utilization: 91,
+    rateLimitType: 'five_hour', status: 'allowed_warning', utilization: 0.92,
     resetsAt: Date.parse('2026-09-18T20:00:00Z') / 1000,
   });
   const out = cache.getSnapshot();
@@ -78,7 +82,33 @@ test('rate_limit_event 按窗口合并，并兼容秒级 epoch reset', () => {
   assert.equal(out.subscriptionType, 'max');
   assert.equal(out.windows.find((w) => w.id === 'five_hour').status, 'allowed_warning');
   assert.equal(out.windows.find((w) => w.id === 'five_hour').resetsAt, '2026-09-18T20:00:00.000Z');
+  assert.equal(out.windows.find((w) => w.id === 'five_hour').utilization, 92,
+    '0.92 归一后应是 92，不是 0.92 也不是 9100');
   assert.equal(out.windows.find((w) => w.id === 'seven_day').utilization, 10);
+});
+
+/* 单位归一钉死：两条来源的 utilization 刻度不同（usage API 是 0–100，rate_limit_event 是 0–1），
+   对外必须恒为 0–100。否则前端拿到的数会**取决于这次是哪条路回答的** —— 静默、且只在换源时发作。 */
+test('utilization 单位归一：两条来源对外都是 0–100', () => {
+  const now = Date.parse('2026-09-18T19:00:00Z');
+  const cache = createQuotaCache({ now: () => now });
+
+  cache.observeUsage({
+    subscription_type: 'pro', rate_limits_available: true,
+    rate_limits: { five_hour: { utilization: 42.5, resets_at: null } },   // usage 路：已是百分数
+  });
+  assert.equal(cache.getSnapshot().windows[0].utilization, 42.5, 'usage 路不应被再乘一次');
+
+  cache.observeRateLimit({ rateLimitType: 'seven_day', status: 'allowed', utilization: 0.075 });
+  const w = cache.getSnapshot().windows.find((x) => x.id === 'seven_day');
+  // 0.075 × 100 在 JS 里是 7.500000000000001，必须 round 掉
+  assert.equal(w.utilization, 7.5, '事件路应 ×100 且不留浮点噪声');
+});
+
+test('utilization 缺字段或非有限数一律 null，绝不编造 0', () => {
+  const cache = createQuotaCache({ now: () => Date.parse('2026-09-18T19:00:00Z') });
+  cache.observeRateLimit({ rateLimitType: 'five_hour', status: 'allowed' });
+  assert.strictEqual(cache.getSnapshot().windows[0].utilization, null, '没有这个数就该是 null');
 });
 
 test('额度刷新复用现有 Query，并强制 skipBehaviors 避免扫七天 transcript', async () => {

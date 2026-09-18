@@ -47,6 +47,24 @@
 `seven_day_opus`、`seven_day_sonnet`、`seven_day_overage_included`、`overage`，以及
 `model:<服务端名称>`。前端应按已知值翻译，未知值保留而不是丢弃。
 
+### ⚠️ `utilization` 的单位：恒为 0–100，别再猜
+
+**两条来源的原始刻度不一样，差 100 倍：**
+
+| 来源 | 原始 `utilization` | 依据 |
+|---|---|---|
+| usage API（`SDKControlGetUsageResponse`） | **0–100** | `sdk.d.ts:4015` 明写 *"Percentage of the window used, **0-100**."* |
+| `rate_limit_event`（`SDKRateLimitInfo`） | **0–1** | 类型里**没有文档**；生产实采为 `0.92` 且 `status=allowed_warning`（0.92% 不可能是 warning） |
+
+本文件上面那个 DTO 例子里写的 `"utilization": 42.5` 是 usage 路的刻度 —— 而**首次生产实采走的是事件路**，
+拿到的是 `0.92`。同一个字段名两种刻度、且**这次是哪个取决于哪条路回答的**，这正是本仓反复踩的漂移形状，
+而且它静默、只在换源时发作。
+
+`lib/claude-quota.js` 现在在 `normalizeWindow` 里统一乘到 0–100（事件路 ×100，并 round 掉浮点噪声），
+**对外只承诺一种刻度**，前端永远不需要知道这次是谁回答的。有两条测试钉着它。
+
+（`extraUsage.utilization` 仍是原样透传 —— 那个字段的单位尚未确认，等有真实样本再说。）
+
 ## 失效语义
 
 - 15 分钟没有成功观测：`stale:true`，但仍返回最后一份快照。
