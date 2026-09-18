@@ -14,7 +14,7 @@ const createMoments = require('./routes/moments');
 // module.exports 仍导出 extractMetaHtml / digXhsNote（外部消费者用），故此处仍需引入
 const { extractMetaHtml, digXhsNote } = require('./lib/share-parse');
 const { callDeepSeekJson } = require('./lib/deepseek-json');
-const { buildOmbreHeaders } = require('./lib/ombre-auth');
+const { buildMemoryMcpHeaders, resolveMemoryMcpConfig } = require('./lib/memory-mcp');
 // ⚠️ 别按「grep 带括号的函数调用」来裁剪这行 import。
 // callDeepSeek 在本文件里没有 callDeepSeek(...) 形式的调用，但它**作为依赖被注入**：
 //   app.use('/api/music', createMusicRouter({ supabase, warnOnce, callDeepSeek }))
@@ -128,15 +128,18 @@ async function readResponseBody(response) {
 
 async function initOmbreSession() {
   try {
-    const headers = buildOmbreHeaders(process.env);
+    const memoryMcp = resolveMemoryMcpConfig(process.env);
+    if (!memoryMcp.configured || memoryMcp.provider !== 'ombre') return false;
+    const headers = buildMemoryMcpHeaders(process.env);
 
     console.log('========== OMBRE INIT REQUEST ==========');
-    console.log('OMBRE_BRAIN_URL:', process.env.OMBRE_BRAIN_URL);
-    console.log('Token length:', process.env.OMBRE_STATIC_TOKEN?.length || 0);
+    console.log('Memory provider:', memoryMcp.provider);
+    console.log('Memory MCP endpoint:', memoryMcp.endpoint);
+    console.log('Token configured:', !!memoryMcp.token);
     console.log('Authorization set:', !!headers.Authorization);
     console.log('Ombre-MCP-Token set:', !!headers['Ombre-MCP-Token']);
 
-    const response = await fetch(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
+    const response = await fetch(memoryMcp.endpoint, {
       method: 'POST',
       headers,
       signal: AbortSignal.timeout(30000),
@@ -186,10 +189,10 @@ async function initOmbreSession() {
     }
 
     // 教程里的第二步：发送 initialized 通知
-    await fetch(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
+    await fetch(memoryMcp.endpoint, {
       method: 'POST',
       signal: AbortSignal.timeout(15000),
-      headers: buildOmbreHeaders(process.env, {
+      headers: buildMemoryMcpHeaders(process.env, {
         'Mcp-Session-Id': ombreSessionId,
       }),
       body: JSON.stringify({
@@ -207,18 +210,23 @@ async function initOmbreSession() {
 }
 
 async function callOmbreTool(toolName, args = {}) {
-  if (!process.env.OMBRE_BRAIN_URL) {
-    console.error('❌ [错误] OMBRE_BRAIN_URL 未配置！请检查 Railway 环境变量！');
+  const memoryMcp = resolveMemoryMcpConfig(process.env);
+  if (!memoryMcp.configured) {
+    console.error('❌ [错误] MEMORY_MCP_URL / OMBRE_BRAIN_URL 未配置！');
+    return null;
+  }
+  if (memoryMcp.provider !== 'ombre') {
+    console.error(`❌ [错误] 记忆工具适配器尚不支持 provider=${memoryMcp.provider}`);
     return null;
   }
 
   try {
     console.log(`🚀 [调试] 正在调用工具 ${toolName}，参数:`, args);
 
-    const response = await fetch(`${process.env.OMBRE_BRAIN_URL}/mcp`, {
+    const response = await fetch(memoryMcp.endpoint, {
       method: 'POST',
       signal: AbortSignal.timeout(30000),
-      headers: buildOmbreHeaders(process.env),
+      headers: buildMemoryMcpHeaders(process.env),
       body: JSON.stringify({
         jsonrpc: '2.0',
         method: 'tools/call',
