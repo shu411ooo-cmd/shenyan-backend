@@ -4,6 +4,7 @@
   "GET /api/auth/check",
   "GET /health",
   "GET /api/claude-agent/quota",
+  "GET /api/claude-agent/context",
   "GET /api/call/invite",
   "POST /api/call/invite",
   "POST /api/call/answer",

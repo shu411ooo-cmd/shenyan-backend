@@ -25,6 +25,7 @@ const { buildMemoryMcpHeaders, resolveMemoryMcpConfig } = require('./lib/memory-
 const { randomDelay, parseJsonLoose, callDeepSeek, callReplyModel, callOpenRouter, callVisionModel } = require('./lib/llm');
 const { getClaudeAgentRuntimeStatus, resolveModel, runClaudeAgent, shouldUseClaudeAgent } = require('./lib/claude-agent');
 const { getClaudeQuotaSnapshot } = require('./lib/claude-quota');
+const { getClaudeContextSnapshot } = require('./lib/claude-context-usage');
 // 流内帧（发给前端的跨仓库契约面）：改字段名必须回头看前端的 ChatScreen
 const { routeFrame } = require('./lib/stream-frames');
 const {
@@ -4888,6 +4889,14 @@ app.get('/health', (req, res) => {
 app.get('/api/claude-agent/quota', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json(getClaudeQuotaSnapshot());
+});
+
+// 订阅线的**真实上下文窗口占用**（SDK 权威值，不是应用层估算）。
+// 与额度同一个形状：只读内存里的 last-known-good，绝不为了这次查询新开 Query/进程。
+// 冷启动且尚未发生订阅线对话时返回 available:false + reason:"not_observed"，不伪造 0%。
+app.get('/api/claude-agent/context', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(getClaudeContextSnapshot());
 });
 
 // ===== 语音通话（ringdonut 子服务挂载）=====

@@ -4,7 +4,7 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "test": "node --test test/sse-parser.test.cjs test/sse-replay.test.cjs test/routes.test.cjs test/lib-time.test.cjs test/lib-cache-control.test.cjs test/lib-share-parse.test.cjs test/lib-tools-schema.test.cjs test/lib-claude-agent.test.cjs test/lib-claude-quota.test.cjs test/lib-stream-frames.test.cjs test/lib-claude-session-store.test.cjs test/lib-ombre-auth.test.cjs test/lib-memory-mcp.test.cjs test/lib-stats-row.test.cjs test/lib-context-select.test.cjs test/lib-context-retrieval.test.cjs test/lib-context-build.test.cjs test/lib-memory.test.cjs test/lib-link-relations.test.cjs test/lib-memory-quality.test.cjs test/auth-gate.test.cjs test/tool-handler-guards.test.cjs",
+    "test": "node --test test/sse-parser.test.cjs test/sse-replay.test.cjs test/routes.test.cjs test/lib-time.test.cjs test/lib-cache-control.test.cjs test/lib-share-parse.test.cjs test/lib-tools-schema.test.cjs test/lib-claude-agent.test.cjs test/lib-claude-quota.test.cjs test/lib-stream-frames.test.cjs test/lib-claude-session-store.test.cjs test/lib-ombre-auth.test.cjs test/lib-memory-mcp.test.cjs test/lib-stats-row.test.cjs test/lib-context-select.test.cjs test/lib-context-retrieval.test.cjs test/lib-context-build.test.cjs test/lib-memory.test.cjs test/lib-link-relations.test.cjs test/lib-memory-quality.test.cjs test/auth-gate.test.cjs test/tool-handler-guards.test.cjs test/lib-claude-context-usage.test.cjs",
     "test:sse": "node --test test/sse-parser.test.cjs test/sse-replay.test.cjs",
     "record:sse": "node scripts/record-sse-trace.cjs",
     "migrate": "node scripts/migrate.js",
