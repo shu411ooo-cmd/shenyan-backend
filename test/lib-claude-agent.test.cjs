@@ -25,6 +25,25 @@ test('buildAgentPrompt separates the system prompt and preserves ordered history
     { role: 'user', content: '继续说' },
   ]);
 });
+
+test('buildAgentPrompt sends only new turn material when resuming a native session', () => {
+  const built = buildAgentPrompt([
+    { role: 'system', content: '人格锚' },
+    { role: 'user', content: '旧问题' },
+    { role: 'assistant', content: '旧回答' },
+    { role: 'user', content: '新问题' },
+  ], [
+    { role: 'user', content: '【当前时间】晚上十点' },
+    { role: 'user', content: '新问题' },
+  ]);
+  assert.match(built.systemPrompt, /人格锚/);
+  assert.doesNotMatch(built.prompt, /旧问题|旧回答/);
+  const lines = built.prompt.split('\n').slice(1).map((line) => JSON.parse(line));
+  assert.deepEqual(lines, [
+    { role: 'user', content: '【当前时间】晚上十点' },
+    { role: 'user', content: '新问题' },
+  ]);
+});
 test('contentToText flattens text blocks without leaking image data', () => {
   const text = contentToText([
     { type: 'text', text: '看看' },

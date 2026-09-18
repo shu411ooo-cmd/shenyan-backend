@@ -22,7 +22,14 @@ const { callDeepSeekJson } = require('./lib/deepseek-json');
 // （callOpenRouter 确实只在 lib/llm.js 内部被 callReplyModel 的降级链调用，
 //   本文件用不到；一并引入只是图整齐，代价为零，不值得再冒一次裁剪的风险。）
 const { randomDelay, parseJsonLoose, callDeepSeek, callReplyModel, callOpenRouter, callVisionModel } = require('./lib/llm');
-const { runClaudeAgent, shouldUseClaudeAgent } = require('./lib/claude-agent');
+const { resolveModel, runClaudeAgent, shouldUseClaudeAgent } = require('./lib/claude-agent');
+const {
+  clearSessionLink,
+  createSupabaseSessionStore,
+  loadSessionLink,
+  saveSessionLink,
+  sessionsEnabled: claudeSessionsEnabled,
+} = require('./lib/claude-session-store');
 // 上下文检索层的纯选择器（分区第 3 步 · 2026-09-10 搬去 lib/context/select.js）。
 // ⚠️ 这些名字还在文件底部的 module.exports 里被**裸引用**导出（topicHits / RELATION_TYPES
 //   还被 scripts/smoke-attention-temp.js 直接使用），所以不许按「调用点」裁剪这行。
@@ -38,6 +45,8 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY
 );
+const claudeSessionStore = createSupabaseSessionStore(supabase);
+const claudeSessionResetRequired = new Set();
 
 const createAuth = require('./routes/auth');
 // 登录门：交出 router 与 requireAuth 中间件（挂载顺序见下方注释）
@@ -3111,7 +3120,11 @@ async function buildMessages(sessionId, opts = {}) {
       role: 'user',
       content: msg.content
     }));
-    return { messages: [{ role: 'system', content: systemPrompt }, ...userMsgs], diagnostics: null };
+    return {
+      messages: [{ role: 'system', content: systemPrompt }, ...userMsgs],
+      diagnostics: null,
+      agentTurnMessages: userMsgs,
+    };
   }
 
   // 前端二：Context Assembly（Frozen/Summary/Live 四段组装，含缓存断点）
@@ -3129,15 +3142,18 @@ async function buildMessages(sessionId, opts = {}) {
     .eq('visible', true)
     .order('created_at', { ascending: true });
 
-  return {
-    messages: [
+  const messages = [
       { role: 'system', content: systemPrompt },
       ...(history || []).map(msg => ({
         role: msg.role === 'assistant' ? 'assistant' : 'user',
         content: msg.content
       }))
-    ],
+    ];
+  const latestUser = [...messages].reverse().find((message) => message.role === 'user');
+  return {
+    messages,
     diagnostics: null,
+    agentTurnMessages: latestUser ? [latestUser] : [],
   };
 }
 
@@ -3301,7 +3317,73 @@ async function finalizeChat(sessionId, res, finalReply, thinkingText, opts, diag
 const OPENROUTER_PROVIDER = { order: ['anthropic'] };
 
 // Claude Agent SDK 主对话适配：沿用现有 SSE 契约，SDK 内部只暴露沈晏的领域工具。
-// 会话历史仍以 Supabase/Context Assembly 为准，不使用 Claude Code 本地 session。
+// Supabase 消息/记忆仍是事实源；SDK SessionStore 只保存原生续接上下文与工具轨迹。
+async function prepareClaudeAgentSession(appSessionId, model) {
+  if (!claudeSessionsEnabled()) return { sessionStore: null, resumeSessionId: null, mode: 'off' };
+  try {
+    if (claudeSessionResetRequired.has(appSessionId)) {
+      return { sessionStore: claudeSessionStore, resumeSessionId: null, mode: 'rebuild' };
+    }
+    const link = await loadSessionLink(supabase, appSessionId);
+    if (!link) return { sessionStore: claudeSessionStore, resumeSessionId: null, mode: 'fresh' };
+    if (link.model !== model) {
+      await clearSessionLink(supabase, appSessionId);
+      return { sessionStore: claudeSessionStore, resumeSessionId: null, mode: 'model-change' };
+    }
+    if (!await claudeSessionStore.hasSession(link.sdk_session_id)) {
+      await clearSessionLink(supabase, appSessionId);
+      return { sessionStore: claudeSessionStore, resumeSessionId: null, mode: 'missing-transcript' };
+    }
+    // Consume the link before starting the turn. It is written back only after
+    // the transcript mirror completes successfully. A crash or mirror failure
+    // therefore leaves no stale resumable pointer after a process restart.
+    await clearSessionLink(supabase, appSessionId);
+    return { sessionStore: claudeSessionStore, resumeSessionId: link.sdk_session_id, mode: 'resume' };
+  } catch (error) {
+    claudeSessionResetRequired.add(appSessionId);
+    console.warn(`⚠️ [Claude Session] app=${appSessionId} prepare 失败，当前轮退回完整上下文: ${error.message}`);
+    return { sessionStore: null, resumeSessionId: null, mode: 'degraded' };
+  }
+}
+
+async function finishClaudeAgentSession(appSessionId, model, state, out) {
+  if (!claudeSessionsEnabled()) return;
+  if (!out.durable || !out.sessionId) {
+    claudeSessionResetRequired.add(appSessionId);
+    try { await clearSessionLink(supabase, appSessionId); } catch (error) {
+      console.warn(`⚠️ [Claude Session] app=${appSessionId} 清理失效映射失败: ${error.message}`);
+    }
+    return;
+  }
+  try {
+    await saveSessionLink(supabase, appSessionId, out.sessionId, model);
+    claudeSessionResetRequired.delete(appSessionId);
+    console.log(`🧵 [Claude Session] app=${appSessionId} mode=${state.mode} sdk=${String(out.sessionId).slice(0, 8)} durable=true`);
+  } catch (error) {
+    claudeSessionResetRequired.add(appSessionId);
+    console.warn(`⚠️ [Claude Session] app=${appSessionId} 保存映射失败，下轮重建: ${error.message}`);
+  }
+}
+
+async function runClaudeAgentForSession({ messages, opts, definitions, executeTool, serializeToolResult, observer, sessionId }) {
+  const model = resolveModel(opts.model);
+  const state = await prepareClaudeAgentSession(sessionId, model);
+  console.log(`🧵 [Claude Session] app=${sessionId} mode=${state.mode}${state.resumeSessionId ? ` sdk=${state.resumeSessionId.slice(0, 8)}` : ''}`);
+  const out = await runClaudeAgent({
+    messages,
+    turnMessages: opts._agentTurnMessages,
+    resumeSessionId: state.resumeSessionId,
+    sessionStore: state.sessionStore,
+    opts,
+    definitions,
+    executeTool,
+    serializeToolResult,
+    observer,
+  });
+  await finishClaudeAgentSession(sessionId, model, state, out);
+  return out;
+}
+
 async function streamClaudeAgentChat(messages, res, opts, sessionId) {
   const abortController = new AbortController();
   const onClose = () => {
@@ -3316,9 +3398,10 @@ async function streamClaudeAgentChat(messages, res, opts, sessionId) {
 
   try {
     console.log(`🟠 [Claude Agent] session=${sessionId} model=${String(opts.model || 'claude-sonnet-4-6')}`);
-    const out = await runClaudeAgent({
+    const out = await runClaudeAgentForSession({
       messages,
       opts,
+      sessionId,
       definitions: getTools(),
       executeTool: (name, args) => dispatchTool(name, args, sessionId),
       serializeToolResult: (name, result) => serializeToolResult(name, result, opts.degraded),
@@ -3343,9 +3426,10 @@ async function streamClaudeAgentChat(messages, res, opts, sessionId) {
 }
 
 async function callClaudeAgentNonStream(messages, tools, opts, sessionId) {
-  const out = await runClaudeAgent({
+  const out = await runClaudeAgentForSession({
     messages,
     opts: { ...opts, tools: tools ? opts.tools : 'off' },
+    sessionId,
     definitions: tools || [],
     executeTool: (name, args) => dispatchTool(name, args, sessionId),
     serializeToolResult: (name, result) => serializeToolResult(name, result, opts.degraded),
@@ -5653,16 +5737,23 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
 
   // 2. 构建消息数组 + 附图片（Context Assembly 已替代旧的 compressHistory 热路径压缩）
   //    opts.userMessage 传原文（注意力匹配用她的话，别拿整篇文档去翻记忆）；文档全文已随消息进上下文
-  const { messages: builtMessages, diagnostics } = await buildMessages(sessionId, { ...opts, userMessage });
+  const {
+    messages: builtMessages,
+    diagnostics,
+    agentTurnMessages: builtAgentTurnMessages = [],
+  } = await buildMessages(sessionId, { ...opts, userMessage });
   let messages = builtMessages;
+  const agentTurnMessages = [...builtAgentTurnMessages];
 
   // 2.5 分享链接卡片：正文喂给沈晏（前端发 share 字段 = 用户消息里贴了链接，卡片已抓正文）
   if (opts.share && opts.share.body) {
     const title = opts.share.title ? `《${opts.share.title}》` : '这篇文章';
-    messages.push({
+    const shareMessage = {
       role: 'user',
       content: `【分享的链接内容 · 对方贴来的】${title}\n${opts.share.body}`
-    });
+    };
+    messages.push(shareMessage);
+    agentTurnMessages.push(shareMessage);
     console.log(`📎 注入分享正文（${opts.share.body.length} 字符）`);
   }
 
@@ -5678,7 +5769,9 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
         opts.degraded.add('breath_null');
         console.error('❌ breath 背景注入失败：返回 null（新对话将无记忆背景）');
       } else if (bg.length > 0) {
-        messages.splice(1, 0, { role: 'user', content: `【背景记忆 · 对话开始前提取】\n${bg}` });
+        const breathMessage = { role: 'user', content: `【背景记忆 · 对话开始前提取】\n${bg}` };
+        messages.splice(1, 0, breathMessage);
+        agentTurnMessages.unshift(breathMessage);
         console.log(`🌿 第一条消息注入 breath 背景（${bg.length} 字符）`);
       }
       // bg === '' → 合法空（确实没有可浮起的记忆），保持静默，不算降级
@@ -5697,6 +5790,10 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
       content: `【看图】她刚发来${opts.images.length > 1 ? `${opts.images.length}张图片` : '一张图片'}。先看清${opts.images.length > 1 ? '它们' : '它'}，再自然地回复；回复里自然地带上你看到的一眼事实（不是看图报告）——这句话也是你对这张图的记忆。`
     });
   }
+
+  // Used only when an existing native Agent SDK session is resumed. Fresh
+  // sessions still receive the complete assembled messages above.
+  opts._agentTurnMessages = agentTurnMessages;
 
   if (useStream) {
     res.setHeader('Content-Type', 'text/event-stream');
