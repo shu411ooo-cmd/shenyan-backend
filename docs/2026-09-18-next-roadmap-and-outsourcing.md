@@ -4,6 +4,69 @@
 > 基线：`94e68e1`（Claude Agent SDK 主链、Ombre MCP 鉴权、provider-neutral memory transport 已上线）  
 > 用途：这是下一阶段的唯一总清单。外部模型先按任务单做只读调查并回执；Codex 做二轮证据审查、实现、测试和部署。
 
+> 晚间更新：工具加固、真实线路帧、订阅额度 adapter/API、线路胶囊以及消息恢复修复均已完成；下方较早的“当前基线”保留作决策记录，执行时以本节的滚动清单为准。
+
+## 滚动执行清单（长期计划）
+
+原则：每一阶段都必须能单独验收、单独回退；观测与行为修改分开提交。外部模型负责证据调查和测试设计，Codex 负责二轮复核、实现、生产验证。
+
+### S0 稳定性收口（已完成）
+
+- [x] Agent 工具参数与结果护栏、真实 transport 回传、完整测试。
+- [x] 订阅额度稳定 DTO、last-known-good 缓存与 `/api/claude-agent/quota`。
+- [x] 前端显示后端确认的真实线路。
+- [x] 线路胶囊跨页面持久化；新一轮确认时不再闪退。
+- [x] 后端消息作为恢复真相源；退出后短暂补拉仍在生成的回复。
+- [x] 句子呈现间隔由 300ms 降到 100ms，减少“明明收到却慢慢出现”的假卡顿。
+
+### S1 Claude 订阅控制面（下一步）
+
+- [ ] 后端正式接收 `transport: auto | claude-subscription | api`，强制模式失败时返回结构化错误，禁止静默改道。
+- [ ] Session Garden 增加“线路”选择，并完成旧 localStorage 的无损迁移。
+- [ ] Usage 页面增加订阅额度窗口：5 小时、7 天及动态新增窗口；支持 loading / stale / unavailable / warning / rejected。
+- [ ] 额度卡只展示已用百分比、重置时间和更新时间，不伪造剩余 token。
+- [ ] 做一次 fresh、resume、图片、前端 MCP、强制 API 的端到端线路矩阵。
+
+完成门：用户选择、请求字段、后端实际线路、header 回显四者一致；额度接口失败不影响聊天。
+
+### S2 Context Flight Recorder（只观测，不改上下文）
+
+- [ ] 每轮记录 requested/resolved transport、fresh/resume/rebuild、总耗时与各阶段耗时。
+- [ ] 分项记录 system、近期消息、摘要、长期记忆、工具 schema 的估算 token；不记录正文。
+- [ ] 记录 SDK context usage、compact 前后量、cache read/write 与 rate-limit 窗口。
+- [ ] 给 request_stats 增加版本化统计口径，旧 OpenRouter 与 Agent SDK 指标明确分栏。
+- [ ] 做一个仅本人可见的诊断视图或下载回执，方便把匿名数据交给外部模型分析。
+
+完成门：至少收集 fresh、resume、工具调用、compact 各 10 轮，再允许修改压缩或缓存策略。
+
+### S3 上下文热路径优化
+
+- [ ] 用 S2 数据证明 resume 中哪些 DB 查询、哈希、token 估算没有消费者。
+- [ ] 先消除可证明无用的 IO，再讨论上下文内容；每项都放在 feature flag 后。
+- [ ] 保留记忆注入、塌缩触发器和 request_stats 所需语义，不用“看起来重复”作为删除依据。
+- [ ] 对照优化前后的首 token 延迟、总耗时、输入 token 和缓存命中率。
+
+完成门：性能或额度收益可量化，回复质量回归集无下降，关闭 flag 可立即回退。
+
+### S4 压缩边界
+
+- [ ] 明确 SDK compact 管短期 transcript，应用 summary/collapse 管跨会话长期语义，或用数据提出更好的单一职责边界。
+- [ ] 压缩策略与缓存策略绝不在同一轮修改。
+- [ ] 覆盖 compact 失败、进程重启、session 丢失、超长工具结果和手动重建。
+
+### S5 记忆系统 shadow preview
+
+- [ ] Ombre 保持生产主库；Serein 使用隔离服务、隔离数据卷、只读导入，禁止双写。
+- [ ] 固定查询集对比召回质量、延迟、可解释性、写入副作用和恢复成本。
+- [ ] 先产出迁移/回滚演练报告，再决定是否替换；不以功能数量作为迁移理由。
+
+### 固定节奏
+
+1. 外部模型按任务单只读审计并按证据格式回执。
+2. Codex 二轮复核后，把一阶段拆成若干独立小提交。
+3. 本地测试、构建、生产部署、公网验证四步全过才勾选。
+4. 每完成一阶段更新本清单的勾选、commit 和已知风险；聊天记录不作为唯一交接介质。
+
 ---
 
 ## 一句话决策
