@@ -6,6 +6,7 @@ const {
   contentToText,
   normalizeUsage,
   shouldUseClaudeAgent,
+  thinkingOptions,
   toolShape,
 } = require('../lib/claude-agent');
 const { getTools } = require('../lib/tools-schema');
@@ -84,6 +85,30 @@ test('normalizeUsage maps Anthropic cache buckets into request_stats shape', () 
       cache_creation_input_tokens: 5,
     },
   });
+});
+
+test('thinking display defaults to summarized and supports an omitted kill switch', () => {
+  const before = process.env.CLAUDE_AGENT_THINKING_DISPLAY;
+  try {
+    delete process.env.CLAUDE_AGENT_THINKING_DISPLAY;
+    assert.deepEqual(thinkingOptions('standard'), {
+      thinking: { type: 'adaptive', display: 'summarized' },
+      effort: 'medium',
+    });
+    assert.deepEqual(thinkingOptions('deep'), {
+      thinking: { type: 'adaptive', display: 'summarized' },
+      effort: 'high',
+    });
+    process.env.CLAUDE_AGENT_THINKING_DISPLAY = 'omitted';
+    assert.deepEqual(thinkingOptions('standard'), {
+      thinking: { type: 'adaptive', display: 'omitted' },
+      effort: 'medium',
+    });
+    assert.deepEqual(thinkingOptions('off'), { thinking: { type: 'disabled' } });
+  } finally {
+    if (before === undefined) delete process.env.CLAUDE_AGENT_THINKING_DISPLAY;
+    else process.env.CLAUDE_AGENT_THINKING_DISPLAY = before;
+  }
 });
 
 test('provider selection is opt-in by token and falls back for unsupported request shapes', () => {
