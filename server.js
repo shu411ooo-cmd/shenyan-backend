@@ -22,12 +22,14 @@ const { callDeepSeekJson } = require('./lib/deepseek-json');
 // （callOpenRouter 确实只在 lib/llm.js 内部被 callReplyModel 的降级链调用，
 //   本文件用不到；一并引入只是图整齐，代价为零，不值得再冒一次裁剪的风险。）
 const { randomDelay, parseJsonLoose, callDeepSeek, callReplyModel, callOpenRouter, callVisionModel } = require('./lib/llm');
-const { resolveModel, runClaudeAgent, shouldUseClaudeAgent } = require('./lib/claude-agent');
+const { getClaudeAgentRuntimeStatus, resolveModel, runClaudeAgent, shouldUseClaudeAgent } = require('./lib/claude-agent');
 const {
   clearSessionLink,
   createSupabaseSessionStore,
   loadSessionLink,
+  pruneExpiredSessions,
   saveSessionLink,
+  sessionRetentionMs,
   sessionsEnabled: claudeSessionsEnabled,
 } = require('./lib/claude-session-store');
 // 上下文检索层的纯选择器（分区第 3 步 · 2026-09-10 搬去 lib/context/select.js）。
@@ -3358,10 +3360,31 @@ async function finishClaudeAgentSession(appSessionId, model, state, out) {
   try {
     await saveSessionLink(supabase, appSessionId, out.sessionId, model);
     claudeSessionResetRequired.delete(appSessionId);
-    console.log(`🧵 [Claude Session] app=${appSessionId} mode=${state.mode} sdk=${String(out.sessionId).slice(0, 8)} durable=true`);
+    // 可观测性一行足矣：模式 + sdk 短哈希 + 是否真的续上 + 思考摘要字数。
+    // 全部是计数/短哈希，没有正文、参数、工具结果，也没有任何密钥。
+    console.log(`🧵 [Claude Session] app=${appSessionId} mode=${state.mode} sdk=${String(out.sessionId).slice(0, 8)} durable=true`
+      + `${out.forked ? ' forked=true' : ''} auth=${out.initInfo?.apiKeySource || '—'}`
+      + `${out.compactions?.length ? ` compact=${out.compactions.map((c) => c.trigger).join(',')}` : ''}`
+      + ` think=${String(out.thinkingText || '').length}`);
   } catch (error) {
     claudeSessionResetRequired.add(appSessionId);
     console.warn(`⚠️ [Claude Session] app=${appSessionId} 保存映射失败，下轮重建: ${error.message}`);
+  }
+}
+
+// Agent SDK 会话保留策略：transcript/link 都是「可重建的续接缓存」，按最后活动保留
+// CLAUDE_AGENT_SESSION_RETENTION_DAYS 天（默认 90，0 关闭）。过期即删，下轮自动 fresh 重建。
+async function pruneClaudeAgentSessionsTick() {
+  if (!claudeSessionsEnabled()) return; // 功能整体关闭时不碰表（开发环境可能还没建表）
+  const retentionMs = sessionRetentionMs();
+  if (retentionMs == null) return; // 未配置/0 → 不清理
+  try {
+    const pruned = await pruneExpiredSessions(supabase, { cutoff: new Date(Date.now() - retentionMs) });
+    if (pruned.transcripts || pruned.links) {
+      console.warn(`🧹 [Claude Session] 过期清理 transcripts=${pruned.transcripts} links=${pruned.links} 保留期=${Math.round(retentionMs / 86400000)}天`);
+    }
+  } catch (error) {
+    console.warn(`⚠️ [Claude Session] 过期清理失败: ${error.message}`);
   }
 }
 
@@ -4824,8 +4847,34 @@ async function consumeKeepalive(sessionId, injectedIds = []) {
 }
 
 // ===== 健康检查与路由 =====
+// release 标识（可观测性用，不依赖容器是否有 git）：优先环境变量，退回 git HEAD。
+// 只暴露 commit 短哈希，不含任何正文/密钥。
+function detectReleaseCommit() {
+  const fromEnv = process.env.RELEASE_COMMIT || process.env.ZEABUR_GIT_SHA || process.env.SOURCE_VERSION;
+  if (fromEnv) return String(fromEnv).trim().slice(0, 12) || null;
+  try {
+    const { execFileSync } = require('node:child_process');
+    const head = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+      timeout: 3000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return String(head).trim().slice(0, 12) || null;
+  } catch {
+    return null;
+  }
+}
+const releaseCommit = detectReleaseCommit();
+
 app.get('/health', (req, res) => {
-  res.json({ status: '服务正常，沈晏在线' });
+  const retentionDays = sessionRetentionMs() ? Math.round(sessionRetentionMs() / 86400000) : 0;
+  res.json({
+    status: '服务正常，沈晏在线',
+    release: releaseCommit || 'unknown',
+    claudeAgent: getClaudeAgentRuntimeStatus(),
+    claudeAgentSessions: {
+      enabled: claudeSessionsEnabled(),
+      retentionDays, // 0 = 关闭
+    },
+  });
 });
 
 // ===== 语音通话（ringdonut 子服务挂载）=====
@@ -6028,6 +6077,8 @@ if (require.main === module) {
       momentsModule.processDueCommentReplies();
       // 念头生命周期：独立于唤醒（唤醒关着时也要清，否则池子只进不出）
       sweepThoughtLifecycleTick();
+      // Agent SDK 会话保留期：过期 transcript/link 清理（默认 90 天，0 关闭）
+      pruneClaudeAgentSessionsTick();
     }, 15 * 60 * 1000);
     // 缓存保温 Keeper：每 5 分钟检查，距最后真实请求 ≥50min 才刷（判断在 cacheWarmTick 内部）
     setInterval(() => {
@@ -6037,6 +6088,8 @@ if (require.main === module) {
     sweepThoughtLifecycleTick();
     // 镜子日：启动先跑一轮 dormant 清扫，之后按 mirror_sweep_hours 自续排
     mirrorDaySweep().catch(err => console.error('💥 启动时 mirrorDaySweep 异常:', err.message));
+    // Agent SDK 会话保留期：启动先清一轮（别让「重启比 15 分钟还频繁」时永远轮不到）
+    pruneClaudeAgentSessionsTick();
   });
 }
 

@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   buildAgentPrompt,
   contentToText,
+  detectSessionFork,
   normalizeUsage,
   shouldUseClaudeAgent,
   thinkingOptions,
@@ -45,6 +46,15 @@ test('buildAgentPrompt sends only new turn material when resuming a native sessi
     { role: 'user', content: '新问题' },
   ]);
 });
+// 「mode=resume」只说明我们请求了 resume，不说明 SDK 真续上了。续不上时它会悄悄开新血脉，
+// 光看 mode 永远发现不了 —— 这条只影响日志（不改行为），但它是唯一能证伪 resume 的信号。
+test('detectSessionFork only fires when a requested resume returned a different session', () => {
+  assert.equal(detectSessionFork('s1', 's1'), false);          // 正常续上
+  assert.equal(detectSessionFork('s1', 's2'), true);           // 悄悄换了血脉
+  assert.equal(detectSessionFork(null, 's2'), false);          // fresh 轮，本来就没有可续的
+  assert.equal(detectSessionFork('s1', undefined), false);     // 没拿到 id，不误报
+});
+
 test('contentToText flattens text blocks without leaking image data', () => {
   const text = contentToText([
     { type: 'text', text: '看看' },
