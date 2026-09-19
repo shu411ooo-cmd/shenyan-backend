@@ -26,6 +26,10 @@ const { randomDelay, parseJsonLoose, callDeepSeek, callReplyModel, callOpenRoute
 const { getClaudeAgentRuntimeStatus, resolveModel, runClaudeAgent, shouldUseClaudeAgent } = require('./lib/claude-agent');
 const { getClaudeQuotaSnapshot } = require('./lib/claude-quota');
 const { getClaudeContextSnapshot } = require('./lib/claude-context-usage');
+const {
+  mergeRequestObservation,
+  observationStatColumns,
+} = require('./lib/request-observation');
 // 流内帧（发给前端的跨仓库契约面）：改字段名必须回头看前端的 ChatScreen
 const { routeFrame } = require('./lib/stream-frames');
 const {
@@ -2156,8 +2160,11 @@ const CORE_STAT_COLUMNS = [
 // usage 语义（OpenRouter）：OpenAI 风格 cached_tokens 是 prompt_tokens 的子集；
 // Anthropic 风格 cache_read/creation 是独立的桶。两者可能并存，语义可能随 provider 变化——
 // 所以 usage_raw 原样存 JSONB，命中率等派生指标一律从原始数据后算，不固化。
-async function recordRequestStat({ sessionId, client, model, stream, usageList = [], diagnostics = null, memory_degraded = null, keepalive_action = null, keepalive_meta = null }) {
+async function recordRequestStat({ sessionId, client, model, stream, usageList = [], diagnostics = null, observation = null, memory_degraded = null, keepalive_action = null, keepalive_meta = null }) {
   try {
+    // SDK 的额度/上下文 control API 与聊天并行跑；这里只延迟后台账本写入，
+    // 不延迟正文或 done 帧。观测 Promise 失败时仍保住同步线路字段与旧账本列。
+    const observed = await mergeRequestObservation(null, observation);
     const raw = usageList.filter(Boolean);
     const sum = (f) => raw.reduce((s, u) => s + (f(u) || 0), 0) || null;
     const d = diagnostics || {};
@@ -2188,6 +2195,7 @@ async function recordRequestStat({ sessionId, client, model, stream, usageList =
       live_tokens_est: d.live_tokens_est ?? null,
       messages_sent: d.messages_sent ?? null,
       estimated_tokens: d.estimated_tokens ?? null,
+      raw_estimated_tokens: d.raw_estimated_tokens ?? null,
       trimmed_turns: d.trimmed_turns ?? null,
       frozen_prefix_hash: d.frozen_prefix_hash ?? null,
       summary_hash: d.summary_hash ?? null,
@@ -2204,6 +2212,7 @@ async function recordRequestStat({ sessionId, client, model, stream, usageList =
       keepalive_action,
       keepalive_meta,
       memory_degraded,
+      ...observationStatColumns(observed),
     };
     // 写入：先整行；缺列就**从报错里抠出列名、剥掉重试**。
     //
@@ -3291,7 +3300,7 @@ function sanitizeMcpTools(rawTools) {
 
 // 流式会话收尾：落库 + 相册回写 + session 更新时间 + done + 后台任务 + 用量记录
 // （正常流与 MCP 续调路由共用；delegated 分支不落库直接 res.end，不走到这里）
-async function finalizeChat(sessionId, res, finalReply, thinkingText, opts, diagnostics, keepsakeP, usageList) {
+async function finalizeChat(sessionId, res, finalReply, thinkingText, opts, diagnostics, keepsakeP, usageList, observation = null) {
   await supabase.from('messages').insert({
     session_id: sessionId,
     role: 'assistant',
@@ -3321,7 +3330,7 @@ async function finalizeChat(sessionId, res, finalReply, thinkingText, opts, diag
   }
   recordRequestStat({
     sessionId, client: opts.client, model: toOpenRouterModel(opts.model),
-    stream: true, usageList, diagnostics,
+    stream: true, usageList, diagnostics, observation,
     memory_degraded: opts.degraded?.size ? [...opts.degraded].join(',') : null,
   });
 }
@@ -3401,6 +3410,10 @@ async function runClaudeAgentForSession({ messages, opts, definitions, executeTo
     observer,
   });
   await finishClaudeAgentSession(sessionId, model, state, out);
+  out.telemetry = mergeRequestObservation({
+    agentSessionMode: state.mode,
+    agentForked: out.forked,
+  }, out.telemetry);
   return out;
 }
 
@@ -3438,7 +3451,12 @@ async function streamClaudeAgentChat(messages, res, opts, sessionId) {
     });
     const usageList = out.usage ? [out.usage] : [];
     if (out.usage) logCacheRound(1, out.usage, []);
-    return { content: out.content, thinkingText: out.thinkingText, usageList };
+    return {
+      content: out.content,
+      thinkingText: out.thinkingText,
+      usageList,
+      requestObservation: out.telemetry,
+    };
   } finally {
     clearInterval(heartbeat);
     res.removeListener('close', onClose);
@@ -3458,6 +3476,7 @@ async function callClaudeAgentNonStream(messages, tools, opts, sessionId) {
     msg: { role: 'assistant', content: out.content },
     usage: out.usage,
     thinkingText: out.thinkingText,
+    requestObservation: out.telemetry,
   };
 }
 
@@ -3479,11 +3498,14 @@ async function handleStreamChat(messages, res, opts = {}, sessionId, resume = nu
   // routeFrame 必须带 kind：前端（angel-garden-diary/src/chat/ChatScreen.jsx）只解析 data: 行、
   // 按 payload 字段分发（event: 行不认），没有判别字段的帧会一路穿过所有分支（与 mcp_delegate 同约定）。
   const route = routeFrame(opts, resume);
+  const routeObservation = { transport: route.transport, transportReason: route.reason };
   try { sendSSE(res, 'route', route); } catch { /* 客户端已断，不影响本轮 */ }
   console.log(`🧭 [线路] transport=${route.transport}${route.reason ? ` reason=${route.reason}` : ''}`);
 
   if (shouldUseClaudeAgent(opts, resume)) {
-    return streamClaudeAgentChat(messages, res, opts, sessionId);
+    const out = await streamClaudeAgentChat(messages, res, opts, sessionId);
+    out.requestObservation = mergeRequestObservation(routeObservation, out.requestObservation);
+    return out;
   }
 
   let loop = 0;
@@ -3535,7 +3557,12 @@ async function handleStreamChat(messages, res, opts = {}, sessionId, resume = nu
 
     // 无工具调用 → 这就是最终回复
     if (!toolCalls || toolCalls.length === 0) {
-      return { content: content || finalContent, thinkingText: thinkingTextAll, usageList };
+      return {
+        content: content || finalContent,
+        thinkingText: thinkingTextAll,
+        usageList,
+        requestObservation: routeObservation,
+      };
     }
 
     // 有工具调用 → 记录过渡语，执行工具
@@ -3595,7 +3622,7 @@ async function handleStreamChat(messages, res, opts = {}, sessionId, resume = nu
         expiresAt: Date.now() + MCP_TTL,
       });
       sendSSE(res, 'mcp_delegate', { kind: 'mcp_delegate', pendingId, items: mcpBatch });
-      return { delegated: true, pendingId, thinkingText: thinkingTextAll, usageList };
+      return { delegated: true, pendingId, thinkingText: thinkingTextAll, usageList, requestObservation: routeObservation };
     }
 
     // 无 mcp：按序 push 所有工具消息
@@ -4732,6 +4759,7 @@ async function runKeepalive(sessionId, cfg) {
   recordRequestStat({
     sessionId, client: 'keepalive', model: toOpenRouterModel(cfg.model),
     stream: false, usageList: usage ? [usage] : [], diagnostics,
+    observation: { transport: isDeepSeekModel(cfg.model) ? 'deepseek' : 'api', transportReason: 'keepalive' },
     keepalive_action: action,
     keepalive_meta: {
       wake_id: wakeId,
@@ -5067,7 +5095,10 @@ app.post('/sessions/:id/chat/mcp-result', async (req, res) => {
       entry.messages, res, entry.opts, entry.sessionId,
       { finalContent: entry.finalContent, thinkingTextAll: entry.thinkingTextAll, usageList: entry.usageList }
     );
-    await finalizeChat(entry.sessionId, res, out.content, out.thinkingText || '', entry.opts, entry.diagnostics, entry.keepsakeP, out.usageList || []);
+    await finalizeChat(
+      entry.sessionId, res, out.content, out.thinkingText || '', entry.opts,
+      entry.diagnostics, entry.keepsakeP, out.usageList || [], out.requestObservation,
+    );
   } catch (error) {
     console.error('MCP 续调错误:', error.message);
     if (res.headersSent) {
@@ -5886,7 +5917,10 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
       return;
     }
 
-    await finalizeChat(sessionId, res, out.content, out.thinkingText || '', opts, diagnostics, keepsakeP, out.usageList || []);
+    await finalizeChat(
+      sessionId, res, out.content, out.thinkingText || '', opts,
+      diagnostics, keepsakeP, out.usageList || [], out.requestObservation,
+    );
   } else {
     const tools = opts.tools === 'off' ? null : getTools();
     const usageList = [];
@@ -5895,7 +5929,18 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
       : shouldUseClaudeAgent(opts)
         ? (msgs, toolDefs, callOpts) => callClaudeAgentNonStream(msgs, toolDefs, callOpts, sessionId)
         : callOpenRouterNonStream; // 测试模式走 DeepSeek；订阅 token 存在时主对话走 Agent SDK
-    const { msg: assistantMessage, usage: usage1, thinkingText: thinking1 = '' } = await nonStream(messages, tools, opts);
+    const nonStreamRoute = routeFrame(opts);
+    const routeObservation = {
+      transport: nonStreamRoute.transport,
+      transportReason: nonStreamRoute.reason,
+    };
+    const {
+      msg: assistantMessage,
+      usage: usage1,
+      thinkingText: thinking1 = '',
+      requestObservation: providerObservation = null,
+    } = await nonStream(messages, tools, opts);
+    const requestObservation = mergeRequestObservation(routeObservation, providerObservation);
     let thinkingText = thinking1; // 工具二轮会追加拼接（2026-09-03）
     if (usage1) { usageList.push(usage1); logCacheRound(1, usage1, []); }
     let finalReply = '';
@@ -5982,7 +6027,7 @@ async function handleChat(sessionId, userMessage, useStream, res, opts = {}) {
     }
     recordRequestStat({
       sessionId, client: opts.client, model: toOpenRouterModel(opts.model),
-      stream: false, usageList, diagnostics,
+      stream: false, usageList, diagnostics, observation: requestObservation,
       memory_degraded: opts.degraded?.size ? [...opts.degraded].join(',') : null,
     });
   }
