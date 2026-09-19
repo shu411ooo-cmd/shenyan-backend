@@ -1,7 +1,7 @@
 // ===== lib/claude-context-usage.js 单元测试（node:test）=====
 //
-// 这条链读的是 SDK 的 getContextUsage()——订阅线上**真实**的上下文窗口占用，
-// 用来替掉应用层那套 24k 预算估算（后者只描述我们自己组装的那一份，不是他的记忆）。
+// 这条链读的是 SDK 的 getContextUsage()——订阅线的 SDK 侧上下文快照。
+// summary 模式仍混合上一响应 usage 与本地估算，但比应用侧 24k 组装估算更接近实际会话。
 //
 // 这里钉三件对外承诺：
 //   ① percent 由我们从两个 token 数自己算，**不采信** SDK 那个同名字段
@@ -38,6 +38,25 @@ function sampleRaw(over = {}) {
       { name: 'mcp__shenyan__recall', serverName: 'shenyan', tokens: 240, isLoaded: true },
     ],
     systemPromptSections: [{ name: '沈晏人格', tokens: 4591 }],
+    systemTools: [{ name: 'TodoWrite', tokens: 180 }],
+    deferredBuiltinTools: [{ name: 'Bash', tokens: 220, isLoaded: false }],
+    messageBreakdown: {
+      toolCallTokens: 100,
+      toolResultTokens: 200,
+      attachmentTokens: 0,
+      assistantMessageTokens: 300,
+      userMessageTokens: 400,
+      redirectedContextTokens: 50,
+      unattributedTokens: 25,
+      toolCallsByType: [{ name: 'mcp__shenyan__recall', callTokens: 20, resultTokens: 80 }],
+      attachmentsByType: [{ name: 'image', tokens: 0 }],
+    },
+    apiUsage: {
+      input_tokens: 123,
+      output_tokens: 45,
+      cache_creation_input_tokens: 67,
+      cache_read_input_tokens: 890,
+    },
     agents: [],
     slashCommands: { totalCommands: 12, includedCommands: 3, tokens: 400 },
     skills: { totalSkills: 0, includedSkills: 0, tokens: 0 },
@@ -59,6 +78,7 @@ test('percent 只在两个 token 数都有效时才算；缺一个就是 null，
   assert.strictEqual(normalizeContextUsage(sampleRaw({ maxTokens: undefined }), OBSERVED_AT).percent, null);
   assert.strictEqual(normalizeContextUsage(sampleRaw({ totalTokens: NaN }), OBSERVED_AT).percent, null);
   assert.strictEqual(normalizeContextUsage(sampleRaw({ maxTokens: 0 }), OBSERVED_AT).percent, null, '分母 0 不能算出 Infinity');
+  assert.strictEqual(normalizeContextUsage(sampleRaw({ totalTokens: -1 }), OBSERVED_AT).percent, null, '负 token 是坏快照');
 });
 
 test('percent 保留两位，不留浮点噪声', () => {
@@ -95,7 +115,23 @@ test('mcpTools / systemPromptSections 逐项带 token（前端要看的分解）
   const out = normalizeContextUsage(sampleRaw(), OBSERVED_AT);
   assert.deepStrictEqual(out.mcpTools.map((t) => t.name), ['mcp__shenyan__hold', 'mcp__shenyan__recall']);
   assert.equal(out.mcpTools[0].tokens, 260);
+  assert.equal(out.mcpTools[0].serverName, 'shenyan');
+  assert.equal(out.mcpTools[0].isLoaded, true);
   assert.deepStrictEqual(out.systemPromptSections, [{ name: '沈晏人格', tokens: 4591 }]);
+});
+
+test('保留诊断所需的消息 / API usage / 系统工具分解', () => {
+  const out = normalizeContextUsage(sampleRaw(), OBSERVED_AT);
+  assert.equal(out.systemTools[0].name, 'TodoWrite');
+  assert.equal(out.deferredBuiltinTools[0].isLoaded, false);
+  assert.equal(out.messageBreakdown.toolResultTokens, 200);
+  assert.equal(out.messageBreakdown.toolCallsByType[0].resultTokens, 80);
+  assert.deepStrictEqual(out.apiUsage, {
+    inputTokens: 123,
+    outputTokens: 45,
+    cacheCreationInputTokens: 67,
+    cacheReadInputTokens: 890,
+  });
 });
 
 test('gridRows 不进 DTO（那是 CLI 自己 /context 网格图的渲染数据）', () => {
@@ -113,6 +149,15 @@ test('冷启动没观测过：available:false + not_observed，且 percent 是 n
   assert.equal(s.reason, 'not_observed');
   assert.strictEqual(s.percent, null);
   assert.strictEqual(s.usedTokens, null);
+  assert.strictEqual(s.isAutoCompactEnabled, null, '没观测过不是“明确关闭”');
+});
+
+test('SDK 坏快照明确报 invalid_snapshot，缺布尔字段保持未知', () => {
+  const out = normalizeContextUsage(sampleRaw({ maxTokens: 0, isAutoCompactEnabled: undefined }), OBSERVED_AT);
+  assert.equal(out.available, false);
+  assert.equal(out.reason, 'invalid_snapshot');
+  assert.strictEqual(out.percent, null);
+  assert.strictEqual(out.isAutoCompactEnabled, null);
 });
 
 test('15 分钟没成功观测 → stale:true，但仍返回上一份快照', () => {
@@ -140,7 +185,7 @@ test('已有成功快照后再失败：保留旧值，只标 lastError', () => {
 
 /* ───────── refresh：复用活着的 Query，不另起 ───────── */
 
-test('refresh 复用传入的 Query，用 detail:"summary"（不跑逐类统计，更省）', async () => {
+test('refresh 复用传入的 Query，用 detail:"summary"（不发逐类 token-count 调用）', async () => {
   const cache = createContextUsageCache();
   let received = null;
   const fakeQuery = {

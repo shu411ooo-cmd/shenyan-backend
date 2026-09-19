@@ -31,6 +31,7 @@
 
 ### S2 Context Flight Recorder（只观测，不改上下文）
 
+- [x] 接入 SDK 侧上下文快照：窗口、compact 阈值、分类、消息/工具/API usage 分解；只复用活跃 Query。
 - [ ] 每轮记录 requested/resolved transport、fresh/resume/rebuild、总耗时与各阶段耗时。
 - [ ] 分项记录 system、近期消息、摘要、长期记忆、工具 schema 的估算 token；不记录正文。
 - [ ] 记录 SDK context usage、compact 前后量、cache read/write 与 rate-limit 窗口。

@@ -4891,7 +4891,7 @@ app.get('/api/claude-agent/quota', (req, res) => {
   res.json(getClaudeQuotaSnapshot());
 });
 
-// 订阅线的**真实上下文窗口占用**（SDK 权威值，不是应用层估算）。
+// 订阅线的 SDK 侧上下文窗口快照（summary 含 usage + 本地估算，不是精确账单）。
 // 与额度同一个形状：只读内存里的 last-known-good，绝不为了这次查询新开 Query/进程。
 // 冷启动且尚未发生订阅线对话时返回 available:false + reason:"not_observed"，不伪造 0%。
 app.get('/api/claude-agent/context', (req, res) => {

@@ -6,11 +6,24 @@
 > 上游：`docs/2026-09-18-claude-quota-cache.md`（你那份额度缓存）
 > 状态：**观测已上线并有真数据；参数调整未执行，等程芥定**
 
+## Codex 二轮结论（2026-09-19）
+
+- 实现保留；生产接口与回执样本已复核，完整测试通过。
+- 术语修正：`detail:'summary'` 按当前 SDK 类型说明混合上一响应 usage 与本地估算，故称
+  **“SDK 侧上下文快照”**，不称逐 token 的“绝对真实/权威值”。
+- `init` 时读取的是本轮开场附近快照；是否已包含本轮用户输入尚未实证，不再写死为“上一轮结束值”。
+- DTO 继续丢弃纯渲染 `gridRows` 与敏感 `memoryFiles[].path`；补回诊断所需的
+  `messageBreakdown`、`apiUsage`、`systemTools`、`deferredBuiltinTools`。
+- `request_stats` 缺索引的猜测已排除：生产已有 `created_at DESC`、`session_id`、`client` 索引；
+  691 行下 PostgreSQL 实测约 200ms、Supabase 同形查询约 199–847ms。此前 120s 更像瞬时网络/客户端故障。
+- **暂不执行 24k → 48k。** 先收集 fresh seed、resume 增长、OpenRouter 裁剪、额度 utilization
+  变化、首字延迟和回复连续性，再决定；`live_rounds` / `frozen_rounds` 也不动。
+
 ---
 
 ## 一句话
 
-真实窗口量出来了：**SDK 200,000 / OpenRouter 1,000,000**，而我们一直按 `max_context_tokens: 24,000` 裁。
+SDK 侧运行窗口量出来了：**当前订阅会话 200,000 / OpenRouter 1,000,000**，而我们一直按 `max_context_tokens: 24,000` 裁。
 但**在订阅线上，我们的预算只决定"种子多大"，不决定"他记得多少"** —— 所以抬它的收益主要落在 OpenRouter 那条路，不在主对话。
 
 ---
@@ -26,8 +39,8 @@
 形状照抄你那份 `claude-quota.js`：搭在本轮**已经活着**的 Query 上、只留内存 last-known-good、
 绝不为了查询另起进程。挂载点是 `runClaudeAgent` 的 `init` 分支（和你的额度读取同一处）。
 
-**为什么选 init**：它报的是这一轮开场时的状态 = 上一轮结束后的状态，正好是「他现在还剩多少」，
-且不跟 Query 销毁抢时间（字符串 prompt 首条 result 后 CLI 就关 stdin）。
+**为什么选 init**：它能在本轮开场附近拿到快照，且不跟 Query 销毁抢时间
+（字符串 prompt 首条 result 后 CLI 就关 stdin）。是否已包含本轮用户输入尚未实证。
 
 测试 190/190（新增 14 条）。路由快照重生成，**diff 恰好一行**。
 
